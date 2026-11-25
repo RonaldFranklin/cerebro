@@ -10,8 +10,8 @@ Status legend: ⬜ not started · 🟦 PR open · ✅ merged.
 
 | # | Branch | Content and verification | Depends on | Status |
 |---|---|---|---|---|
-| 1 | `docs/phase-3-start` | Record owner adjustments and the CLI, transport and dependency decisions in an ADR. Mark the roadmap and hand-off in progress. | Owner approval | 🟦 this PR |
-| 2 | `phase-3/cli-bootstrap` | Add the console entry point, configuration loading and argument limits. Exercise help, invalid arguments and missing configuration through the installed command. | 1 | ⬜ |
+| 1 | `docs/phase-3-start` | Record owner adjustments and the CLI, transport and dependency decisions in an ADR. Mark the roadmap and hand-off in progress. | Owner approval | ✅ #38 |
+| 2 | `phase-3/cli-bootstrap` | Add the console entry point, configuration loading and argument limits. Exercise help, invalid arguments and missing configuration through the installed command. | 1 | 🟦 this PR |
 | 3 | `phase-3/init-content` | Initialize a private git working copy with core, hubs, notes and schema, an empty area list and the domain's seven initial user types. Test first run, safe repeat, partial initialization and refusal to overwrite an unrelated directory. | 2 | ⬜ |
 | 4 | `phase-3/cli-read-maintenance` | Wire search, read (including section), reindex and health to the Phase 2 container. Exercise the installed commands against a temporary content repo and state directory. | 2, 3 | ⬜ |
 | 5 | `phase-3/token-management` | Implement owner-only ListAgentTokens over TokenStore.all(), then wire token issue, list and revoke. Test owner/agent authorization, one-time secret output and the metadata allowlist. | 2 | ⬜ |
