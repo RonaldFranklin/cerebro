@@ -34,6 +34,16 @@ class TokenNotFound(ApplicationError):  # noqa: N818
         self.token_id = token_id
 
 
+class AuthenticationFailed(ApplicationError):  # noqa: N818
+    """The presented token secret does not authenticate: unknown, malformed, revoked or expired.
+
+    One fixed message for every cause, so a caller cannot tell a revoked token from an unknown one.
+    """
+
+    def __init__(self) -> None:
+        super().__init__("authentication failed")
+
+
 class AlreadyExists(ApplicationError):  # noqa: N818
     """A record with the same unique key (note id, proposal id, token id or token hash) is already stored."""
 
