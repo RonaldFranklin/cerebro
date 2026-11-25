@@ -103,7 +103,7 @@ and an internal token reading a sample repository with an encrypted restricted n
 are in the [phase report](plans/phase-3.md#6-final-report). The [real-client checks](agent-integration.md)
 are the only remaining item in the approved Phase 3 security checkpoint.
 
-## 🟨 Phase 4 — Inbox
+## ✅ Phase 4 — Inbox
 
 Authorized on 2026-11-25. [Delivery plan](plans/phase-4.md) · [Inbox admission](adr/0018-inbox-admission.md)
 
@@ -115,6 +115,12 @@ Authorized on 2026-11-25. [Delivery plan](plans/phase-4.md) · [Inbox admission]
 Verify the stored NullCurator decision before CLI approval and inspect the resulting git commit and its trailers;
 a proposal containing a fake private key is blocked before durable payload storage, and each quota refuses excess
 submissions without writing. Exercise the installed service with an SDK client and document the two real-client checks.
+
+*Delivered 2026-11-25.* The official SDK submitted a valid proposal through the live server. The owner CLI
+approved its inspected revision and produced a single commit with all four trailers. A synthetic private key
+produced a scrubbed rejection. The acceptance test observed no state database or content changes on either
+quota refusal. The [phase report](plans/phase-4.md#5-final-report) records verification and the security
+checkpoint. [Manual real-client checks](agent-integration.md#3-propose-in-both-clients-and-approve-locally).
 
 ## ⬜ Phase 5 — HTTP API and web UI
 

@@ -1,6 +1,7 @@
 # Connecting agents
 
-Cérebro exposes four MCP read tools. Start with `cerebro_overview` once per session, search summaries, then read
+Cérebro exposes four read tools to tokens with the `read` scope and `cerebro_propose` to tokens with
+the `propose` scope. Start with `cerebro_overview` once per session, search summaries, then read
 a selected section or follow a link. Each agent has its own bearer token. For access from another host use
 the private HTTPS URL supplied by Tailscale Serve. Loopback HTTP below is for a development instance on this host.
 
@@ -11,12 +12,14 @@ From the application repository in WSL, run:
 ```bash
 cd backend
 uv sync --locked
-uv run --locked pytest -q tests/integration/test_phase3_acceptance.py tests/integration/test_mcp_transports.py
+uv run --locked pytest -q tests/integration/test_phase3_acceptance.py tests/integration/test_mcp_transports.py \
+  tests/integration/test_phase4_acceptance.py
 ```
 
 The official SDK exercises the installed HTTP server and local stdio bridge with synthetic public, internal and
 restricted notes. The tests cover discovery, visible results, identical hidden/missing responses, restart and
-credential revocation. The following manual checks use the same fixture.
+credential revocation. The Inbox test submits a valid proposal and a synthetic private-key marker, verifies
+quota refusals and reads the owner-approved commit and its audit trailers from git. The following manual checks use the same fixture.
 
 ## Manual check in Claude Code and Codex
 
@@ -110,7 +113,58 @@ In each client, confirm four distinct read tools were called. Expect `core-rules
 `docker-conventions` at depth two. Both final reads return `Not found.` The fixture includes an encrypted
 `vault-layout` note and both tokens have the `internal` ceiling.
 
-### 3. Stop and restart, then clean up
+### 3. Propose in both clients and approve locally
+
+Keep the private dev server running. Use fresh propose-only tokens in a subshell so the read checks retain
+their original credentials. Each client submits a distinct synthetic note and reports its proposal id.
+The token identifies the proposer. The default limits are 20 admissions per rolling hour and 10 pending
+proposals per token. Either limit returns `Proposal limit reached.`.
+
+```bash
+(
+  cli=("$bin/cerebro" --config "$config")
+  claude_secret="$("${cli[@]}" token issue claude-inbox --scope propose --ceiling internal)"
+  codex_secret="$("${cli[@]}" token issue codex-inbox --scope propose --ceiling internal)"
+  for client in claude codex; do
+    "run_$client" "Call cerebro_propose exactly once using these JSON arguments:
+{\"kind\":\"create\",\"title\":\"$client inbox sample\",\"body\":\"Synthetic $client proposal for owner review.\",
+ \"suggested\":{\"type\":\"guide\",\"area\":\"infrastructure\",\"priority\":\"P2\",\"sensitivity\":\"internal\",
+ \"hub\":\"infrastructure\",\"summary\":\"A synthetic guide used to check the local Inbox approval workflow.\"}}
+Report the returned proposal_id and valid flag. Use no other tools."
+  done
+)
+```
+
+Both results should have `valid: true`. The owner reviews each candidate from the same Bash session. Copy
+the corresponding proposal id from each client result when prompted. Check the source agent, candidate body
+and suggested target in the displayed preview before confirming each revision.
+
+```bash
+cli=("$bin/cerebro" --config "$config")
+repo="$session/instance/content"
+"${cli[@]}" inbox list
+for agent in claude-inbox codex-inbox; do
+  read -rp "Proposal id returned for $agent: " pid
+  preview="$("${cli[@]}" inbox list --id "$pid")"
+  printf '%s\n' "$preview"
+  revision="$("$bin/python" -c '
+import json, sys
+p = json.load(sys.stdin)
+if p["source_agent"] != sys.argv[1] or p["status"] != "needs_owner":
+    raise SystemExit("Unexpected source agent or proposal status")
+print(p["revision"])' "$agent" <<<"$preview")"
+  read -rp "Approve the displayed revision $revision for $agent? [y/N] " answer
+  if [[ "$answer" != y ]]; then continue; fi
+  "${cli[@]}" inbox approve "$pid" --revision "$revision"
+  git -C "$repo" log -1 --format=%B
+done
+```
+
+Each approval returns `applied` and creates one commit with `Proposed-by: claude-inbox` or
+`Proposed-by: codex-inbox`, `Curated-by: curator/null`, `Approved-by: owner` and the displayed proposal
+id in `Proposal-Id`. The new note ids are `claude-inbox-sample` and `codex-inbox-sample`.
+
+### 4. Stop and restart, then clean up
 
 ```bash
 stop_server
@@ -130,4 +184,3 @@ Record the two offline messages and the first successful read after restart for 
 listener cannot send a protocol response. The prompt tells the real agent how to report that connection failure.
 The stdio development bridge can return the fixed offline error directly. Its command is
 `cerebro-mcp-stdio --private-port PORT` with the token in `CEREBRO_MCP_TOKEN` in the bridge environment.
-Phase 4 adds proposal submission.
