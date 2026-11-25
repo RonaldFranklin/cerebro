@@ -223,3 +223,38 @@ def test_stdio_framing_and_invalid_calls_keep_the_request_id() -> None:
     notification = b'{"jsonrpc":"2.0","method":"notifications/initialized"}\n'
     assert bridge(BytesIO(notification), output, host="127.0.0.1", port=free_port(), secret="fixture") == 0
     assert output.getvalue() == b""
+
+
+def test_sdk_gets_offline_error_when_token_store_fails(tmp_path: Path) -> None:
+    from mcp import MCPError
+
+    from cerebro.adapters.inbound.mcp_http import http_app
+    from cerebro.application.dto import AuthenticateTokenRequest
+    from tests.integration.test_mcp_tools import AGENT, tools_for
+
+    class CredentialStore:
+        online = True
+
+        def execute(self, request: AuthenticateTokenRequest) -> AccessContext:
+            if not self.online:
+                raise RuntimeError("private backend diagnostic")
+            return AGENT
+
+    store = CredentialStore()
+    router = http_app(tools_for(build_container(make_sample_repo(tmp_path).settings)), store, {8765: AGENT.ceiling})
+
+    async def run() -> None:
+        async with (
+            router.lifespan_context(router),
+            httpx2.AsyncClient(
+                transport=httpx2.ASGITransport(app=router), headers={"Authorization": "Bearer fixture"}
+            ) as http,
+            Client(
+                streamable_http_client("http://127.0.0.1:8765/mcp", http_client=http), read_timeout_seconds=2
+            ) as client,
+        ):
+            store.online = False
+            with pytest.raises(MCPError, match="Cérebro offline"):
+                await client.call_tool("cerebro_overview", {})
+
+    asyncio.run(run())

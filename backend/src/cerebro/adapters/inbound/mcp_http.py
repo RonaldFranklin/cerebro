@@ -31,6 +31,8 @@ def decode_frame(body: bytes) -> dict[str, object]:
         raise ValueError("invalid message")
     if "id" in message and type(message["id"]) not in (int, str):
         raise ValueError("invalid id")
+    if isinstance(message.get("id"), str):
+        message["id"].encode("utf-8")
     return message
 
 
@@ -75,23 +77,36 @@ def http_app(
 
     async def handle(scope: Scope, receive: Receive, send: Send) -> None:
         request = Request(scope, receive)
+        rpc_id: object = None
         try:
             if scope["query_string"] or request.headers.get("origin") is not None:
                 raise ValueError("unexpected request source")
             body = await request.body()
             if request.method == "POST":
                 message = decode_frame(body)
+                rpc_id = message.get("id")
                 validate_params(message)
-            await asyncio.to_thread(reader, request)
         except InvalidToolArguments:
-            response: Response = JSONResponse(invalid_arguments(message.get("id")), status_code=400)
+            response: Response = JSONResponse(invalid_arguments(rpc_id), status_code=400)
         except ValueError, RecursionError:
             response = Response("Invalid request.", status_code=400)
-        except AuthenticationFailed:
-            response = Response("Access denied.", status_code=401, headers={"WWW-Authenticate": "Bearer"})
-        except PermissionDenied:
-            response = Response("Access denied.", status_code=403)
         else:
+            try:
+                await asyncio.to_thread(reader, request)
+            except AuthenticationFailed:
+                await Response("Access denied.", status_code=401, headers={"WWW-Authenticate": "Bearer"})(
+                    scope, receive, send
+                )
+                return
+            except PermissionDenied:
+                await Response("Access denied.", status_code=403)(scope, receive, send)
+                return
+            except Exception:
+                await JSONResponse(
+                    {"jsonrpc": "2.0", "id": rpc_id, "error": {"code": -32603, "message": "Cérebro offline"}},
+                    status_code=503,
+                )(scope, receive, send)
+                return
             if request.method != "POST":
                 response = Response(status_code=405, headers={"Allow": "POST"})
             elif "last-event-id" in request.headers or "mcp-session-id" in request.headers:
