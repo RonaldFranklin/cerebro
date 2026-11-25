@@ -1,6 +1,6 @@
 # Phase 3 plan — CLI and read-only MCP
 
-Approved by the owner on 2026-11-25 with the adjustments below. Phase 3 is in progress.
+Approved by the owner on 2026-11-25 with the adjustments below. Delivered on 2026-11-25. The owner security checkpoint is pending.
 [Roadmap and acceptance criteria](../roadmap.md#-phase-3--cli-and-read-only-mcp)
 
 ## 1. Pull requests
@@ -18,8 +18,8 @@ Status legend: ⬜ not started · 🟦 PR open · ✅ merged.
 | 6 | `phase-3/inbox-review` | Add owner-only ListProposals over ProposalStore.find(). Wire inbox list, approve and reject against seeded proposals. Test invalid transitions, conflicts, rejection and retry after approval. | 2, 3 | ✅ #43 |
 | 7 | `phase-3/mcp-dependency` | Pin the approved SDK and any approved direct server dependency, commit the lock and update the architecture version table. Verify imports and both transport entry points with the locked environment. | 1 | ✅ #44 |
 | 8 | `phase-3/mcp-read-tools` | Implement the four ADR-0014 schemas, handlers and explicit output projections. Add summary to NoteRef, the graph index and the application graph DTO. Test discovery, defaults, visible relations and denied reads with injected use cases. | 7 | ✅ #45 |
-| 9 | `phase-3/mcp-transports` | Wire authenticated Streamable HTTP and local dev stdio, with transport byte limits. Run the same tool and authorization contract through both, plus socket-specific ceiling and oversized-stream tests. | 2, 5, 8 | 🟦 this PR |
-| 10 | `docs/phase-3-acceptance` | Run SDK client acceptance against a sample dev instance, write the owner’s manual client runbook, update this plan, roadmap and AGENTS.md, and hand over the security checkpoint. | 3–9 | ⬜ |
+| 9 | `phase-3/mcp-transports` | Wire authenticated Streamable HTTP and local dev stdio, with transport byte limits. Run the same tool and authorization contract through both, plus socket-specific ceiling and oversized-stream tests. | 2, 5, 8 | ✅ #46 |
+| 10 | `docs/phase-3-acceptance` | Run SDK client acceptance against a sample dev instance, write the owner’s manual client runbook, update this plan, roadmap and AGENTS.md, and hand over the security checkpoint. | 3–9 | ✅ #47 |
 
 The owner authorized autonomous merges for all ten PRs, including security and dependency changes, after
 independent review, resolution of findings and completed green CI. Use scripts/merge-pr.sh for every merge.
@@ -117,3 +117,43 @@ dependencies exactly and check uv sync --locked. Record exact versions and relea
   recovery in real Claude Code and Codex after delivery. The owner verifies each reports “Cérebro offline” and continues when the dev server
   is stopped. Use isolated project or process configuration and synthetic examples.
 - Record merged PRs, coverage, review decisions and residual risks. Hand the Phase 3 security checkpoint to the owner.
+
+## 6. Final report
+
+**Delivered 2026-11-25.** PRs #38–#47 implement the ten planned steps above. The full suite passed with
+2,113 tests and 99.67% branch-aware coverage of domain and application (90% gate). Ruff lint and format,
+strict mypy and four import contracts passed with the lock enforced. Three SQLite ResourceWarnings were
+reported during the local full-suite run.
+
+**Tested.** The official mcp 2.3.0 client calls the installed server with the same git/SQLite/Fernet
+fixture prepared by the manual runbook. With an internal token it discovers four tools, reads an SSH section,
+finds a two-hop neighbor and receives identical errors for a missing and a restricted note. Search for the
+restricted marker is empty. Both transports recover after a real listener restart. The SDK sees a connection
+failure on direct HTTP and the fixed offline MCP error over the live stdio bridge.
+[Acceptance test](../../backend/tests/integration/test_phase3_acceptance.py)
+
+### Decisions for review
+
+| PR | Delivery decision |
+|---|---|
+| [#38](https://github.com/RonaldFranklin/cerebro/pull/38) | ADR-0017 fixes loopback-only sockets, header authentication, a direct stdio bridge and SDK acceptance. The owner checks the real clients' offline wording. |
+| [#39](https://github.com/RonaldFranklin/cerebro/pull/39) | Use argparse, explicit TOML and exported environment overrides. Resolve relative TOML paths at the config file and relative environment paths at the working directory. Offer --check-config. Bound UTF-8 argument totals including separators and TOML input at 64 KiB. |
+| [#40](https://github.com/RonaldFranklin/cerebro/pull/40) | Initialize only a new private repository, using Linux no-replace rename and an owner-controlled parent. Validate repeat runs against tracked regular schema files while preserving edits. Keep schema and layout in the initial commit with empty areas. Keep state and key outside it. A separate git history may live in the ignored dev directory. |
+| [#41](https://github.com/RonaldFranklin/cerebro/pull/41) | Emit JSON on deliberate output and fixed errors on stderr. Search supports repeated filters and read supports sections. Reads check index freshness, health reports stale indexes and returns 1 on errors, and reindex performs one serialized rebuild. |
+| [#42](https://github.com/RonaldFranklin/cerebro/pull/42) | Issue a one-time secret with public/read defaults and optional timezone-aware expiry. Explicit scopes replace defaults. List metadata by creation/id and revoke idempotently by public id. |
+| [#43](https://github.com/RonaldFranklin/cerebro/pull/43) | Restrict cross-sensitivity review to the full-ceiling owner. Require a revision, preview approved candidate shapes and apply allowed owner overrides. Use --resume after interrupted approval. Conflicts return their actual status. Reasons obey byte and domain limits. |
+| [#44](https://github.com/RonaldFranklin/cerebro/pull/44) | Pin base mcp 2.3.0 (2026-10-02) and uvicorn 0.54.0 (2026-09-25) with 25 lock additions. The PR records artifact release dates for transitives. Supported runtimes are WSL and Linux. |
+| [#45](https://github.com/RonaldFranklin/cerebro/pull/45) | Register four low-level SDK tools, authorize discovery and every call, and return allowlisted structured and text views. Preserve visible directed edges and summaries at depth two. Input budgets use UTF-8 bytes and bounded JSON Schema integers. |
+| [#46](https://github.com/RonaldFranklin/cerebro/pull/46) | Bind distinct private/public ports (8765/8766 by default) with immutable ceilings. Authenticate stateless POST requests and recheck at dispatch. Reject sessions, replay, origins and queries. Disable service logging. The bounded direct bridge supports legacy and current SDK framing, fixed offline errors and a five-second connection timeout. |
+| [#47](https://github.com/RonaldFranklin/cerebro/pull/47) | Share synthetic sample preparation between automation and the manual runbook. Test a live bridge across outage/restart, direct HTTP recovery, and credentials after revocation. Supply separate temporary tokens and per-invocation client settings. |
+
+### Security checkpoint for the owner
+
+- Verify the fixed ceilings at the accepting sockets and the internal-token result on the private listener.
+  The transport suite checks spoofed headers, body/field limits, read scope, hidden ids and captured server logs.
+  Acceptance adds missing and expired credentials, rejected replay headers, revocation and restart.
+- Owner-only token lists omit both secrets and hashes. Review checks the proposal revision, records the owner
+  decision and applies through the existing serialized write path. Proposal submission through MCP is planned for Phase 4.
+- Residual storage risks are recorded in [architecture](../architecture.md#accepted-risks-owner-decision-2026-11-25).
+  The SDK test and isolated shell setup are verified. The owner runs the
+  [real-client checks](../agent-integration.md) and decides the Phase 3 security checkpoint.
