@@ -28,6 +28,17 @@ class ProposalNotFound(ApplicationError):  # noqa: N818
         self.proposal_id = proposal_id
 
 
+class ProposalConflict(ApplicationError):  # noqa: N818
+    """The stored proposal changed since it was loaded (its revision is not the expected one).
+
+    Never swallow it: the caller's decision was based on a stale proposal. Reload and decide again.
+    """
+
+    def __init__(self, proposal_id: str) -> None:
+        super().__init__(f"proposal changed concurrently: {proposal_id}")
+        self.proposal_id = proposal_id
+
+
 class TokenNotFound(ApplicationError):  # noqa: N818
     def __init__(self, token_id: str) -> None:
         super().__init__(f"token not found: {token_id}")

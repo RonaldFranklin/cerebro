@@ -3,6 +3,7 @@ from cerebro.application.errors import (
     ApplicationError,
     NoteNotFound,
     PermissionDenied,
+    ProposalConflict,
     ProposalNotFound,
     TokenNotFound,
 )
@@ -13,6 +14,7 @@ def test_errors_carry_their_context_and_share_a_base() -> None:
     errors = [
         NoteNotFound(NoteId("a-note")),
         ProposalNotFound("p1"),
+        ProposalConflict("p1"),
         TokenNotFound("t1"),
         AlreadyExists("proposal", "p1"),
         PermissionDenied("propose"),

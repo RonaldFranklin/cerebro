@@ -98,7 +98,7 @@ backend/
 | `NoteRepository` | `get`, `list_refs` (body-free `NoteRef` snapshot), `list_notes`, and `apply(changes, message)`: write one or more notes and record **one** commit with the trailers, all-or-nothing; each `NoteChange` carries the `expected_hash` (`None` = must not exist) and a mismatch raises `ContentConflict` | filesystem; in-memory fake |
 | `SearchIndex` | `upsert` / `remove` / `rebuild`, `search(SearchQuery)` (ceiling mandatory; order: score, priority, id) and `find_similar` (duplicate detection); returns summaries only | SQLite FTS5 |
 | `GraphIndex` | `graph`, `backlinks`, `neighbors(hops)`, `orphans`, `broken_links`; every query takes the ceiling, hidden notes are neither nodes nor broken links | SQLite tables |
-| `ProposalStore` | `add`, `get`, `save`, `find(status, source_agent)`: proposals and decisions (audit) | SQLite |
+| `ProposalStore` | `add`, `get`, `save(proposal, expected_revision)` (compare-and-swap on `revision`, else `ProposalConflict`), `find(status, source_agent)`: proposals and decisions (audit) | SQLite |
 | `VersionControl` | `push` to the backup remote. Commits are made by `NoteRepository.apply`, so a write and its commit cannot diverge | git CLI |
 | `Cipher` | encrypt/decrypt restricted note payloads (used by the filesystem adapter only); `DecryptionError` on tampering | Fernet |
 | `Curator` | `name` (recorded as `Curated-by`) and `curate(CurationRequest) -> Decision` for a validated proposal | Anthropic, OpenAI, `NullCurator` |

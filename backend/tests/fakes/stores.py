@@ -1,9 +1,12 @@
 """In-memory ``ProposalStore`` and ``TokenStore``, and a scriptable ``Curator``."""
 
-from cerebro.application.errors import AlreadyExists, ProposalNotFound, TokenNotFound
+from dataclasses import replace
+
+from cerebro.application.errors import AlreadyExists, ProposalConflict, ProposalNotFound, TokenNotFound
 from cerebro.application.ports.curator import CurationRequest
 from cerebro.domain.agent_token import AgentToken
 from cerebro.domain.decision import Decision
+from cerebro.domain.errors import InvalidValueError
 from cerebro.domain.proposal import Proposal, ProposalStatus
 
 
@@ -12,6 +15,8 @@ class InMemoryProposalStore:
         self._items: dict[str, Proposal] = {}
 
     def add(self, proposal: Proposal) -> None:
+        if proposal.revision != 0:
+            raise InvalidValueError("revision", "a new proposal starts at revision 0")
         if proposal.id in self._items:
             raise AlreadyExists("proposal", proposal.id)
         self._items[proposal.id] = proposal
@@ -19,10 +24,15 @@ class InMemoryProposalStore:
     def get(self, proposal_id: str) -> Proposal | None:
         return self._items.get(proposal_id)
 
-    def save(self, proposal: Proposal) -> None:
-        if proposal.id not in self._items:
+    def save(self, proposal: Proposal, *, expected_revision: int) -> Proposal:
+        stored = self._items.get(proposal.id)
+        if stored is None:
             raise ProposalNotFound(proposal.id)
-        self._items[proposal.id] = proposal
+        if stored.revision != expected_revision:
+            raise ProposalConflict(proposal.id)
+        saved = replace(proposal, revision=expected_revision + 1)
+        self._items[proposal.id] = saved
+        return saved
 
     def find(self, *, status: ProposalStatus | None = None, source_agent: str | None = None) -> tuple[Proposal, ...]:
         found = [

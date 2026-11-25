@@ -81,6 +81,7 @@ def test_create_ok_and_defaults() -> None:
     p = make_proposal()
     assert p.status is S.RECEIVED
     assert not p.conflict
+    assert p.revision == 0
     assert p.decision is None
 
 
@@ -154,6 +155,9 @@ def test_link_and_deprecate_rules() -> None:
         ({"curated_by": "a\nb"}, "curated_by"),
         ({"approved_by": "a\nb"}, "approved_by"),
         ({"conflict": 1}, "conflict"),
+        ({"revision": -1}, "revision"),
+        ({"revision": True}, "revision"),
+        ({"revision": "1"}, "revision"),
     ],
 )
 def test_field_validation(overrides: dict[str, Any], field: str) -> None:
@@ -448,3 +452,8 @@ def test_content_summary_and_hub_suggestions() -> None:
         ProposedContent(summary=3)  # type: ignore[arg-type]
     with pytest.raises(InvalidValueError, match="hub"):
         ProposedContent(hub="infrastructure")  # type: ignore[arg-type]
+
+
+def test_transitions_never_bump_the_revision() -> None:
+    p = replace(at(S.RECEIVED), revision=7)
+    assert p.mark_validated(ValidationReport(), T1).revision == 7

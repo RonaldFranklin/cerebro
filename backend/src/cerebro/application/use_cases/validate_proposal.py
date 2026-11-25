@@ -72,7 +72,7 @@ class ValidateProposal:
             rejected = proposal.reject_invalid(report, now)
             has_secret = any(v.code is ViolationCode.SECRET_DETECTED for v in report.violations)
             result = scrubbed(rejected) if has_secret else rejected
-        self._proposals.save(result)
+        result = self._proposals.save(result, expected_revision=proposal.revision)
         return ProposalOutcome(proposal_id=result.id, status=result.status, validation=report)
 
     def _report(self, proposal: Proposal, base: Note | None, today: date, ctx: AccessContext) -> ValidationReport:
