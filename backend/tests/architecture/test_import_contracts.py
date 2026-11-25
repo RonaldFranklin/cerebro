@@ -52,6 +52,21 @@ def run_lint_imports(tmp_path: Path, module: str, source: str) -> subprocess.Com
             "import cerebro.adapters\n",
             "cerebro.application.canary -> cerebro.adapters (l.1)",
         ),
+        (
+            "cerebro.adapters.inbound.canary",
+            "import cerebro.application.ports\n",
+            "cerebro.adapters.inbound.canary -> cerebro.application.ports (l.1)",
+        ),
+        (
+            "cerebro.adapters.inbound.canary",
+            "from cerebro.application.ports import __name__\n",
+            "cerebro.adapters.inbound.canary -> cerebro.application.ports (l.1)",
+        ),
+        (
+            "cerebro.adapters.inbound.canary",
+            "import cerebro.adapters.outbound\n",
+            "cerebro.adapters.inbound.canary -> cerebro.adapters.outbound (l.1)",
+        ),
     ],
 )
 def test_forbidden_import_breaks_a_contract(tmp_path: Path, module: str, source: str, expected: str) -> None:
@@ -65,5 +80,18 @@ def test_standard_library_imports_are_allowed_in_the_core(tmp_path: Path) -> Non
     source = "from __future__ import annotations\nimport dataclasses\nimport json\nfrom collections import abc\n"
 
     result = run_lint_imports(tmp_path, "cerebro.domain.canary", source)
+
+    assert result.returncode == 0, result.stdout
+
+
+def test_inbound_adapters_may_use_use_cases_dto_and_domain(tmp_path: Path) -> None:
+    source = (
+        "import cerebro.application.dto\n"
+        "import cerebro.application.use_cases\n"
+        "import cerebro.domain\n"
+        "import dataclasses\n"
+    )
+
+    result = run_lint_imports(tmp_path, "cerebro.adapters.inbound.canary", source)
 
     assert result.returncode == 0, result.stdout
