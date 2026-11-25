@@ -352,8 +352,15 @@ Authorization lives in the use cases, never in the adapters:
   hidden targets as `NoteNotFound` too.
 - **Secrets never reach the store.** `SubmitProposal` scans every free text of the payload (title, body, summary,
   rationale, session, context). On a hit it stores a **scrubbed**, already `rejected` proposal (placeholders
-  instead of text) and returns the redacted report. `ValidateProposal` scans again and scrubs a rejected proposal
-  that holds a secret. Reports and results never quote proposed content.
+  instead of text) and returns the redacted report. `ValidateProposal` scans again, and **every** proposal it
+  rejects is stored scrubbed (not only those holding a secret): the raw title, body, summary, rationale, session
+  and context are replaced by placeholders, while kind, target, base hash, source agent, metadata suggestions
+  and the structured findings (codes, fields, detectors, line numbers) are kept for the audit. A rejected
+  payload is never persisted. Reports and results never quote proposed content.
+- **State at rest.** `state.sqlite` seals the whole proposal (content, target, report, decision) with the
+  `Cipher`, even for `public` proposals, binding the proposal id into the sealed payload; only id, kind, status,
+  revision, source agent, timestamps and the curator/approver names are in clear, for queries and the
+  compare-and-swap. Tokens are stored by SHA-256 hash only.
 - **From proposal to note.** The note a proposal would write is built deterministically (`build_candidate`), the
   same way for validation and for apply. `create` needs `title`, `body`, `type`, `area`, `priority`,
   `sensitivity` and `summary` from the agent (`hub` where the type requires one; missing ones are

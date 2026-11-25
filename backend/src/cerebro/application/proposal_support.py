@@ -222,7 +222,7 @@ def secret_findings(proposal: Proposal) -> tuple[Finding, ...]:
 
 
 def scrubbed(proposal: Proposal) -> Proposal:
-    """The proposal without any free text, so that a rejected payload that held a secret is never stored.
+    """The proposal without any free text, so that the raw payload of a rejected proposal is never stored.
 
     Required fields keep a harmless placeholder; ids, kind, target, base hash and agent are kept for the audit trail.
     """

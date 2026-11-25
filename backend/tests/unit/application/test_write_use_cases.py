@@ -1427,3 +1427,40 @@ class TestIndexRevisionOnWrites:
         assert kit.world.graph.built_from() != kit.world.notes.head()  # not advanced past the missed commit
         assert kit.world.search.built_from() != kit.world.notes.head()
         assert self.stale(kit)
+
+
+class TestRejectedPayloadsAreNotKept:
+    """Roadmap: a proposal rejected by validation keeps its findings, never its raw payload."""
+
+    def test_a_validation_failure_without_a_secret_is_scrubbed_too(self, kit: Kit) -> None:
+        pid = kit.submit_create(
+            title="Distinctive title zq",
+            body="Distinctive body zq.\n",
+            rationale="Distinctive rationale zq",
+            area=Area("nowhere"),
+        )
+        outcome = kit.validate(pid)
+        assert outcome.status is S.REJECTED
+        stored = kit.stored(pid)
+        assert "zq" not in repr(stored)
+        assert (stored.content.title, stored.content.body, stored.content.rationale) == ("[redacted]", "", "")
+        assert stored.content.summary is None
+        assert (stored.source_session, stored.source_context) == (None, None)
+        assert stored.validation is not None
+        assert ViolationCode.UNKNOWN_AREA in stored.validation.codes
+        assert stored.kind is ProposalKind.CREATE
+
+    def test_a_rejected_update_keeps_its_target_and_base_hash_only(self, kit: Kit) -> None:
+        pid = kit.submit_update(body="# SSH\n\nDistinctive zq see [[does-not-exist]].\n")
+        before = kit.stored(pid)
+        assert kit.validate(pid).status is S.REJECTED
+        stored = kit.stored(pid)
+        assert "zq" not in repr(stored)
+        assert (stored.target, stored.base_hash) == (before.target, before.base_hash)
+        assert stored.content.body == ""
+
+    def test_a_validated_proposal_keeps_its_content(self, kit: Kit) -> None:
+        pid = kit.submit_create()
+        before = kit.stored(pid).content
+        kit.validate(pid)
+        assert kit.stored(pid).content == before
