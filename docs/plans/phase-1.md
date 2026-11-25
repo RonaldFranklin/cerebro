@@ -12,7 +12,7 @@ Status legend: ⬜ not started · 🟦 PR open · ✅ merged
 | # | Branch | Content | Owner adjustments | Status |
 |---|---|---|---|---|
 | 1 | `phase-1/value-objects` | `NoteId`, `Priority`, `Sensitivity`, `Status`, `Area`, `NoteType`, `Vocabulary` (built-in `core`/`hub`), `Note`, domain errors; pytest-cov gate (≥ 90 %) | — | ✅ #3 |
-| 2 | `phase-1/validation-and-budgets` | `parse_note` / `note_to_raw`, `validate_note`, `ValidationReport` + severity policy, word count, per-note and combined P0 budgets | D (combined budget takes per-note word counts, `Mapping[NoteId, int]`; `NoteRef` arrives in PR 3) | 🟦 #4 |
+| 2 | `phase-1/validation-and-budgets` | `parse_note` / `note_to_raw`, `validate_note`, `ValidationReport` + severity policy, word count, per-note and combined P0 budgets | D (combined budget takes per-note word counts, `Mapping[NoteId, int]`; `NoteRef` arrives in PR 3) | ✅ #4 |
 | 3 | `phase-1/links-and-sections` | wikilink extraction (`[[id]]`, `[[id#Section]]`) plus `hub` / `related` / `superseded_by`; section extraction for `ReadNote`; cross-note rules: broken links (warning for owner edits, error for proposals), missing hub, `superseded_by` cycles, **hub chains acyclic and ≤ 3 hubs deep** | A (hub chain rules, [ADR-0015](../adr/0015-hub-membership-computed-at-read-time.md)), D | ⬜ |
 | 4 | `phase-1/secret-scanner` | private keys, common token formats, `password=`-style assignments, high-entropy strings; scans **frontmatter (title, summary, …) and body**, for proposals **and** owner edits; negative tests (commit hashes, UUIDs) | D | ⬜ |
 | 5 | `phase-1/access` | `AccessCeiling`, `effective_ceiling(listener, token)` (no defaults), visibility filter, `include_history`, `AgentToken`; `AccessContext(principal, ceiling, scopes)` with `principal = Agent(name) \| Owner` | C | ⬜ |
@@ -22,8 +22,8 @@ Status legend: ⬜ not started · 🟦 PR open · ✅ merged
 | 9 | `phase-1/write-use-cases` | `SubmitProposal`, `ValidateProposal`, `CurateProposal` (with `NullCurator` / fake), `ReviewProposal`, `ApplyProposal`, `OwnerEditNote`; optimistic concurrency on apply and owner edit; authorization in the use cases | B, C, D | ⬜ |
 | 10 | `phase-1/maintenance-use-cases` | `RebuildIndex`, `HealthReport`, `IssueAgentToken`, `RevokeAgentToken`; closes the phase (roadmap incl. the added use cases, `AGENTS.md`, coverage check) | C | ⬜ |
 
-Related docs pull request: [ADR-0015](../adr/0015-hub-membership-computed-at-read-time.md) (#2, open) — hub
-membership computed at read time. Links to ADR-0015 resolve once #2 is merged.
+Related docs pull request: [ADR-0015](../adr/0015-hub-membership-computed-at-read-time.md) (#2, merged) — hub
+membership computed at read time.
 
 ## 2. Cross-cutting design decisions
 
@@ -72,3 +72,27 @@ membership computed at read time. Links to ADR-0015 resolve once #2 is merged.
   `IssueAgentToken` / `RevokeAgentToken`; the roadmap is updated in PR 10.
 - Update proposals carry the full new body; a patch format needs a future ADR.
 - pytest-cov is a dev dependency (coverage gate ≥ 90 % on domain + application).
+
+## 5. Working mode (autonomous execution, authorized 2026-11-25)
+
+Applies to PRs 3–10 and to future sessions continuing this phase.
+
+- **Orchestrator.** The main session only keeps summaries and does not read whole files unnecessarily. For each PR:
+  a fresh implementation subagent (Sonnet) receives that PR's plan excerpt; a separate review subagent
+  (Sonnet; **Opus for the secret scanner and access PRs**) reviews it.
+- **Merge authority.** The agent merges every PR 3–10, including those that change `domain-model.md` and the
+  security ones (scanner, access), once CI is green and the review is resolved. Rationale: nothing in Phase 1 runs
+  exposed. A **human security review happens at a checkpoint at the end of the phase, before Phase 3.**
+- **Stop only if** a new dependency is needed, the approved plan or an ADR must be departed from, or work is blocked.
+- **Minor doubts:** decide, and list them in the PR description under "Decisions for review".
+- **Final report** to the owner: merged PRs, tests and coverage, all "Decisions for review", and a security section
+  (scanner, access ceiling, tokens).
+
+## 6. Decisions confirmed for PR 2 (owner delegated to the recommendations, 2026-11-25)
+
+1. Type decides priority: `core` ⇒ P0, `hub` ⇒ P1, any other type ⇒ P2/P3.
+2. Core notes may not set `hub`.
+3. Severity policy per write path (`PROPOSAL_POLICY`, `OWNER_EDIT_POLICY`).
+4. Strict frontmatter: unknown keys are errors, `null` is missing, timestamps rejected, non-mapping reported.
+5. Title single line ≤ 120 chars after trimming; word count = whitespace tokens; hub intro > 800 words is an error;
+   the core budget counts current P0 notes only.

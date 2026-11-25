@@ -26,9 +26,7 @@ Inbox, which are validated, curated and approved before becoming notes.
 - Phase 0 (bootstrap) is **done**: `backend/` skeleton with uv (Python 3.14), pytest, ruff, mypy `--strict`,
   import-linter (layers + custom `stdlib_only` contract type, with canary tests) and GitHub Actions CI.
 - Phase 1 (domain and application core) is **in progress**, delivered as a series of pull requests
-  (`phase-1/*` branches). Done so far: value objects (`NoteId`, `Priority`, `Sensitivity`, `Status`, `Area`,
-  `NoteType`, `Vocabulary`, `Note`); validation and budgets (`parse_note`/`note_to_raw`, `validate_note`,
-  word budgets, `ValidationReport`).
+  (`phase-1/*` branches). Done so far: value objects, validation, frontmatter boundary and budgets (PRs 1–2).
 - Update this section and `docs/roadmap.md` whenever a phase starts or finishes.
 - Phase 1 plan (pull requests, status, design decisions): [`docs/plans/phase-1.md`](docs/plans/phase-1.md).
 
