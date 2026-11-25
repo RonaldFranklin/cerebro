@@ -111,7 +111,8 @@ Authorized on 2026-11-25. [Delivery plan](plans/phase-4.md) · [Inbox admission]
 - Full deterministic validation pipeline (schema, budgets, secrets, duplicates).
 - Manual approval through CLI using `NullCurator` (owner writes/edits the final note).
 
-**Acceptance:** an agent proposal flows received → validated → approved → applied → git commit with trailers;
+**Acceptance:** an agent proposal flows received → validated → curated → needs_owner → approved → applied.
+Verify the stored NullCurator decision before CLI approval and inspect the resulting git commit and its trailers;
 a proposal containing a fake private key is blocked before durable payload storage, and each quota refuses excess
 submissions without writing. Exercise the installed service with an SDK client and document the two real-client checks.
 

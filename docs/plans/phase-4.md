@@ -58,8 +58,8 @@ enforcement. Record review decisions in its PR description.
 
 ## 4. Acceptance and hand-off
 
-- Submit a synthetic proposal with an SDK client. Verify successful validation, manual CLI review of the
-  candidate, one apply commit and its Proposed-by, Curated-by, Approved-by and Proposal-Id trailers.
+- Submit a synthetic proposal with an SDK client. Verify successful validation and the stored NullCurator decision at
+  needs_owner before manual CLI approval. Inspect the candidate, then verify one apply commit and its Proposed-by, Curated-by, Approved-by and Proposal-Id trailers.
 - Submit a fixture containing a fake private key, verify rejection and inspect the persisted audit projection.
   Exceed each configured limit, verify the fixed refusal and unchanged persistent state. Include restart,
   token isolation and concurrent admission in the supporting tests.
