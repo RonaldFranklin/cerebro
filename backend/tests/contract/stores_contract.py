@@ -16,6 +16,7 @@ from cerebro.application.errors import (
     TokenNotFound,
 )
 from cerebro.application.ports import Cipher, Clock, CurationRequest, Curator, IdGenerator, ProposalStore, TokenStore
+from cerebro.application.proposal_support import scrubbed
 from cerebro.domain.access import AccessCeiling, Scope
 from cerebro.domain.agent_token import AgentToken
 from cerebro.domain.commit_message import CommitMessage
@@ -27,6 +28,7 @@ from cerebro.domain.proposal import Proposal, ProposalKind, ProposalLimits, Prop
 from cerebro.domain.report import ValidationReport
 from cerebro.domain.token_hash import TokenHash
 from tests.fakes.system import FixedClock
+from tests.unit.domain.test_proposal import BAD
 
 T0 = datetime(2026, 11, 25, 12, 0, tzinfo=UTC)
 
@@ -68,7 +70,7 @@ class ProposalStoreContract:
     def test_admissions_use_a_rolling_hour_per_credential_and_count_rejections(self, store: ProposalStore) -> None:
         clock = FixedClock(T0)
         limits = ProposalLimits(per_hour=1, pending=2)
-        first = make_reviewable("first").reject("declined", T0)
+        first = scrubbed(make_proposal("first").reject_invalid(BAD, T0))
         store.admit(first, token_id="token-a", limits=limits, clock=clock)
         store.admit(make_reviewable("second"), token_id="token-b", limits=limits, clock=clock)
         clock.advance(timedelta(hours=1, microseconds=-1))
@@ -77,6 +79,13 @@ class ProposalStoreContract:
         assert store.get("third") is None
         clock.advance(timedelta(microseconds=1))
         store.admit(make_reviewable("third"), token_id="token-a", limits=limits, clock=clock)
+
+    def test_received_and_unscrubbed_rejected_proposals_are_never_admitted(self, store: ProposalStore) -> None:
+        raw = make_proposal()
+        for state in (raw, raw.reject_invalid(BAD, T0), raw.mark_validated(ValidationReport(), T0)):
+            with pytest.raises(InvalidValueError):
+                store.admit(state, token_id="token", limits=ProposalLimits(), clock=FixedClock(T0))
+            assert store.find() == ()
 
     def test_pending_capacity_reopens_on_terminal_transition_only(self, store: ProposalStore) -> None:
         clock = FixedClock(T0)

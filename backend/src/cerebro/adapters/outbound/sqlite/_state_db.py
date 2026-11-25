@@ -216,5 +216,8 @@ class StateDatabase:
     def _matches_v1(conn: sqlite3.Connection) -> bool:
         """Only upgrade the schema this application created. SQLite normalizes the CREATE statement prefix."""
         expected = {statement.strip() for statement in _SCHEMA_V1.split(";") if statement.strip()}
-        actual = {row[0] for row in conn.execute("SELECT sql FROM sqlite_schema WHERE sql IS NOT NULL")}
+        actual = {
+            row[0]
+            for row in conn.execute("SELECT sql FROM sqlite_schema WHERE sql IS NOT NULL AND name NOT GLOB 'sqlite_*'")
+        }
         return expected == actual

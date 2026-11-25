@@ -604,6 +604,7 @@ def test_v1_state_upgrade_preserves_unattributed_proposals_and_existing_credenti
                 None,
             ),
         )
+        conn.execute("ANALYZE")
     store = SqliteProposalStore(state_path, cipher)
     assert store.get(old.id) == old
     assert SqliteTokenStore(state_path).get(token.id) == token

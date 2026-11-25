@@ -31,6 +31,7 @@ from cerebro.application.errors import (
     ProposalNotFound,
 )
 from cerebro.application.ports.system import Cipher, Clock
+from cerebro.application.proposal_support import require_admissible
 from cerebro.domain.access import validate_token_id
 from cerebro.domain.decision import Decision, DecisionKind
 from cerebro.domain.enums import Priority, Sensitivity
@@ -195,6 +196,7 @@ class SqliteProposalStore:
 
     def admit(self, proposal: Proposal, *, token_id: str, limits: ProposalLimits, clock: Clock) -> None:
         validate_token_id(token_id)
+        require_admissible(proposal)
         # BEGIN IMMEDIATE protects the counts through insertion, including against other server processes.
         with self._db.write() as conn:
             now = clock.now()

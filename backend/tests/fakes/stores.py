@@ -13,6 +13,7 @@ from cerebro.application.errors import (
 )
 from cerebro.application.ports.curator import CurationRequest
 from cerebro.application.ports.system import Clock
+from cerebro.application.proposal_support import require_admissible
 from cerebro.domain.access import validate_token_id
 from cerebro.domain.agent_token import AgentToken
 from cerebro.domain.decision import Decision
@@ -36,6 +37,7 @@ class InMemoryProposalStore:
 
     def admit(self, proposal: Proposal, *, token_id: str, limits: ProposalLimits, clock: Clock) -> None:
         validate_token_id(token_id)
+        require_admissible(proposal)
         with self._lock:
             now = clock.now()
             cutoff = now - timedelta(hours=1)
