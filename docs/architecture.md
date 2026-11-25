@@ -34,7 +34,11 @@ about YAML, SQLite, git, HTTP, MCP or any LLM provider. See [ADR-0001](adr/0001-
 | `cerebro.domain` | Python standard library only |
 | `cerebro.application` | `cerebro.domain`, standard library |
 | `cerebro.adapters.*` | `cerebro.application`, `cerebro.domain`, third-party libraries |
+| `cerebro.adapters.inbound` | use cases, DTOs and errors of `cerebro.application`, `cerebro.domain`, third-party libraries; **never** `cerebro.application.ports` nor `cerebro.adapters.outbound` |
 | `cerebro.bootstrap` | everything (composition root) |
+
+Inbound adapters talk only to use cases and DTOs; the concrete ports and outbound adapters are wired into the
+use cases in `cerebro.bootstrap`. Indirect imports (inbound -> use case -> ports) are allowed.
 
 Enforced with `import-linter` contracts in CI. The "standard library only" rule for `cerebro.domain` and
 `cerebro.application` is enforced by a contract of the custom `stdlib_only` type, defined in

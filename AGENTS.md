@@ -40,6 +40,8 @@ Inbox, which are validated, curated and approved before becoming notes.
 - Dependencies point inward: `adapters → application → domain`. Never the other way around.
 - `cerebro.domain` uses **only the Python standard library**. No PyYAML, no Pydantic, no FastAPI, nothing.
 - `cerebro.application` depends only on `cerebro.domain` and defines ports as `typing.Protocol`.
+- `cerebro.adapters.inbound` never imports `cerebro.application.ports` nor `cerebro.adapters.outbound`: inbound
+  adapters talk only to use cases and DTOs, and wiring goes through `cerebro.bootstrap`.
 - Third-party libraries are imported **only** inside `cerebro.adapters.*` and `cerebro.bootstrap`.
 - These rules are enforced by `import-linter` in CI. A failing contract is a failing build.
 

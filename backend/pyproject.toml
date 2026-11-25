@@ -85,3 +85,10 @@ layers = [
 name = "Domain and application use only the standard library"
 type = "stdlib_only"
 source_modules = ["cerebro.domain", "cerebro.application"]
+
+[[tool.importlinter.contracts]]
+name = "Inbound adapters use use cases and DTOs only, never ports or outbound adapters"
+type = "forbidden"
+source_modules = ["cerebro.adapters.inbound"]
+forbidden_modules = ["cerebro.application.ports", "cerebro.adapters.outbound"]
+allow_indirect_imports = true
