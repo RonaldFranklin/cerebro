@@ -296,8 +296,16 @@ class TestRestrictedFormat:
         data = encode_restricted(self.NOTE, b"x", cipher)
         with pytest.raises(DecryptionError):
             decode_restricted(data, FernetCipher([generate_key()]))
+
+    @pytest.mark.parametrize("offset", [8, 16, 24, 32, 48, 64, 80])
+    def test_tampered_token_is_a_decryption_error(self, cipher: FernetCipher, offset: int) -> None:
+        # Swap one base64 character of the token for another valid one: the format stays valid, the HMAC must fail.
+        data = encode_restricted(self.NOTE, b"x", cipher)
+        token_start = data.index(b"---\n", 4) + len(b"---\n")
+        position = token_start + offset
+        assert data[position : position + 1] not in (b"\n", b"=")
         tampered = bytearray(data)
-        tampered[-4] ^= 0x01
+        tampered[position] = ord("B") if tampered[position] != ord("B") else ord("C")
         with pytest.raises(DecryptionError):
             decode_restricted(bytes(tampered), cipher)
 
