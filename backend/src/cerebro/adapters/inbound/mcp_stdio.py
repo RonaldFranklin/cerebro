@@ -9,7 +9,8 @@ from mcp import types
 from mcp.shared.inbound import NAME_BEARING_METHODS, encode_header_value
 
 from cerebro.adapters.inbound.input_limits import MAX_INPUT_BYTES
-from cerebro.adapters.inbound.mcp_http import decode_frame, validate_params
+from cerebro.adapters.inbound.mcp_http import decode_frame, invalid_arguments, validate_params
+from cerebro.adapters.inbound.mcp_tools import InvalidToolArguments
 
 
 def bridge(source: BinaryIO, sink: BinaryIO, *, host: str, port: int, secret: str) -> int:
@@ -70,6 +71,8 @@ def bridge(source: BinaryIO, sink: BinaryIO, *, host: str, port: int, secret: st
                     version = result["protocolVersion"]
             finally:
                 conn.close()
+        except InvalidToolArguments:
+            reply = invalid_arguments(rpc_id)
         except ValueError, RecursionError:
             reply = {"jsonrpc": "2.0", "id": rpc_id, "error": {"code": -32600, "message": "Invalid request."}}
         except PermissionError:

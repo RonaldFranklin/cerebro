@@ -12,15 +12,17 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
 
+import httpx2
 import pytest
 from mcp.client import Client
 from mcp.client.stdio import StdioServerParameters
+from mcp.client.streamable_http import streamable_http_client
 
 from cerebro.application.dto import IssueAgentTokenRequest, RevokeAgentTokenRequest
 from cerebro.bootstrap.container import build_container
 from cerebro.domain.access import AccessCeiling, AccessContext, Scope
 from cerebro.domain.enums import Sensitivity
-from tests.integration.content_kit import RESTRICTED_MARKER, VAULT_ID, make_sample_repo
+from tests.integration.content_kit import RESTRICTED_MARKER, SSH_ID, VAULT_ID, make_sample_repo
 from tests.integration.test_cli_bootstrap import SAMPLE
 
 SERVER = str(Path(sys.executable).with_name("cerebro-mcp"))
@@ -83,6 +85,27 @@ def call(name: str, args: dict[str, object]) -> bytes:
     ).encode()
 
 
+async def assert_read_contract(client: Client) -> None:
+    names = {t.name for t in (await client.list_tools()).tools}
+    calls: dict[str, dict[str, object]] = {
+        "cerebro_overview": {},
+        "cerebro_search": {"query": "SSH"},
+        "cerebro_neighbors": {"id": SSH_ID.value, "depth": 2},
+        "cerebro_read": {"id": SSH_ID.value},
+    }
+    assert names == calls.keys()
+    for name, args in calls.items():
+        result = await client.call_tool(name, args)
+        assert not result.is_error
+        assert result.structured_content
+        assert RESTRICTED_MARKER not in result.model_dump_json()
+        assert VAULT_ID.value not in result.model_dump_json()
+    hidden = await client.call_tool("cerebro_read", {"id": VAULT_ID.value})
+    absent = await client.call_tool("cerebro_read", {"id": "absent-note"})
+    assert hidden.is_error
+    assert hidden == absent
+
+
 def test_real_listener_credentials_limits_and_logs(tmp_path: Path) -> None:
     sample = make_sample_repo(tmp_path)
     container = build_container(sample.settings)
@@ -112,7 +135,22 @@ def test_real_listener_credentials_limits_and_logs(tmp_path: Path) -> None:
         assert post(private, "invalid", read)[0] == 401
         assert post(private, privileged, read, path="/mcp?access_token=fixture-marker")[0] == 400
         assert post(private, "invalid", b"x" * 65537)[0] == 413
-        assert post(private, "invalid", call("cerebro_search", {"query": "é" * 513}))[0] == 400
+        invalid_status, invalid_body = post(private, "invalid", call("cerebro_search", {"query": "é" * 513}))
+        assert invalid_status == 400
+        assert json.loads(invalid_body) == {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "error": {"code": -32602, "message": "Invalid tool arguments."},
+        }
+
+        async def run_http() -> None:
+            async with (
+                httpx2.AsyncClient(headers={"Authorization": "Bearer " + internal}, trust_env=False) as http,
+                Client(streamable_http_client(f"http://127.0.0.1:{private}/mcp", http_client=http)) as client,
+            ):
+                await assert_read_contract(client)
+
+        asyncio.run(run_http())
         container.use_cases.revoke_agent_token.execute(RevokeAgentTokenRequest(token_id=tid), owner)
         assert post(private, privileged, read)[0] == 401
     out, err = process.communicate()
@@ -138,10 +176,7 @@ def test_stdio_sdk_contract_and_offline(tmp_path: Path) -> None:
         async with Client(
             StdioServerParameters(command=BRIDGE, args=cmd, env=env), mode=mode, read_timeout_seconds=5
         ) as client:
-            assert len((await client.list_tools()).tools) == 4
-            result = await client.call_tool("cerebro_read", {"id": VAULT_ID.value})
-            assert result.is_error
-            assert RESTRICTED_MARKER not in result.model_dump_json()
+            await assert_read_contract(client)
 
     unused_public = free_port()
     with serving(config, private, unused_public, enable_public=False):
@@ -174,7 +209,7 @@ def test_stdio_framing_and_invalid_calls_keep_the_request_id() -> None:
 
     # A well-framed but invalid request receives a correlated error before opening a socket.
     for frame, expected in [
-        (call("cerebro_neighbors", {"id": "note", "depth": 3}), "Invalid request."),
+        (call("cerebro_neighbors", {"id": "note", "depth": 3}), "Invalid tool arguments."),
         (call("cerebro_overview", {}).ljust(65536), "Cérebro offline"),
     ]:
         output = BytesIO()

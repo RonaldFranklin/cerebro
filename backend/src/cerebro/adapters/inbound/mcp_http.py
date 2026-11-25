@@ -9,12 +9,12 @@ from contextlib import asynccontextmanager
 from mcp.server.streamable_http_manager import StreamableHTTPSessionManager
 from mcp.server.transport_security import RequestBodyLimitMiddleware
 from starlette.requests import Request
-from starlette.responses import Response
+from starlette.responses import JSONResponse, Response
 from starlette.routing import Route, Router
 from starlette.types import Message, Receive, Scope, Send
 
 from cerebro.adapters.inbound.input_limits import MAX_INPUT_BYTES
-from cerebro.adapters.inbound.mcp_tools import ReadTools, parse_tool
+from cerebro.adapters.inbound.mcp_tools import InvalidToolArguments, ReadTools, parse_tool
 from cerebro.application.dto import AuthenticateTokenRequest
 from cerebro.application.errors import AuthenticationFailed, PermissionDenied
 from cerebro.application.use_case import AnonymousUseCase
@@ -34,14 +34,18 @@ def decode_frame(body: bytes) -> dict[str, object]:
     return message
 
 
+def invalid_arguments(rpc_id: object) -> dict[str, object]:
+    return {"jsonrpc": "2.0", "id": rpc_id, "error": {"code": -32602, "message": "Invalid tool arguments."}}
+
+
 def validate_params(message: dict[str, object]) -> None:
     params = message.get("params", {})
     if not isinstance(params, dict):
-        raise ValueError("invalid parameters")
+        raise InvalidToolArguments
     if message["method"] == "tools/call":
         name = params.get("name")
         if not isinstance(name, str):
-            raise ValueError("invalid tool name")
+            raise InvalidToolArguments
         parse_tool(name, params.get("arguments"))
 
 
@@ -76,8 +80,11 @@ def http_app(
                 raise ValueError("unexpected request source")
             body = await request.body()
             if request.method == "POST":
-                validate_params(decode_frame(body))
+                message = decode_frame(body)
+                validate_params(message)
             await asyncio.to_thread(reader, request)
+        except InvalidToolArguments:
+            response: Response = JSONResponse(invalid_arguments(message.get("id")), status_code=400)
         except ValueError, RecursionError:
             response = Response("Invalid request.", status_code=400)
         except AuthenticationFailed:
