@@ -23,7 +23,7 @@ ADR-0014 defines the agent tool schemas.
   Exclude tokens, note bodies and proposal payloads from application, server, access and error logs.
 - For local development, the stdio adapter bridges bounded MCP messages to the configured private loopback
   endpoint. It obtains the credential from its process environment and sends it only in the HTTP bearer
-  header. Disable redirects. Both transports reach the same authentication and authorization checks.
+  header. Disable redirects and proxy discovery. Connect directly to a numeric loopback address. Both transports reach the same authentication and authorization checks.
 - Use an SDK client against a dev instance with sample content, a restricted note and an internal token
   for automated acceptance. Provide exact commands for the owner to test Claude Code and Codex manually in
   docs/agent-integration.md. Keep all test configuration scoped to the test workspace or process. Agent runs

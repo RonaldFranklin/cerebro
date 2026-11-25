@@ -71,7 +71,7 @@ independent review, resolution of findings and completed green CI. Use scripts/m
    Bootstrap binds the listener and supplies its immutable ceiling (private restricted, public internal).
    Keep the public listener disabled. Exercise its ceiling on a second test socket. Derive no authority from
    forwarding headers or tool arguments. Accept only HTTP bearer credentials. The bounded dev stdio bridge reads its credential
-   from the process environment and sends the bearer header to the private loopback endpoint with redirects disabled. Reserve stdout for the stdio protocol. Treat stdio as a private dev
+   from the process environment and sends the bearer header to the private loopback endpoint with redirects and proxy discovery disabled. Test that an environment HTTP proxy receives no requests. Reserve stdout for the stdio protocol. Treat stdio as a private dev
    entry point. Choose stateless HTTP with event replay disabled. Authenticate every HTTP request and
    reauthenticate each tool call with AuthenticateToken, including on established stdio connections. Require
    read scope. Test that reconnecting with a different or revoked credential cannot retrieve earlier results. The resulting context uses min(listener, token). Phase 6 handles deployment and Phase 8 handles
