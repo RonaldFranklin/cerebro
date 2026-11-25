@@ -20,6 +20,8 @@ restricted notes to callers with a lower ceiling.
   only with `include_history`.
 - Each member entry contains `id`, `title`, `type`, `priority`, `status` and `summary`; never the body.
 - A hub may itself set `hub` to a parent hub (sub-area); it then appears in the parent's member list.
+- Hub chains (a hub's `hub`, then its parent's `hub`, …) must not contain cycles and have a maximum depth of
+  **3 hubs** (an area hub plus at most two levels of sub-area hubs). Both rules are validated in the domain.
 
 ## Consequences
 

@@ -83,6 +83,8 @@ See [ADR-0015](adr/0015-hub-membership-computed-at-read-time.md).
   at read time from the index, filtered by the effective ceiling, without `superseded`/`archived` notes unless
   `include_history` is set, and ordered by priority, then title.
 - Member entries carry `id`, `title`, `type`, `priority`, `status`, `summary` — never the body.
+- A hub may set `hub` to a parent hub (sub-area). Hub chains must be acyclic and at most **3 hubs** deep
+  (area hub + two sub-area levels); violations are validation errors.
 
 ### Initial note types (`schema/types.yaml`)
 

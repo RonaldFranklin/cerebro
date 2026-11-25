@@ -57,6 +57,11 @@ Inbox, which are validated, curated and approved before becoming notes.
 ## 5. How to work
 
 - Small, verifiable steps. One phase at a time; within a phase, one use case or adapter at a time.
+- **Git workflow:** one branch per step (e.g. `phase-1/value-objects`, `docs/<topic>`), never commit to `main`
+  directly. Open a pull request with `gh pr create`, wait for CI to be green, and stop: **the owner reviews and
+  merges**. Agents never merge. Commits follow Conventional Commits (`feat:`, `fix:`, `docs:`, `build:`, `ci:`,
+  `chore:`, `test:`, `refactor:`), one commit per step unless review fixes are needed.
+- Do not start a step that depends on an unmerged pull request; branch from an up-to-date `main`.
 - Domain and application code is written test-first with in-memory fakes. Adapters get integration tests and
   shared **contract tests** that both the fake and the real adapter must pass.
 - Before declaring a task done: tests pass, `ruff` clean, `mypy --strict` clean, `import-linter` clean,
