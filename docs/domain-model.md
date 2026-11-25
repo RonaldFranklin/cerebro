@@ -248,9 +248,29 @@ one summary finding; every pattern runs in linear time on long lines.
 
 **Reports never contain the secret.** A finding carries the detector kind, the field, the line number and, for
 secrets of 16 characters or more, the first two characters. Thresholds are constants in the module. `parse_note`
-does not echo a rejected frontmatter value (or unknown key) that the scanner flags: it reports `secret_detected`
-for that field instead of quoting the value. Exceptions raised when constructing value objects directly
-(`NoteId("...")`) still quote the value; adapters must not log them verbatim.
+reports a rejected frontmatter value (or unknown key) that the scanner flags as `secret_detected` instead of
+quoting it.
+
+**Errors and report messages never contain a received value.** Exceptions from constructors and parsers
+(`NoteId("...")`, `Priority.parse(...)`), application errors (`NoteNotFound`, `ProposalNotFound`, ...) and
+`Violation`/`Finding` messages name only the field and, where useful, the type or length of what was received.
+Allowed-value lists are fine. Exactly what is and is not named:
+
+- Never named: received values, unknown frontmatter keys (reported as `unknown field #N`, with length, N being
+  the 1-based order of appearance), link, `related`, `hub` and `superseded_by` targets (reported by position:
+  `link #N of body`, `related entry #N`), and any id on a `superseded_by` or hub chain (reported by length:
+  `4 hubs deep (maximum 3)`), because chains walk the unfiltered snapshot. Duplicate findings say
+  `similar to an existing note (NN%)`, and orphan-proposal findings say `targets a note that does not exist`.
+- Named, by exception: the id of a *stored* note that links to the one being checked, in the inbound-link
+  sensitivity finding (`<id> links to this note`). That note is by definition below the checked note's
+  sensitivity, so naming it reveals nothing the reader could not see; and health-issue subjects (stored note or
+  proposal ids in the owner-only health report).
+- Exception chains carry no value either: handlers that catch a stdlib error raise the replacement outside the
+  `except` block, so `__context__` does not keep the received value (the sweep test checks `__cause__`,
+  `__context__` and `__notes__`).
+A sweep test feeds a secret-looking marker through the constructors and asserts it appears nowhere in
+`str`, `repr`, `args` or report messages. Typed attributes such as `NoteNotFound.note_id` stay for adapters, but
+are not in the message.
 
 **Known limits.** The scanner is best-effort, not a guarantee. It misses secrets split across lines (including
 YAML block values such as `password: |`) or encoded (base64, hex, reversed), short or purely lowercase unquoted
@@ -411,6 +431,12 @@ Authorization lives in the use cases, never in the adapters:
   domain entity.)
 - A token is valid when it is not revoked and `now < expires_at`; `now` is always passed explicitly, never read
   from the system clock. An invalid token never yields an `AccessContext`.
-- The entity holds only the SHA-256 hex digest, excluded from `repr`; the plaintext secret never enters the domain.
+- The entity holds only the SHA-256 digest, as a `TokenHash`: a validated, immutable non-dataclass whose `repr`,
+  `str` and `format` are `<redacted>`, so `repr(token)`, f-strings, `dataclasses.asdict`/`astuple`, `copy` and
+  logging never show the hex (`asdict` falls back to `deepcopy`, which returns the same redacted object; pickling
+  is refused). The hex is read only through the explicit `.hexdigest` (stores that persist it). `token_hash` is
+  **outside `AgentToken.__eq__`/`__hash__`**: two tokens differing only in hash are equal, so store tests assert
+  the digest explicitly. `TokenHash` equality is constant-time; `TokenStore.find_by_hash` takes a `TokenHash`.
+  The plaintext secret never enters the domain.
 - Stored hashed (SHA-256; tokens are high-entropy random). Shown once at creation.
 - The token name becomes `source.agent` on proposals.

@@ -8,6 +8,7 @@ from cerebro.domain.agent_token import AgentToken
 from cerebro.domain.decision import Decision
 from cerebro.domain.errors import InvalidValueError
 from cerebro.domain.proposal import Proposal, ProposalStatus
+from cerebro.domain.token_hash import TokenHash
 
 
 class InMemoryProposalStore:
@@ -57,7 +58,7 @@ class InMemoryTokenStore:
     def get(self, token_id: str) -> AgentToken | None:
         return self._items.get(token_id)
 
-    def find_by_hash(self, token_hash: str) -> AgentToken | None:
+    def find_by_hash(self, token_hash: TokenHash) -> AgentToken | None:
         return next((t for t in self._items.values() if t.token_hash == token_hash), None)
 
     def save(self, token: AgentToken) -> None:

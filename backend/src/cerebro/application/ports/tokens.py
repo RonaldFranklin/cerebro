@@ -3,6 +3,7 @@
 from typing import Protocol
 
 from cerebro.domain.agent_token import AgentToken
+from cerebro.domain.token_hash import TokenHash
 
 
 class TokenStore(Protocol):
@@ -12,8 +13,9 @@ class TokenStore(Protocol):
 
     def get(self, token_id: str) -> AgentToken | None: ...
 
-    def find_by_hash(self, token_hash: str) -> AgentToken | None:
-        """The token with this SHA-256 hash, **including revoked or expired ones**: the caller checks
+    def find_by_hash(self, token_hash: TokenHash) -> AgentToken | None:
+        """The token with this SHA-256 hash (compared in constant time),
+        **including revoked or expired ones**: the caller checks
         ``is_valid`` (or ``to_context``), so a revoked token is told apart from an unknown one in the audit.
         """
         ...

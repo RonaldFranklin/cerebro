@@ -119,7 +119,7 @@ def test_superseded_by_cycle_through_the_note() -> None:
     c = ref("c", superseded_by="a")
     findings = cross_note_findings(a, snap(a, b, c))
     assert [f.code for f in findings] == [ViolationCode.SUPERSEDED_BY_CYCLE]
-    assert findings[0].message == "a -> b -> c -> a"
+    assert findings[0].message == "superseded_by chain of 3 notes leads back to this note"
 
 
 def test_two_note_superseded_by_cycle() -> None:
@@ -171,7 +171,7 @@ def test_hub_chain_of_four_hubs_is_too_deep() -> None:
     h4 = ref("h4", is_hub=True, hub="h3")
     findings = cross_note_findings(h4, snap(h1, h2, h3, h4))
     assert [f.code for f in findings] == [ViolationCode.HUB_CHAIN_TOO_DEEP]
-    assert "h4 -> h3 -> h2 -> h1" in findings[0].message
+    assert findings[0].message == "4 hubs deep (maximum 3)"
 
 
 def test_regular_note_counts_only_the_hubs_above_it() -> None:
@@ -191,7 +191,7 @@ def test_hub_chain_cycle() -> None:
     h2 = ref("h2", is_hub=True, hub="h1")
     findings = cross_note_findings(h1, snap(h1, h2))
     assert [f.code for f in findings] == [ViolationCode.HUB_CHAIN_CYCLE]
-    assert findings[0].message == "h1 -> h2 -> h1"
+    assert findings[0].message == "hub chain loops back on itself after 2 notes"
 
 
 def test_regular_note_reaching_a_hub_cycle_is_reported() -> None:
@@ -288,7 +288,7 @@ def test_repeated_links_to_the_same_target_are_reported_once_per_kind() -> None:
     ]
 
 
-def test_the_message_names_only_the_target_id() -> None:
+def test_the_message_names_nothing_about_the_target() -> None:
     secret = NoteRef.from_note(
         make_note(id=nid("secret"), title="Vault master passphrase", sensitivity=RES, hub=None, related=())
     )
@@ -296,8 +296,7 @@ def test_the_message_names_only_the_target_id() -> None:
     (finding,) = [
         f for f in cross_note_findings(me, snap(secret, me)) if f.code is ViolationCode.LINK_TO_HIGHER_SENSITIVITY
     ]
-    assert "secret" in finding.message
-    for revealing in ("Vault", "passphrase", "restricted", "internal", "higher", "sensitivity"):
+    for revealing in ("secret", "Vault", "passphrase", "restricted", "internal", "higher", "sensitivity"):
         assert revealing not in finding.message
 
 

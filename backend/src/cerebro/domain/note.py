@@ -23,7 +23,7 @@ class NoteId:
         if len(self.value) > MAX_NOTE_ID_LENGTH:
             raise InvalidValueError("id", f"longer than {MAX_NOTE_ID_LENGTH} characters")
         if not is_slug(self.value):
-            raise InvalidValueError("id", f"{self.value!r} is not kebab-case")
+            raise InvalidValueError("id", "not kebab-case")
 
     def __str__(self) -> str:
         return self.value

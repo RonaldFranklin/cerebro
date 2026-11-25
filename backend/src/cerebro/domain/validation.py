@@ -55,9 +55,9 @@ def note_findings(note: Note, vocabulary: Vocabulary) -> tuple[Finding, ...]:
         add(ViolationCode.LANG_BLANK, "lang", "lang is blank")
 
     if not vocabulary.has_type(note.type):
-        add(ViolationCode.UNKNOWN_TYPE, "type", f"{note.type} is not in schema/types.yaml")
+        add(ViolationCode.UNKNOWN_TYPE, "type", "type is not in schema/types.yaml")
     if not vocabulary.has_area(note.area):
-        add(ViolationCode.UNKNOWN_AREA, "area", f"{note.area} is not in schema/areas.yaml")
+        add(ViolationCode.UNKNOWN_AREA, "area", "area is not in schema/areas.yaml")
 
     summary_length = len(note.summary.strip())
     if not SUMMARY_MIN_LENGTH <= summary_length <= SUMMARY_MAX_LENGTH:
@@ -70,7 +70,7 @@ def note_findings(note: Note, vocabulary: Vocabulary) -> tuple[Finding, ...]:
     allowed = allowed_priorities(note.type)
     if note.priority not in allowed:
         expected = " or ".join(sorted(p.value for p in allowed))
-        add(ViolationCode.PRIORITY_TYPE_MISMATCH, "priority", f"type {note.type} requires priority {expected}")
+        add(ViolationCode.PRIORITY_TYPE_MISMATCH, "priority", f"this type requires priority {expected}")
     if (note.type == CORE or note.priority is Priority.P0) and note.sensitivity is Sensitivity.RESTRICTED:
         add(ViolationCode.CORE_RESTRICTED, "sensitivity", "core (P0) notes cannot be restricted")
 

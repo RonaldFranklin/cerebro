@@ -1,4 +1,6 @@
-from dataclasses import replace
+import copy
+import pickle
+from dataclasses import asdict, astuple, replace
 from datetime import UTC, datetime, timedelta, timezone
 from typing import Any, cast
 
@@ -8,9 +10,11 @@ from cerebro.domain.access import AccessCeiling, Agent, Scope
 from cerebro.domain.agent_token import AgentToken, TokenNotValidError
 from cerebro.domain.enums import Sensitivity
 from cerebro.domain.errors import DomainError, InvalidValueError
+from cerebro.domain.token_hash import TokenHash
 
 T0 = datetime(2026, 11, 25, 12, 0, tzinfo=UTC)
-HASH = "a" * 64
+HEX = "a" * 64
+HASH = TokenHash(HEX)
 PUB, INT, RES = Sensitivity.PUBLIC, Sensitivity.INTERNAL, Sensitivity.RESTRICTED
 
 
@@ -48,13 +52,19 @@ class TestConstruction:
     @pytest.mark.parametrize("bad", ["", "a" * 63, "a" * 65, "A" * 64, "g" * 64, " " + "a" * 63, "a" * 63 + "\n"])
     def test_hash_must_be_sha256_hex(self, bad: str) -> None:
         with pytest.raises(InvalidValueError) as excinfo:
-            make_token(token_hash=bad)
+            TokenHash(bad)
         assert excinfo.value.field == "token_hash"
+
+    def test_token_hash_must_be_a_token_hash(self) -> None:
+        with pytest.raises(InvalidValueError) as excinfo:
+            make_token(token_hash=HEX)
+        assert excinfo.value.field == "token_hash"
+        assert HEX not in str(excinfo.value)
 
     def test_hash_error_does_not_echo_the_value(self) -> None:
         secret = "s3cr3t-plaintext-token-value"
         with pytest.raises(InvalidValueError) as excinfo:
-            make_token(token_hash=secret)
+            TokenHash(secret)
         assert secret not in str(excinfo.value)
 
     def test_scopes_must_be_a_non_empty_frozenset_of_scopes(self) -> None:
@@ -129,14 +139,45 @@ class TestValidity:
 
 
 class TestNoLeaks:
-    def test_repr_and_str_do_not_contain_the_hash(self) -> None:
-        token = make_token(token_hash="deadbeef" * 8)
-        assert "deadbeef" not in repr(token)
-        assert "deadbeef" not in str(token)
-        assert "token_hash" not in repr(token)
+    HEXES = "deadbeef" * 8
 
-    def test_hash_is_still_available_for_the_store(self) -> None:
-        assert make_token(token_hash="b" * 64).token_hash == "b" * 64
+    def test_repr_str_and_format_do_not_contain_the_hash(self) -> None:
+        token = make_token(token_hash=TokenHash(self.HEXES))
+        for shown in (repr(token), str(token), f"{token}", f"{token.token_hash}", f"{token.token_hash!r}"):
+            assert "deadbeef" not in shown
+        assert str(token.token_hash) == repr(token.token_hash) == format(token.token_hash, ">20") == "<redacted>"
+        assert "token_hash=<redacted>" in repr(token)
+
+    def test_asdict_astuple_and_copies_do_not_expose_the_hash(self) -> None:
+        token = make_token(token_hash=TokenHash(self.HEXES))
+        assert "deadbeef" not in repr(asdict(token))
+        assert "deadbeef" not in repr(astuple(token))
+        assert "deadbeef" not in repr(copy.deepcopy(token))
+        assert "deadbeef" not in repr(copy.copy(token))
+        assert "deadbeef" not in repr(replace(token, id="tok-2"))
+        assert copy.deepcopy(token).token_hash.hexdigest == self.HEXES  # still usable by the store
+
+    def test_the_hash_cannot_be_pickled_or_mutated(self) -> None:
+        with pytest.raises(TypeError):
+            pickle.dumps(TokenHash(self.HEXES))
+        with pytest.raises(AttributeError):
+            TokenHash(self.HEXES)._hexdigest = "x"
+        with pytest.raises(AttributeError):
+            del TokenHash(self.HEXES)._hexdigest
+
+    def test_hash_is_available_through_the_explicit_accessor(self) -> None:
+        assert make_token(token_hash=TokenHash("b" * 64)).token_hash.hexdigest == "b" * 64
+
+    def test_token_hashes_compare_by_digest_but_tokens_ignore_them(self) -> None:
+        assert TokenHash("a" * 64) == TokenHash("a" * 64)
+        assert TokenHash("a" * 64) != TokenHash("b" * 64)
+        assert TokenHash("a" * 64) != "a" * 64
+        assert hash(TokenHash("a" * 64)) == hash(TokenHash("a" * 64))
+        one, other = make_token(token_hash=TokenHash("a" * 64)), make_token(token_hash=TokenHash("b" * 64))
+        assert one == other  # the owner's rule: the hash is outside __eq__ and __hash__
+        assert hash(one) == hash(other)
+        assert one.token_hash != other.token_hash
+        assert one != make_token(id="tok-2")
 
     def test_has_no_plaintext_secret_field(self) -> None:
         names = set(AgentToken.__dataclass_fields__)
@@ -144,7 +185,7 @@ class TestNoLeaks:
 
     def test_replace_keeps_validation(self) -> None:
         with pytest.raises(InvalidValueError):
-            replace(make_token(), token_hash="nope")
+            replace(make_token(), token_hash="nope")  # type: ignore[arg-type]
 
 
 class TestContextFromToken:

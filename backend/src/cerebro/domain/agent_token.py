@@ -7,9 +7,9 @@ from typing import Final, Self
 
 from cerebro.domain.access import AccessCeiling, AccessContext, Agent, Scope, effective_ceiling, validate_agent_name
 from cerebro.domain.errors import DomainError, InvalidValueError
+from cerebro.domain.token_hash import TokenHash
 
 _TOKEN_ID: Final = re.compile(r"[A-Za-z0-9_-]{1,64}")
-_SHA256_HEX: Final = re.compile(r"[0-9a-f]{64}")
 
 
 class TokenNotValidError(DomainError):
@@ -26,15 +26,17 @@ def _require_aware(value: object, field_name: str) -> datetime:
 class AgentToken:
     """One credential per agent: who, how high it may see, what it may do, and when it stops working.
 
-    Only the SHA-256 hex digest of the secret is kept (``token_hash``); the plaintext is shown once at issue time
-    and never enters the domain. ``token_hash`` is excluded from ``repr`` so logs and tracebacks do not carry it.
+    Only the SHA-256 digest of the secret is kept (``token_hash``, a ``TokenHash`` that shows ``<redacted>`` in
+    ``repr``, ``str`` and ``asdict``); the plaintext is shown once at issue time and never enters the domain.
+    ``token_hash`` is excluded from ``__eq__`` and ``__hash__``: tokens compare by their other fields, and the
+    hash is compared explicitly (constant-time) by whoever looks a token up.
     """
 
     id: str
     agent: str
     ceiling: AccessCeiling
     scopes: frozenset[Scope]
-    token_hash: str = field(repr=False)
+    token_hash: TokenHash = field(compare=False)
     created_at: datetime
     expires_at: datetime | None = None
     revoked_at: datetime | None = None
@@ -52,8 +54,8 @@ class AgentToken:
         ):
             raise InvalidValueError("scopes", "expected a non-empty frozenset of Scope")
         object.__setattr__(self, "scopes", frozenset(self.scopes))  # plain copy, see AccessContext
-        if not isinstance(self.token_hash, str) or _SHA256_HEX.fullmatch(self.token_hash) is None:
-            raise InvalidValueError("token_hash", "expected a lowercase SHA-256 hex digest")
+        if type(self.token_hash) is not TokenHash:
+            raise InvalidValueError("token_hash", "expected a TokenHash")
         _require_aware(self.created_at, "created_at")
         if self.expires_at is not None and _require_aware(self.expires_at, "expires_at") <= self.created_at:
             raise InvalidValueError("expires_at", "must be after created_at")

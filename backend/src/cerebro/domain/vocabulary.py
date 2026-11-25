@@ -14,7 +14,7 @@ class Area:
 
     def __post_init__(self) -> None:
         if not is_slug(self.value):
-            raise InvalidValueError("area", f"{self.value!r} is not a kebab-case string")
+            raise InvalidValueError("area", "not a kebab-case string")
 
     def __str__(self) -> str:
         return self.value
@@ -28,7 +28,7 @@ class NoteType:
 
     def __post_init__(self) -> None:
         if not is_slug(self.value):
-            raise InvalidValueError("type", f"{self.value!r} is not a kebab-case string")
+            raise InvalidValueError("type", "not a kebab-case string")
 
     def __str__(self) -> str:
         return self.value

@@ -5,7 +5,7 @@ body and get back either a ``Note`` or a ``ValidationReport`` listing every stru
 """
 
 import re
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Iterator, Mapping
 from datetime import date
 from typing import Final
 
@@ -69,12 +69,25 @@ def parse_note(raw: object, body: object) -> Note | ValidationReport:
         error(ViolationCode.INVALID_FIELD, None, f"frontmatter must be a mapping, got {type(raw).__name__}")
         raw = {}
 
+    unknown = 0
     for key in raw:
         if not isinstance(key, str) or key not in FIELD_ORDER:
-            if scan_text(str(key), field="frontmatter"):
+            unknown += 1
+            # The key is received data: report neither it nor a prefix of it, only its type and length.
+            if isinstance(key, str) and scan_text(key, field="frontmatter"):
                 error(ViolationCode.SECRET_DETECTED, None, _REDACTED_KEY)
+            elif isinstance(key, str):
+                error(
+                    ViolationCode.UNKNOWN_FIELD,
+                    None,
+                    f"unknown field #{unknown} ({len(key)} characters, name not shown)",
+                )
             else:
-                error(ViolationCode.UNKNOWN_FIELD, str(key), "unknown field")
+                error(
+                    ViolationCode.UNKNOWN_FIELD,
+                    None,
+                    f"unknown field #{unknown} (a {type(key).__name__} key, not shown)",
+                )
 
     for field in FIELD_ORDER:
         value = raw.get(field)
@@ -87,8 +100,8 @@ def parse_note(raw: object, body: object) -> Note | ValidationReport:
         try:
             values[field] = _PARSERS[field](value)
         except (_FieldFormatError, InvalidValueError) as exc:
-            # Messages may quote the rejected value: never echo one that looks like a secret.
-            if scan_text(exc.message, field=field):
+            # Messages never quote the rejected value; a value that looks like a secret is still flagged as one.
+            if any(scan_text(text, field=field) for text in _texts(value)):
                 error(ViolationCode.SECRET_DETECTED, field, _REDACTED_VALUE)
             else:
                 error(ViolationCode.INVALID_FIELD, field, exc.message)
@@ -123,10 +136,18 @@ def note_to_raw(note: Note) -> dict[str, object]:
     return {key: value for key, value in raw.items() if value is not None}
 
 
+def _texts(value: object) -> Iterator[str]:
+    """The strings a rejected value holds (itself, or the str items of a list), for the secret scan."""
+    if isinstance(value, str):
+        yield value
+    elif isinstance(value, (list, tuple)):
+        yield from (item for item in value if isinstance(item, str))
+
+
 def _text(value: object) -> str:
     if isinstance(value, (bool, int, float)):
         # YAML 1.1 turns unquoted ``no``, ``on``, ``2026``, ``0x1f`` ... into booleans and numbers.
-        raise _FieldFormatError(f"expected text, got {type(value).__name__} {value!r} (quote the value)")
+        raise _FieldFormatError(f"expected text, got {type(value).__name__} (quote the value)")
     if not isinstance(value, str):
         raise _FieldFormatError(f"expected text, got {type(value).__name__}")
     return value
@@ -151,7 +172,7 @@ def _date(value: object) -> date:
             return date.fromisoformat(value)
         except ValueError:
             pass
-    raise _FieldFormatError(f"expected a date (YYYY-MM-DD), got {value!r}")
+    raise _FieldFormatError("expected a date (YYYY-MM-DD)")
 
 
 _PARSERS: Final[dict[str, Callable[[object], object]]] = {
