@@ -23,6 +23,7 @@ from cerebro.domain.enums import Sensitivity
 from cerebro.domain.errors import InvalidValueError
 from cerebro.domain.proposal import Proposal, ProposalKind, ProposalStatus, ProposedContent
 from cerebro.domain.report import ValidationReport
+from cerebro.domain.token_hash import TokenHash
 
 T0 = datetime(2026, 11, 25, 12, 0, tzinfo=UTC)
 
@@ -44,7 +45,7 @@ def make_token(token_id: str = "token-0001", secret: str = "s1", *, at: datetime
         agent="claude-code",
         ceiling=AccessCeiling(Sensitivity.INTERNAL),
         scopes=frozenset({Scope.READ}),
-        token_hash=hashlib.sha256(secret.encode()).hexdigest(),
+        token_hash=TokenHash(hashlib.sha256(secret.encode()).hexdigest()),
         created_at=at,
     )
 
@@ -144,7 +145,19 @@ class TokenStoreContract:
         assert store.get(token.id) == token
         assert store.find_by_hash(token.token_hash) == token
         assert store.get("nope") is None
-        assert store.find_by_hash(hashlib.sha256(b"other").hexdigest()) is None
+        assert store.find_by_hash(TokenHash(hashlib.sha256(b"other").hexdigest())) is None
+
+    def test_the_stored_hash_survives_the_roundtrip(self, store: TokenStore) -> None:
+        # ``token_hash`` is excluded from ``AgentToken.__eq__``, so compare the digests explicitly.
+        token = make_token(secret="s1")
+        store.add(token)
+        for stored in (store.get(token.id), store.find_by_hash(token.token_hash), *store.all()):
+            assert stored is not None
+            assert stored.token_hash.hexdigest == hashlib.sha256(b"s1").hexdigest()
+        store.save(token.revoke(T0 + timedelta(hours=1)))
+        saved = store.get(token.id)
+        assert saved is not None
+        assert saved.token_hash.hexdigest == token.token_hash.hexdigest
 
     def test_duplicate_id_or_hash_fails(self, store: TokenStore) -> None:
         store.add(make_token())

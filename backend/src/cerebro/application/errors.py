@@ -18,13 +18,13 @@ class NoteNotFound(ApplicationError):  # noqa: N818
     """
 
     def __init__(self, note_id: NoteId) -> None:
-        super().__init__(f"note not found: {note_id.value}")
+        super().__init__("note not found")
         self.note_id = note_id
 
 
 class ProposalNotFound(ApplicationError):  # noqa: N818
     def __init__(self, proposal_id: str) -> None:
-        super().__init__(f"proposal not found: {proposal_id}")
+        super().__init__("proposal not found")
         self.proposal_id = proposal_id
 
 
@@ -35,13 +35,13 @@ class ProposalConflict(ApplicationError):  # noqa: N818
     """
 
     def __init__(self, proposal_id: str) -> None:
-        super().__init__(f"proposal changed concurrently: {proposal_id}")
+        super().__init__("proposal changed concurrently")
         self.proposal_id = proposal_id
 
 
 class TokenNotFound(ApplicationError):  # noqa: N818
     def __init__(self, token_id: str) -> None:
-        super().__init__(f"token not found: {token_id}")
+        super().__init__("token not found")
         self.token_id = token_id
 
 
@@ -59,7 +59,7 @@ class AlreadyExists(ApplicationError):  # noqa: N818
     """A record with the same unique key (note id, proposal id, token id or token hash) is already stored."""
 
     def __init__(self, entity: str, key: str) -> None:
-        super().__init__(f"{entity} already exists: {key}")
+        super().__init__(f"{entity} already exists")
         self.entity = entity
         self.key = key
 
@@ -93,6 +93,6 @@ class SectionNotFound(ApplicationError):  # noqa: N818
     """
 
     def __init__(self, note_id: NoteId, section: str) -> None:
-        super().__init__(f"section not found in {note_id.value}: {section}")
+        super().__init__("section not found")
         self.note_id = note_id
         self.section = section

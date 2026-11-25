@@ -288,7 +288,7 @@ def test_repeated_links_to_the_same_target_are_reported_once_per_kind() -> None:
     ]
 
 
-def test_the_message_names_only_the_target_id() -> None:
+def test_the_message_names_nothing_about_the_target() -> None:
     secret = NoteRef.from_note(
         make_note(id=nid("secret"), title="Vault master passphrase", sensitivity=RES, hub=None, related=())
     )
@@ -296,8 +296,7 @@ def test_the_message_names_only_the_target_id() -> None:
     (finding,) = [
         f for f in cross_note_findings(me, snap(secret, me)) if f.code is ViolationCode.LINK_TO_HIGHER_SENSITIVITY
     ]
-    assert "secret" in finding.message
-    for revealing in ("Vault", "passphrase", "restricted", "internal", "higher", "sensitivity"):
+    for revealing in ("secret", "Vault", "passphrase", "restricted", "internal", "higher", "sensitivity"):
         assert revealing not in finding.message
 
 

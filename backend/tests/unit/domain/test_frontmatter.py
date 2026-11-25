@@ -154,9 +154,10 @@ def test_null_required_fields_count_as_missing() -> None:
 def test_reports_unknown_fields() -> None:
     report = parse_fail(make_raw(tags=["x"], Title="dup"))
 
-    assert sorted((v.code, v.field) for v in report.errors) == [
-        (ViolationCode.UNKNOWN_FIELD, "Title"),
-        (ViolationCode.UNKNOWN_FIELD, "tags"),
+    # received key names are never echoed: only their length
+    assert sorted((v.code, v.field, v.message) for v in report.errors) == [
+        (ViolationCode.UNKNOWN_FIELD, None, "unknown field name of 4 characters (not shown)"),
+        (ViolationCode.UNKNOWN_FIELD, None, "unknown field name of 5 characters (not shown)"),
     ]
 
 
@@ -166,7 +167,7 @@ def test_reports_non_string_keys() -> None:
 
     report = parse_fail(raw)  # type: ignore[arg-type]
 
-    assert [(v.code, v.field) for v in report.errors] == [(ViolationCode.UNKNOWN_FIELD, "1")]
+    assert [(v.code, v.field) for v in report.errors] == [(ViolationCode.UNKNOWN_FIELD, None)]
 
 
 def test_accumulates_every_problem_at_once() -> None:
@@ -175,7 +176,7 @@ def test_accumulates_every_problem_at_once() -> None:
 
     report = parse_fail(raw)
 
-    assert {v.field for v in report.errors} == {"priority", "status", "extra", "title"}
+    assert {v.field for v in report.errors} == {"priority", "status", None, "title"}
 
 
 def test_body_must_be_a_string() -> None:

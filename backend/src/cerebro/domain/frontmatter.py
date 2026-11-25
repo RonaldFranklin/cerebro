@@ -71,10 +71,13 @@ def parse_note(raw: object, body: object) -> Note | ValidationReport:
 
     for key in raw:
         if not isinstance(key, str) or key not in FIELD_ORDER:
-            if scan_text(str(key), field="frontmatter"):
+            # The key is received data: report neither it nor a prefix of it, only its type and length.
+            if isinstance(key, str) and scan_text(key, field="frontmatter"):
                 error(ViolationCode.SECRET_DETECTED, None, _REDACTED_KEY)
+            elif isinstance(key, str):
+                error(ViolationCode.UNKNOWN_FIELD, None, f"unknown field name of {len(key)} characters (not shown)")
             else:
-                error(ViolationCode.UNKNOWN_FIELD, str(key), "unknown field")
+                error(ViolationCode.UNKNOWN_FIELD, None, f"unknown field name of type {type(key).__name__}")
 
     for field in FIELD_ORDER:
         value = raw.get(field)
@@ -87,8 +90,8 @@ def parse_note(raw: object, body: object) -> Note | ValidationReport:
         try:
             values[field] = _PARSERS[field](value)
         except (_FieldFormatError, InvalidValueError) as exc:
-            # Messages may quote the rejected value: never echo one that looks like a secret.
-            if scan_text(exc.message, field=field):
+            # Messages never quote the rejected value; a value that looks like a secret is still flagged as one.
+            if isinstance(value, str) and scan_text(value, field=field):
                 error(ViolationCode.SECRET_DETECTED, field, _REDACTED_VALUE)
             else:
                 error(ViolationCode.INVALID_FIELD, field, exc.message)
@@ -126,7 +129,7 @@ def note_to_raw(note: Note) -> dict[str, object]:
 def _text(value: object) -> str:
     if isinstance(value, (bool, int, float)):
         # YAML 1.1 turns unquoted ``no``, ``on``, ``2026``, ``0x1f`` ... into booleans and numbers.
-        raise _FieldFormatError(f"expected text, got {type(value).__name__} {value!r} (quote the value)")
+        raise _FieldFormatError(f"expected text, got {type(value).__name__} (quote the value)")
     if not isinstance(value, str):
         raise _FieldFormatError(f"expected text, got {type(value).__name__}")
     return value
@@ -151,7 +154,7 @@ def _date(value: object) -> date:
             return date.fromisoformat(value)
         except ValueError:
             pass
-    raise _FieldFormatError(f"expected a date (YYYY-MM-DD), got {value!r}")
+    raise _FieldFormatError("expected a date (YYYY-MM-DD)")
 
 
 _PARSERS: Final[dict[str, Callable[[object], object]]] = {

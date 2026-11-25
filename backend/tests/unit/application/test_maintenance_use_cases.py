@@ -124,9 +124,9 @@ class TestIssueAgentToken:
         issued = tk.issue()
         stored = tk.store.get(issued.token_id)
         assert stored is not None
-        assert stored.token_hash == hashlib.sha256(issued.secret.encode()).hexdigest()
+        assert stored.token_hash.hexdigest == hashlib.sha256(issued.secret.encode()).hexdigest()
         assert issued.secret not in repr(stored)
-        assert issued.secret not in stored.token_hash
+        assert issued.secret not in stored.token_hash.hexdigest
         assert issued.secret not in repr(tk.store.all())
         assert issued.secret not in repr(issued)
         assert issued.secret not in str(issued)

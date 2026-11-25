@@ -46,7 +46,7 @@ def broken_link_findings(ref: NoteRef, snapshot: Snapshot) -> tuple[Finding, ...
             Finding(
                 code=ViolationCode.BROKEN_LINK,
                 field="body" if link.kind is LinkKind.BODY else link.kind.value,
-                message=f"links to {link.target}, which does not exist",
+                message="links to a note that does not exist",
             )
         )
     return tuple(found)
@@ -79,7 +79,7 @@ def link_sensitivity_findings(ref: NoteRef, snapshot: Snapshot) -> tuple[Finding
             Finding(
                 code=ViolationCode.LINK_TO_HIGHER_SENSITIVITY,
                 field=field,
-                message=f"{link_target} may not be linked from this note",
+                message="this link target may not be linked from this note",
             )
         )
     return tuple(found)
@@ -112,13 +112,13 @@ def hub_findings(ref: NoteRef, snapshot: Snapshot) -> tuple[Finding, ...]:
         return ()
     target = snapshot.get(ref.hub)
     if target is None:
-        return (Finding(code=ViolationCode.HUB_NOT_FOUND, field="hub", message=f"hub {ref.hub} does not exist"),)
+        return (Finding(code=ViolationCode.HUB_NOT_FOUND, field="hub", message="hub does not exist"),)
     if not target.is_hub:
         return (
             Finding(
                 code=ViolationCode.HUB_NOT_A_HUB,
                 field="hub",
-                message=f"{ref.hub} has type {target.type}, not hub",
+                message="the note referenced as hub is not of type hub",
             ),
         )
     return ()

@@ -109,7 +109,7 @@ class TestPriorityFollowsType:
     def test_message_names_the_expected_priority(self) -> None:
         report = validate_note(make_note(**{**HUB, "priority": Priority.P3}), VOCABULARY, PROPOSAL_POLICY)
 
-        assert report.violations[0].message == "type hub requires priority P1"
+        assert report.violations[0].message == "this type requires priority P1"
 
     def test_regular_note_at_p0_is_a_mismatch_and_cannot_be_restricted(self) -> None:
         assert codes(priority=Priority.P0) == [ViolationCode.PRIORITY_TYPE_MISMATCH, ViolationCode.CORE_RESTRICTED]
