@@ -28,15 +28,11 @@ Inbox, which are validated, curated and approved before becoming notes.
   outbound adapters (system, Fernet crypto, hardened git, SQLite index and state store, filesystem `NoteRepository`) and a
   minimal composition root in `bootstrap` (PRs #25-#33). Plans and records: [`docs/plans/phase-1.md`](docs/plans/phase-1.md),
   [`docs/plans/phase-2.md`](docs/plans/phase-2.md).
-- **Last merged PR:** see `git log -1` on `main` (at the time of writing: the Phase 2 close, then the hand-off PRs).
-  No PR should be open when a session starts; if one is, read it before anything else.
-- **Exact next step:** **plan Phase 3** (CLI and read-only MCP, see `docs/roadmap.md`). Write
-  `docs/plans/phase-3.md` in the same format as the Phase 2 plan (pull requests with branch, content, dependencies,
-  status; design decisions; owner adjustments) and **present it to the owner for approval before opening any code
-  PR**. The roadmap already lists the Phase 3 carry-overs: input size limits in every inbound adapter, a
-  `ListAgentTokens` use case, MCP `cerebro_neighbors` capped at depth 2. The CLI library (Typer or argparse) and the
-  MCP SDK are new dependencies: they need the owner's approval.
-- **Pending with the owner:** approval of the Phase 3 plan and its new dependencies.
+- **Phase 3 is in progress.** Follow the approved [delivery plan](docs/plans/phase-3.md) in order.
+  The owner approved argparse, the official mcp SDK, Uvicorn and their transitive dependencies subject to
+  ADR-0013. Phase 3 PRs, including security changes, may merge through the script after CI passes and an
+  independent review is resolved. The owner reviews the security checkpoint after delivery.
+- **Current step:** consult the plan and merged PRs on main. Resume from the first outstanding step.
 - **Phase 2 decisions (2026-11-25):** the owner declined a MAC for token rows and accepted the
   [residual risk](docs/architecture.md#accepted-risks-owner-decision-2026-11-25). The owner approved
   `types-pyyaml` as a development dependency for strict type checking of the filesystem adapter.

@@ -18,5 +18,6 @@
 | [0014](0014-mcp-tool-surface.md) | Small MCP tool surface | accepted |
 | [0015](0015-hub-membership-computed-at-read-time.md) | Hub membership is computed at read time | accepted |
 | [0016](0016-curator-never-sees-restricted.md) | The curator never receives restricted notes | accepted |
+| [0017](0017-cli-and-mcp-transports.md) | Owner CLI and read-only MCP transports | accepted |
 
 New decisions: copy [`0000-template.md`](0000-template.md), use the next number, add it to this table.

@@ -82,19 +82,21 @@ correct index; contract tests green for fakes and real adapters.
 composition root (`bootstrap`: `Settings`, `build_container`, a single writer lock, start-up reindex when the index
 revision differs from the repository `HEAD`) and the acceptance test `tests/integration/test_rebuild_acceptance.py`.
 
-## ⬜ Phase 3 — CLI and read-only MCP
+## 🟨 Phase 3 — CLI and read-only MCP
+
+Delivery plan: [phase-3.md](plans/phase-3.md).
 
 - CLI: `init-content`, `reindex`, `search`, `read`, `health`, `token issue|list|revoke`, `inbox list|approve|reject`.
 - MCP server with the read tools from [ADR-0014](adr/0014-mcp-tool-surface.md) over streamable HTTP
   (and stdio for local development), token auth, listener ceilings.
-- `docs/agent-integration.md` verified against real Claude Code and Codex configs.
+- `docs/agent-integration.md` provides exact manual test commands for Claude Code and Codex with isolated configuration.
 - Size limits in every inbound adapter (request body, query, proposal fields), enforced before any use case runs.
 - `ListAgentTokens` use case (owner only; never returns secrets or hashes) for `token list`.
 - MCP `cerebro_neighbors` caps `depth` at 2.
 
-**Acceptance:** Claude Code and Codex in WSL (dev) can call `cerebro_overview`, `cerebro_search`,
-`cerebro_read`, `cerebro_neighbors` against a dev instance; a token with ceiling `internal` never sees
-restricted notes.
+**Acceptance:** An SDK test client calls `cerebro_overview`, `cerebro_search`,
+`cerebro_read`, `cerebro_neighbors` against a dev instance containing a restricted fixture. A token with ceiling `internal` sees only
+permitted fixtures. The owner runs the real-client checks and reviews the security checkpoint.
 
 ## ⬜ Phase 4 — Inbox
 
