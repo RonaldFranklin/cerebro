@@ -246,7 +246,8 @@ See [ADR-0006](adr/0006-write-path-inbox-curator.md).
 
 ```yaml
 kind: create | update | link | deprecate
-target: <note id>              # required for update, link, deprecate
+target: <note id>              # required for update, link, deprecate; absent for create
+base_hash: <sha256 hex>        # required for update, link, deprecate (see "Content hash")
 title: ...
 body: ...                      # full body for create; full new body or patch for update
 suggested:
@@ -264,10 +265,12 @@ source:
 ### Lifecycle
 
 ```
-received → validated ─┬─▶ curated ─┬─▶ approved ─▶ applied
-                      │            ├─▶ rejected
-                      │            └─▶ needs_owner ─▶ approved | rejected
-                      └─▶ rejected (validation failed)
+received ─┬─▶ validated ─▶ curated ─┬─▶ approved ─▶ applied
+          │                         ├─▶ rejected
+          │                         └─▶ needs_owner ─▶ approved | rejected
+          └─▶ rejected (validation found errors)
+
+approved ─▶ needs_owner   (conflict found when applying: flagged)
 ```
 
 - **Validation** (deterministic): schema, budgets, secret scan, duplicate detection (FTS similarity against
@@ -287,6 +290,32 @@ Curated-by: curator/<model>
 Approved-by: owner
 Proposal-Id: <id>
 ```
+
+### Rules in the domain
+
+- `Proposal` is immutable; each transition (`mark_validated`, `reject_invalid`, `mark_curated`, `mark_needs_owner`,
+  `approve`, `reject`, `rebase`, `mark_applied`) returns a new instance, or raises `InvalidTransition`
+  (a `DomainError` in `domain.errors`; this is the "typed `InvalidTransition`" the use cases let propagate).
+  `applied` and `rejected` are terminal. `received → rejected` is added to the diagram: validation errors reject
+  directly (`mark_validated` requires a report without errors).
+- Required fields per kind: `create` has title and full body, no `target`, no `base_hash`; `update` has `target`,
+  `base_hash` and the **full** new body (a patch format needs a future ADR); `link` has `target`, `base_hash` and
+  non-empty `related`; `deprecate` has `target` and `base_hash`. Metadata fields (area, type, priority,
+  sensitivity) are suggestions.
+- `Decision` variants: `reject` (reason required), `merge_into` (target required), `create` (target = id of the
+  note to create, required), `needs_owner` (reason required, suggested target optional). A `curated` proposal can
+  only be approved when its decision is `merge_into` or `create`; the owner can approve any `needs_owner` one that names a note id to commit. An agent can never curate or
+  approve its own proposal, an `approved`/`applied` proposal always carries a decision, curator and approver, and
+  sending an approved proposal back to the owner (conflict) voids the approval.
+- **Content hash.** `content_hash(note)` = SHA-256 hex of the UTF-8 JSON `{"frontmatter": note_to_raw(note),
+  "body": body}` (`ensure_ascii=False`, compact separators, canonical key order, ISO dates, empty optionals
+  omitted, body byte for byte, lone surrogates encoded as-is). Optimistic concurrency: `ensure_unchanged(expected_hash, current_note)` raises
+  `ContentConflict`. `ApplyProposal` on conflict calls `mark_needs_owner(conflict=True)`; the owner then
+  `rebase`s (new `base_hash`) before approving again. `OwnerEditNote` uses the same check.
+- **Commit trailers** are validated, never rewritten: the subject is built from the note id (never from titles or
+  free text); `Proposed-by` must be a valid agent name (so `owner` can never be forged there); `Curated-by` and
+  `Approved-by` accept only letters, digits and `. _ / @ + -` (max 100); no newline or control character can
+  reach a trailer. `Proposal-Id` is the proposal id.
 
 ## 8. Agent tokens
 
