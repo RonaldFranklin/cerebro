@@ -58,9 +58,19 @@ Inbox, which are validated, curated and approved before becoming notes.
 
 - Small, verifiable steps. One phase at a time; within a phase, one use case or adapter at a time.
 - **Git workflow:** one branch per step (e.g. `phase-1/value-objects`, `docs/<topic>`), never commit to `main`
-  directly. Open a pull request with `gh pr create`, wait for CI to be green, and stop: **the owner reviews and
-  merges**. Agents never merge. Commits follow Conventional Commits (`feat:`, `fix:`, `docs:`, `build:`, `ci:`,
-  `chore:`, `test:`, `refactor:`), one commit per step unless review fixes are needed.
+  directly. Commits follow Conventional Commits (`feat:`, `fix:`, `docs:`, `build:`, `ci:`, `chore:`, `test:`,
+  `refactor:`), one commit per step plus review fixes. For every pull request:
+  1. open it with `gh pr create` and wait for CI with `gh pr checks <n> --watch`; it must be green;
+  2. run a review with a **fresh** sub-agent (or a separate session) that reads only the diff and the relevant
+     docs/ADRs and reports problems;
+  3. fix what the review reports, push, and wait for CI again;
+  4. merge with `gh pr merge <n> --squash --delete-branch`.
+- **Do not merge — stop and hand over to the owner** when the pull request:
+  - creates or changes an ADR, or changes rules in `docs/architecture.md` or `docs/domain-model.md`;
+  - touches security: access ceiling, tokens, encryption, the secret scanner;
+  - adds a new dependency (runtime or dev);
+  - has a review finding that was not resolved.
+  In that case, leave the pull request open with CI green and report what the owner should review.
 - Do not start a step that depends on an unmerged pull request; branch from an up-to-date `main`.
 - Domain and application code is written test-first with in-memory fakes. Adapters get integration tests and
   shared **contract tests** that both the fake and the real adapter must pass.
