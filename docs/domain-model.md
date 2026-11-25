@@ -352,8 +352,20 @@ Authorization lives in the use cases, never in the adapters:
   hidden targets as `NoteNotFound` too.
 - **Secrets never reach the store.** `SubmitProposal` scans every free text of the payload (title, body, summary,
   rationale, session, context). On a hit it stores a **scrubbed**, already `rejected` proposal (placeholders
-  instead of text) and returns the redacted report. `ValidateProposal` scans again and scrubs a rejected proposal
-  that holds a secret. Reports and results never quote proposed content.
+  instead of text) and returns the redacted report. `ValidateProposal` scans again, and **every** proposal it
+  rejects is stored scrubbed (not only those holding a secret): only the kind, target, base hash, source agent,
+  timestamps and the structured findings (codes, fields, detectors, line numbers) are kept; every free text and
+  every suggested field (title, body, summary, rationale, area, type, priority, sensitivity, hub, superseded_by,
+  session, context) is replaced by a placeholder or dropped (a `link` keeps `related`, which the domain requires).
+  Known property: `SubmitProposal` stores the raw payload **before** validation, sealed at rest in `state.sqlite`;
+  a validation rejection then overwrites it. The store checkpoints the WAL after every write, but sealed (never
+  plaintext) residue may remain in the WAL or in backups until a checkpoint completes. Reports and results never quote proposed content.
+- **State at rest.** `state.sqlite` seals the whole proposal (content, target, report, decision) with the
+  `Cipher`, even for `public` proposals, binding the proposal id into the sealed payload; only id, kind, status,
+  revision, source agent, timestamps and the curator/approver names are in clear, for queries and the
+  compare-and-swap. Tokens are stored by SHA-256 hash only. There is no rollback or replay protection for
+  proposal rows (each row is authentic on its own, so restoring the whole file or one row from an older backup
+  passes), and token rows are plain, unauthenticated columns protected only by the `0600` file mode.
 - **From proposal to note.** The note a proposal would write is built deterministically (`build_candidate`), the
   same way for validation and for apply. `create` needs `title`, `body`, `type`, `area`, `priority`,
   `sensitivity` and `summary` from the agent (`hub` where the type requires one; missing ones are
