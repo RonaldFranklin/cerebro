@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+from dataclasses import replace
 from pathlib import Path
 
 import httpx2
@@ -14,9 +15,10 @@ from cerebro.adapters.inbound.mcp_tools import InvalidToolArguments, parse_tool
 from cerebro.application.dto import IssueAgentTokenRequest, SubmitProposalRequest
 from cerebro.bootstrap.container import build_container
 from cerebro.domain.access import AccessCeiling, AccessContext, Scope
+from cerebro.domain.content_hash import content_hash
 from cerebro.domain.enums import Sensitivity
-from tests.integration.content_kit import BROKEN_ID, HUB_ID, SSH_ID, VAULT_ID, make_sample_repo
-from tests.integration.test_cli_bootstrap import SAMPLE
+from tests.integration.content_kit import BROKEN_ID, GHOST_ID, HUB_ID, SSH_ID, VAULT_ID, make_sample_repo, sample_notes
+from tests.integration.test_cli_bootstrap import SAMPLE, invoke
 from tests.integration.test_mcp_transports import BRIDGE, call, free_port, post, serving
 
 PROPOSE = "cerebro_propose"
@@ -136,9 +138,11 @@ def test_tool_scopes_and_submission_transports(tmp_path: Path) -> None:
         assert names == ({PROPOSE} | read_names if reads else {PROPOSE})
         if reads:
             full = await client.call_tool("cerebro_read", {"id": SSH_ID.value})
-            assert len(full.structured_content["base_hash"]) == 64
-            for args in ({"id": SSH_ID.value, "section": "SSH"}, {"id": BROKEN_ID.value}):
-                assert "base_hash" not in (await client.call_tool("cerebro_read", args)).structured_content
+            stored_note = app.notes.get(SSH_ID)
+            assert stored_note is not None
+            assert full.structured_content["base_hash"] == content_hash(stored_note)
+            section = await client.call_tool("cerebro_read", {"id": SSH_ID.value, "section": "SSH"})
+            assert "base_hash" not in section.structured_content
 
         def update(target: str) -> dict[str, object]:
             return {"kind": "update", "target": target, "base_hash": "0" * 64, "body": "synthetic"}
@@ -178,3 +182,80 @@ def test_tool_scopes_and_submission_transports(tmp_path: Path) -> None:
         asyncio.run(run())
     assert len(app.proposals.find()) == 2
     assert b"Private fixture body marker" not in config.with_suffix(".log").read_bytes()
+
+
+def test_full_projected_hash_depends_only_on_visible_fields(tmp_path: Path) -> None:
+    from tests.integration.test_mcp_tools import AGENT, tools_for
+
+    ctx = replace(AGENT, scopes=frozenset(Scope))
+    projected = []
+    for target in (GHOST_ID, VAULT_ID):
+        workdir = tmp_path / target.value
+        workdir.mkdir()
+        notes = [
+            replace(n, related=(target,), body=f"See [[{target.value}]] for details.") if n.id == BROKEN_ID else n
+            for n in sample_notes()
+        ]
+        app = build_container(make_sample_repo(workdir, notes=notes).settings)
+        app.start()
+        result = tools_for(app).call("cerebro_read", {"id": BROKEN_ID.value}, lambda: ctx)
+        view = result.structured_content
+        assert view
+        assert "base_hash" in view
+        original = app.notes.get(BROKEN_ID)
+        assert original is not None
+        assert view["base_hash"] != content_hash(original)
+        assert view["base_hash"] == content_hash(replace(original, body=view["body"], related=()))
+        projected.append(view)
+    assert projected[0] == projected[1]
+
+
+def test_combined_token_can_use_read_digest_to_propose_an_update(tmp_path: Path) -> None:
+    app = build_container(make_sample_repo(tmp_path).settings)
+    config = tmp_path / "instance.toml"
+    config.write_text(SAMPLE.replace("keys/fernet.key", "secrets/cerebro.key"))
+    credential = invoke(
+        "--config",
+        str(config),
+        "token",
+        "issue",
+        "editor",
+        "--scope",
+        "read",
+        "--scope",
+        "propose",
+        "--ceiling",
+        "internal",
+    )
+    assert credential.returncode == 0
+    port = free_port()
+
+    async def update() -> str:
+        async with (
+            httpx2.AsyncClient(
+                headers={"Authorization": "Bearer " + credential.stdout.strip()}, trust_env=False
+            ) as http,
+            Client(streamable_http_client(f"http://127.0.0.1:{port}/mcp", http_client=http)) as client,
+        ):
+            view = (await client.call_tool("cerebro_read", {"id": SSH_ID.value})).structured_content
+            outcome = (
+                await client.call_tool(
+                    PROPOSE,
+                    {
+                        "kind": "update",
+                        "target": SSH_ID.value,
+                        "base_hash": view["base_hash"],
+                        "body": "Updated work instructions.",
+                    },
+                )
+            ).structured_content
+            assert outcome["valid"]
+            return str(outcome["proposal_id"])
+
+    with serving(config, port):
+        pid = asyncio.run(update())
+    row = app.proposals.get(pid)
+    assert row is not None
+    approval = invoke("--config", str(config), "inbox", "approve", pid, "--revision", str(row.revision))
+    assert approval.returncode == 0
+    assert json.loads(approval.stdout)["status"] == "applied"

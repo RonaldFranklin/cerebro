@@ -87,5 +87,7 @@ Both transports validate the following UTF-8 budgets before authentication or ad
 | Base hash / kind, priority, sensitivity | 64 lowercase hexadecimal bytes / closed domain enums |
 
 The response exposes `proposal_id` and `valid`. Either quota returns the same fixed error, `Proposal limit reached.`
-A token with both scopes can get an optimistic-concurrency `base_hash` from a complete `cerebro_read`.
-Section and visibility-filtered views omit it. A read-only credential keeps the Phase 3 projection.
+For a token with both scopes, a full `cerebro_read` includes the canonical `base_hash` of exactly the visible
+body and editable fields. Hidden or missing references that yield the same projection produce the same hash.
+Apply compares the supplied digest to the actual stored note, so a filtered view can conflict at owner review
+or apply. Section reads and read-only credentials keep the Phase 3 projection.

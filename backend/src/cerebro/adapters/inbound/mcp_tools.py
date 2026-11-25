@@ -216,8 +216,8 @@ class MCPTools:
             elif isinstance(request, ReadNoteRequest):
                 view = self.read_note.execute(request, ctx)
                 output = read_view(view)
-                if ctx.can(Scope.PROPOSE) and view.complete:
-                    output["base_hash"] = view.content_hash
+                if ctx.can(Scope.PROPOSE) and view.visible_content_hash is not None:
+                    output["base_hash"] = view.visible_content_hash
             elif isinstance(request, SubmitProposalRequest):
                 admitted = self.submit_proposal.execute(request, ctx)
                 output = {"proposal_id": admitted.proposal_id, "valid": admitted.valid}

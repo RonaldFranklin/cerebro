@@ -4,7 +4,7 @@ Requests carry domain types (built by the inbound adapter). Responses are dedica
 note is read on purpose: they are never the ``Note`` entity, so a field added to ``Note`` cannot leak by accident.
 """
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import date, datetime
 from enum import StrEnum
 from typing import Final
@@ -250,7 +250,7 @@ class NoteView:
     section: str | None
     body: str
     members: tuple[HubMember, ...] | None = None
-    complete: bool = False
+    visible_content_hash: str | None = None
 
     @classmethod
     def from_note(
@@ -264,6 +264,11 @@ class NoteView:
         section: str | None = None,
         members: tuple[HubMember, ...] | None = None,
     ) -> NoteView:
+        stored_hash = content_hash(note)
+        visible_hash = None
+        if section is None:
+            visible = replace(note, body=body, hub=hub, related=related, superseded_by=superseded_by)
+            visible_hash = stored_hash if visible == note else content_hash(visible)
         return cls(
             id=note.id,
             title=note.title,
@@ -280,14 +285,8 @@ class NoteView:
             created=note.created,
             updated=note.updated,
             review_by=note.review_by,
-            content_hash=content_hash(note),
-            complete=(
-                section is None
-                and body == note.body
-                and hub == note.hub
-                and related == note.related
-                and superseded_by == note.superseded_by
-            ),
+            content_hash=stored_hash,
+            visible_content_hash=visible_hash,
             section=section,
             body=body,
             members=members,
