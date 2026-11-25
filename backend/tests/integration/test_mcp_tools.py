@@ -6,11 +6,12 @@ import sqlite3
 from pathlib import Path
 
 import pytest
-from mcp import types
+from mcp import MCPError, types
 from mcp.client import Client
 
 from cerebro.adapters.inbound.mcp_tools import ReadTools, parse_tool
 from cerebro.application.dto import GetNeighborsRequest, SearchNotesRequest
+from cerebro.application.errors import AuthenticationFailed
 from cerebro.bootstrap.container import Container, build_container
 from cerebro.domain.access import AccessCeiling, AccessContext, Agent, Scope
 from cerebro.domain.enums import Priority, Sensitivity, Status
@@ -156,4 +157,26 @@ def test_sdk_client_discovers_and_calls_registered_handlers(container: Container
             assert rejected.is_error
 
     asyncio.run(run())
-    assert checks == 1
+    assert checks == 2
+
+
+def test_sdk_discovery_reauthenticates_even_after_a_success(container: Container) -> None:
+    current: AccessContext | None = None
+
+    def authenticate(request: object) -> AccessContext:
+        if current is None:
+            raise AuthenticationFailed
+        return current
+
+    async def run() -> None:
+        nonlocal current
+        async with Client(tools_for(container).server(authenticate)) as client:
+            with pytest.raises(MCPError, match="Access denied"):
+                await client.list_tools(cache_mode="bypass")
+            current = AGENT
+            assert len((await client.list_tools(cache_mode="bypass")).tools) == 4
+            current = None
+            with pytest.raises(MCPError, match="Access denied"):
+                await client.list_tools(cache_mode="bypass")
+
+    asyncio.run(run())

@@ -5,7 +5,7 @@ import json
 from collections.abc import Callable
 from dataclasses import dataclass
 
-from mcp import types
+from mcp import MCPError, types
 from mcp.server import Server, ServerRequestContext
 
 from cerebro.adapters.inbound.input_limits import MAX_FIELD_BYTES, MAX_QUERY_BYTES, bounded_text
@@ -158,6 +158,12 @@ def _error(message: str) -> types.CallToolResult:
     return types.CallToolResult(is_error=True, content=[types.TextContent(text=message)])
 
 
+def _reader(ctx: AccessContext) -> AccessContext:
+    if ctx.is_owner or not ctx.can(Scope.READ):
+        raise PermissionDenied("read")
+    return ctx
+
+
 @dataclass(frozen=True, slots=True, kw_only=True)
 class ReadTools:
     get_overview: ContextUseCase[GetOverviewRequest, Overview]
@@ -171,9 +177,7 @@ class ReadTools:
     def call(self, name: str, arguments: object, authenticate: Callable[[], AccessContext]) -> types.CallToolResult:
         try:
             request = parse_tool(name, arguments)
-            ctx = authenticate()
-            if ctx.is_owner or not ctx.can(Scope.READ):
-                raise PermissionDenied("read")
+            ctx = _reader(authenticate())
             if isinstance(request, GetOverviewRequest):
                 output = _overview(self.get_overview.execute(request, ctx))
             elif isinstance(request, SearchNotesRequest):
@@ -199,6 +203,12 @@ class ReadTools:
         async def list_tools(
             ctx: ServerRequestContext[dict[str, object]], params: types.PaginatedRequestParams | None
         ) -> types.ListToolsResult:
+            try:
+                _reader(await asyncio.to_thread(authenticate, ctx.request))
+            except AuthenticationFailed, PermissionDenied:
+                raise MCPError(code=types.INVALID_REQUEST, message="Access denied.") from None
+            except Exception:
+                raise MCPError(code=types.INTERNAL_ERROR, message="Cérebro offline") from None
             return self.list_tools()
 
         async def call_tool(
