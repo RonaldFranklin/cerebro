@@ -67,6 +67,16 @@ review_by: 2027-05-24            # optional; health report flags overdue notes
 | `created`, `updated` | yes | ISO dates, `updated ≥ created` |
 | `review_by` | no | ISO date |
 
+Structure and rule details enforced by the domain:
+
+- **Strict frontmatter.** Unknown keys are errors. A key whose value is `null` counts as missing (default for
+  optional fields, error for required ones). Dates are `YYYY-MM-DD`; timestamps are rejected.
+- **Type and priority go together:** type `core` ⇔ priority `P0`, type `hub` ⇔ priority `P1`.
+- `summary` length is measured after trimming surrounding whitespace. `hub`, `related` and `superseded_by`
+  cannot reference the note itself. Duplicate ids in `related` are a warning.
+- **Severities.** Every rule reports violations (with a stable code) instead of stopping at the first one.
+  `error` blocks a change; `warning` is reported (e.g. by the health report) but does not block.
+
 ### Links
 
 - Body links use wikilinks: `[[note-id]]` or `[[note-id#Section heading]]`.
@@ -96,6 +106,8 @@ Additional rules:
 - Search results contain only `id`, `title`, `type`, `area`, `priority`, `status`, `summary`.
 - `ReadNote` supports reading a single section by heading.
 - Notes above the soft limit are flagged by the health report; above the hard limit they are rejected.
+- **Word count** = number of whitespace-separated tokens in the body (frontmatter excluded; Markdown syntax and
+  code blocks count like any other text). P0 notes have no individual limit, only the combined one.
 
 ## 4. Sensitivity and access ceiling
 
