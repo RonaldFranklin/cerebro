@@ -117,6 +117,14 @@ Ports are `typing.Protocol` classes in `cerebro.application.ports`. Each one has
 - `GetNeighbors` — incoming/outgoing links up to N hops (also feeds the UI graph).
 - `GetGraph` — full graph (nodes + edges + attributes) for the UI, filtered by ceiling.
 
+All read use cases take `execute(request, ctx)`, require the `read` scope (`PermissionDenied` otherwise, checked
+first) and apply `ctx.ceiling` (`include_history` only adds `superseded`/`archived`). A hidden note, a missing note
+and a hidden neighbors center all raise the same `NoteNotFound`; search results, hub member lists, neighbors and
+the graph contain visible notes only and carry no totals, so nothing reveals a hidden note. `GetOverview` serves
+current P0 notes in id order within the 1,500-word core budget (`core_truncated` when some do not fit) plus the
+visible hubs and their areas. `ReadNote` accepts `id`, `id#Section` or `[[id#Section]]` (`SectionNotFound` for a
+visible note without that heading) and, for a hub, returns the member list built at read time (ADR-0015).
+
 **Write**
 - `SubmitProposal` — store an incoming proposal in the Inbox (agents only have this).
 - `ValidateProposal` — deterministic checks: schema, budgets, secret scan, duplicates.
