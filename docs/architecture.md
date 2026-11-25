@@ -54,9 +54,11 @@ backend/
 │   │   ├── vocabulary.py      # Area, NoteType, Vocabulary (controlled lists from schema/*.yaml)
 │   │   ├── slug.py            # kebab-case rule shared by ids, areas and types
 │   │   ├── access.py          # AccessCeiling, visibility rules
-│   │   ├── budgets.py         # size/word/summary limits
+│   │   ├── budgets.py         # word count, per-note and combined P0 budgets
 │   │   ├── proposal.py        # Proposal, ProposalKind, lifecycle, Decision
 │   │   ├── secrets_scan.py    # regex patterns that block secret-looking content
+│   │   ├── report.py          # Violation, ViolationCode, Severity, ValidationReport
+│   │   ├── frontmatter.py     # parse_note (raw mapping -> Note | report), note_to_raw (canonical order)
 │   │   ├── validation.py      # note + proposal validation, returns violations
 │   │   └── errors.py
 │   ├── application/

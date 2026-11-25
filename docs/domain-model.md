@@ -67,6 +67,29 @@ review_by: 2027-05-24            # optional; health report flags overdue notes
 | `created`, `updated` | yes | ISO dates, `updated ≥ created` |
 | `review_by` | no | ISO date |
 
+Structure and rule details enforced by the domain:
+
+- **Strict frontmatter.** Unknown keys are errors. A key whose value is `null` counts as missing (default for
+  optional fields, error for required ones). Dates are `YYYY-MM-DD`; timestamps are rejected. Frontmatter that
+  is not a mapping (empty, list, scalar) is reported, not a crash. Values YAML 1.1 turns into booleans or
+  numbers (`no`, `on`, `2026`) are rejected with a hint to quote them.
+- **Type decides priority:** `core` ⇒ `P0`, `hub` ⇒ `P1`, every other type ⇒ `P2` or `P3`. Rules that depend
+  on the kind of note (hub requirement, body budget) key on the type. P0/core notes cannot be `restricted`.
+- **`hub` field:** required for every type except `core` and `hub`; optional for a hub (its parent hub);
+  **not allowed** for `core` notes (they are global, not part of an area).
+- `title` is not blank, a single line, and ≤ 120 characters after trimming. `summary` length is also measured
+  after trimming. `lang` is not blank.
+- `hub`, `related` and `superseded_by` cannot reference the note itself. Duplicate ids in `related` are
+  flagged.
+- **Severity depends on the write path.** Rules report findings with a stable code and never stop at the first
+  one. A severity policy per write path decides which findings are `error` (block the change) and which are
+  `warning` (reported, e.g. by the health report, but not blocking). Proposals and owner edits share the same
+  rules; today both treat only the soft word limit and duplicate `related` ids as warnings. Broken links will
+  be a warning for owner edits and an error for proposals. Structural frontmatter problems are always errors.
+- Enforced outside the domain: `id` equals the file name (filesystem repository adapter, Phase 2); `id` is
+  immutable (`OwnerEditNote` / `ApplyProposal`). Rules that need other notes (existence of `hub`, `related`,
+  `superseded_by`; broken links; cycles; hub chain depth) come with link extraction.
+
 ### Links
 
 - Body links use wikilinks: `[[note-id]]` or `[[note-id#Section heading]]`.
@@ -109,6 +132,10 @@ Additional rules:
 - Search results contain only `id`, `title`, `type`, `area`, `priority`, `status`, `summary`.
 - `ReadNote` supports reading a single section by heading.
 - Notes above the soft limit are flagged by the health report; above the hard limit they are rejected.
+- **Word count** = number of whitespace-separated tokens in the body (frontmatter excluded; Markdown syntax and
+  code blocks count like any other text). P0 notes have no individual limit, only the combined one, which
+  counts only **current** P0 notes (the ones `GetOverview` serves), with a proposed version replacing the
+  stored one when a change is validated.
 
 ## 4. Sensitivity and access ceiling
 
