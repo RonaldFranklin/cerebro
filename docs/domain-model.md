@@ -165,6 +165,16 @@ effective_ceiling = min(listener_ceiling, token_ceiling)
 - **Token ceiling:** set when the owner issues the agent token.
 - Notes above the effective ceiling are **invisible**: not in search, not in hubs, not in neighbors, not in
   the graph. Reading one by id returns "not found" (no existence leak).
+- **Visibility rule** (`cerebro.domain.access.is_visible`): a note is visible when its sensitivity is `<=` the
+  effective ceiling and its status is current, or `include_history` is set (`superseded` / `archived`).
+  `include_history` never raises the ceiling. Callers treat "not visible" exactly like "does not exist".
+- **Fail closed:** `effective_ceiling(listener, token)` has no defaults; wrongly typed ceilings raise, and
+  `is_visible` / `AccessCeiling.allows` / `AccessContext.can` deny any value of an unexpected type.
+- **Principals and scopes:** `AccessContext(principal, ceiling, scopes)` is built once per request, with
+  `ceiling` already the effective ceiling. `principal` is `Agent(name)` or `Owner`. Scopes are `read` and
+  `propose`. The **owner has every scope** but is still limited by the **listener** ceiling (there is no token);
+  owner-only actions (owner edit, review, maintenance) require the `Owner` principal, not a scope. An agent only
+  has the scopes of its token. Agent names are lowercase (`claude-code@workstation`, at most 64 characters).
 - `restricted` notes are encrypted at rest in the content repository ([ADR-0008](adr/0008-encryption-of-restricted-notes.md)).
 
 ## 5. Status
@@ -280,6 +290,11 @@ Proposal-Id: <id>
 ## 8. Agent tokens
 
 - One token per agent (e.g. `claude-code@workstation`, `codex@workstation`).
-- Attributes: name, scopes (`read`, `propose`), ceiling, created, last_used, revoked.
+- Attributes: id, agent name, scopes (`read`, `propose`, at least one), ceiling, created, optional expiry,
+  optional revocation time, token hash. (`last_used` is operational data kept by the token store, not part of the
+  domain entity.)
+- A token is valid when it is not revoked and `now < expires_at`; `now` is always passed explicitly, never read
+  from the system clock. An invalid token never yields an `AccessContext`.
+- The entity holds only the SHA-256 hex digest, excluded from `repr`; the plaintext secret never enters the domain.
 - Stored hashed (SHA-256; tokens are high-entropy random). Shown once at creation.
 - The token name becomes `source.agent` on proposals.
