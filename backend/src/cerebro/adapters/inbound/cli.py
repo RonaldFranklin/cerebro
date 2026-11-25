@@ -19,6 +19,9 @@ def parse_arguments(args: Sequence[str]) -> argparse.Namespace:
     parser.add_argument("--config", type=Path, help="read instance settings from a UTF-8 TOML file")
     parser.add_argument("--check-config", action="store_true", help="validate settings and exit")
 
+    commands = parser.add_subparsers(dest="command")
+    commands.add_parser("init-content", help="initialize the private content repository")
+
     size = 0
     for arg in args:
         try:
@@ -28,6 +31,6 @@ def parse_arguments(args: Sequence[str]) -> argparse.Namespace:
         if size > MAX_INPUT_BYTES:
             parser.error("arguments exceed byte limit")
     options = parser.parse_args(args)
-    if not options.check_config:
+    if options.check_config == (options.command is not None):
         parser.error("missing command")
     return options
