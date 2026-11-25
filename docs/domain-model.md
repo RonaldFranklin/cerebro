@@ -253,8 +253,21 @@ quoting it.
 
 **Errors and report messages never contain a received value.** Exceptions from constructors and parsers
 (`NoteId("...")`, `Priority.parse(...)`), application errors (`NoteNotFound`, `ProposalNotFound`, ...) and
-`Violation`/`Finding` messages name only the field and, where useful, the type or length of what was received
-(unknown frontmatter keys are reported by length, link and hub targets are not named). Allowed-value lists are fine.
+`Violation`/`Finding` messages name only the field and, where useful, the type or length of what was received.
+Allowed-value lists are fine. Exactly what is and is not named:
+
+- Never named: received values, unknown frontmatter keys (reported as `unknown field #N`, with length, N being
+  the 1-based order of appearance), link, `related`, `hub` and `superseded_by` targets (reported by position:
+  `link #N of body`, `related entry #N`), and any id on a `superseded_by` or hub chain (reported by length:
+  `4 hubs deep (maximum 3)`), because chains walk the unfiltered snapshot. Duplicate findings say
+  `similar to an existing note (NN%)`, and orphan-proposal findings say `targets a note that does not exist`.
+- Named, by exception: the id of a *stored* note that links to the one being checked, in the inbound-link
+  sensitivity finding (`<id> links to this note`). That note is by definition below the checked note's
+  sensitivity, so naming it reveals nothing the reader could not see; and health-issue subjects (stored note or
+  proposal ids in the owner-only health report).
+- Exception chains carry no value either: handlers that catch a stdlib error raise the replacement outside the
+  `except` block, so `__context__` does not keep the received value (the sweep test checks `__cause__`,
+  `__context__` and `__notes__`).
 A sweep test feeds a secret-looking marker through the constructors and asserts it appears nowhere in
 `str`, `repr`, `args` or report messages. Typed attributes such as `NoteNotFound.note_id` stay for adapters, but
 are not in the message.

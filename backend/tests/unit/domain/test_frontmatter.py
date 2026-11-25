@@ -156,8 +156,8 @@ def test_reports_unknown_fields() -> None:
 
     # received key names are never echoed: only their length
     assert sorted((v.code, v.field, v.message) for v in report.errors) == [
-        (ViolationCode.UNKNOWN_FIELD, None, "unknown field name of 4 characters (not shown)"),
-        (ViolationCode.UNKNOWN_FIELD, None, "unknown field name of 5 characters (not shown)"),
+        (ViolationCode.UNKNOWN_FIELD, None, "unknown field #1 (4 characters, name not shown)"),
+        (ViolationCode.UNKNOWN_FIELD, None, "unknown field #2 (5 characters, name not shown)"),
     ]
 
 

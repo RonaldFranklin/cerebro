@@ -42,14 +42,26 @@ def broken_link_findings(ref: NoteRef, snapshot: Snapshot) -> tuple[Finding, ...
     for link in ref.links:
         if link.kind is LinkKind.HUB or link.target == ref.id or link.target in snapshot:
             continue
+        field = "body" if link.kind is LinkKind.BODY else link.kind.value
         found.append(
             Finding(
                 code=ViolationCode.BROKEN_LINK,
-                field="body" if link.kind is LinkKind.BODY else link.kind.value,
-                message="links to a note that does not exist",
+                field=field,
+                message=f"{_position(ref, field, link.target)} points to a note that does not exist",
             )
         )
     return tuple(found)
+
+
+def _position(ref: NoteRef, field: str, target: NoteId) -> str:
+    """Where a reference sits, without naming it: ``link #2 of body`` or ``related entry #1`` (1-based)."""
+    if field == "body":
+        ordered = [link.target for link in ref.body_links]
+        ordered += [t for t in ref.loose_body_targets if t not in ordered]
+        return f"link #{ordered.index(target) + 1} of body" if target in ordered else "a body link"
+    if field == "related" and target in ref.related:
+        return f"related entry #{ref.related.index(target) + 1}"
+    return field
 
 
 def _link_targets(ref: NoteRef) -> tuple[tuple[str, NoteId], ...]:
@@ -79,7 +91,7 @@ def link_sensitivity_findings(ref: NoteRef, snapshot: Snapshot) -> tuple[Finding
             Finding(
                 code=ViolationCode.LINK_TO_HIGHER_SENSITIVITY,
                 field=field,
-                message="this link target may not be linked from this note",
+                message=f"{_position(ref, field, link_target)} may not be linked from this note",
             )
         )
     return tuple(found)
@@ -132,8 +144,9 @@ def superseded_by_cycle_findings(ref: NoteRef, snapshot: Snapshot) -> tuple[Find
     current: NoteId | None = ref.superseded_by
     while current is not None:
         if current == ref.id:
-            cycle = " -> ".join(str(i) for i in (*path, ref.id))
-            return (Finding(code=ViolationCode.SUPERSEDED_BY_CYCLE, field="superseded_by", message=cycle),)
+            # Ids on the path come from the unfiltered snapshot: only the length is reported.
+            message = f"superseded_by chain of {len(path)} notes leads back to this note"
+            return (Finding(code=ViolationCode.SUPERSEDED_BY_CYCLE, field="superseded_by", message=message),)
         if current in path:
             return ()  # a cycle that does not include ref: reported on the notes that are in it
         path.append(current)
@@ -155,8 +168,8 @@ def hub_chain_findings(ref: NoteRef, snapshot: Snapshot) -> tuple[Finding, ...]:
     current: NoteId | None = ref.hub
     while current is not None:
         if current in seen:
-            names = " -> ".join(str(i) for i in (ref.id, *[i for i in chain if i != ref.id], current))
-            return (Finding(code=ViolationCode.HUB_CHAIN_CYCLE, field="hub", message=names),)
+            message = f"hub chain loops back on itself after {len(seen)} notes"
+            return (Finding(code=ViolationCode.HUB_CHAIN_CYCLE, field="hub", message=message),)
         node = snapshot.get(current)
         if node is None or not node.is_hub:
             break
@@ -164,12 +177,11 @@ def hub_chain_findings(ref: NoteRef, snapshot: Snapshot) -> tuple[Finding, ...]:
         chain.append(current)
         current = node.hub
     if len(chain) > MAX_HUB_CHAIN_DEPTH:
-        names = " -> ".join(str(i) for i in chain)
         return (
             Finding(
                 code=ViolationCode.HUB_CHAIN_TOO_DEEP,
                 field="hub",
-                message=f"{len(chain)} hubs deep (maximum {MAX_HUB_CHAIN_DEPTH}): {names}",
+                message=f"{len(chain)} hubs deep (maximum {MAX_HUB_CHAIN_DEPTH})",
             ),
         )
     return ()

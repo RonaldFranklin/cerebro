@@ -54,7 +54,7 @@ class AgentToken:
         ):
             raise InvalidValueError("scopes", "expected a non-empty frozenset of Scope")
         object.__setattr__(self, "scopes", frozenset(self.scopes))  # plain copy, see AccessContext
-        if not isinstance(self.token_hash, TokenHash):
+        if type(self.token_hash) is not TokenHash:
             raise InvalidValueError("token_hash", "expected a TokenHash")
         _require_aware(self.created_at, "created_at")
         if self.expires_at is not None and _require_aware(self.expires_at, "expires_at") <= self.created_at:

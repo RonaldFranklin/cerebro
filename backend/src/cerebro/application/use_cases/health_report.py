@@ -126,7 +126,7 @@ class HealthReport:
                     code=HealthCode.ORPHAN_PROPOSAL,
                     severity=Severity.WARNING,
                     field="target",
-                    message=f"targets {proposal.target}, which does not exist",
+                    message="targets a note that does not exist",
                 )
             if now - proposal.updated_at > STALE_PROPOSAL_AFTER:
                 yield HealthIssue(

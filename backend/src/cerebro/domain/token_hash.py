@@ -2,7 +2,7 @@
 
 import hmac
 import re
-from typing import Final, NoReturn, Self
+from typing import Final, NoReturn, Self, final
 
 from cerebro.domain.errors import InvalidValueError
 
@@ -10,6 +10,7 @@ _SHA256_HEX: Final = re.compile(r"[0-9a-f]{64}")
 REDACTED: Final = "<redacted>"
 
 
+@final
 class TokenHash:
     """A validated lowercase SHA-256 hex digest that never shows itself.
 
@@ -66,4 +67,7 @@ class TokenHash:
         return self
 
     def __reduce__(self) -> NoReturn:
+        raise TypeError("TokenHash cannot be pickled")
+
+    def __getstate__(self) -> NoReturn:
         raise TypeError("TokenHash cannot be pickled")

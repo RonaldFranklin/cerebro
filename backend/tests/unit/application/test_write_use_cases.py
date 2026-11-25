@@ -224,7 +224,8 @@ class TestValidateProposal:
         assert ViolationCode.LINK_TO_HIGHER_SENSITIVITY in {v.code for v in outcome.validation.errors}
         for violation in outcome.validation.violations:
             if violation.code is ViolationCode.LINK_TO_HIGHER_SENSITIVITY:
-                assert violation.message == "this link target may not be linked from this note"
+                assert violation.message.endswith(" may not be linked from this note")
+                assert "vault-layout" not in violation.message
                 assert "Vault layout" not in violation.message
 
     @pytest.mark.parametrize("body", ["`[[vault-layout]]`", "[[vault-layout|the vault]]", "```\n[[vault-layout]]\n```"])
@@ -985,7 +986,8 @@ class TestOwnerEditNote:
         messages = [
             v.message for v in result.validation.violations if v.code is ViolationCode.LINK_TO_HIGHER_SENSITIVITY
         ]
-        assert messages == ["this link target may not be linked from this note"]
+        assert [m.endswith(" may not be linked from this note") for m in messages] == [True]
+        assert "vault-layout" not in messages[0]
 
     @pytest.mark.parametrize("body", ["`[[vault-layout]]`", "[[vault-layout|the vault]]"])
     def test_alias_and_code_span_links_are_errors_for_the_owner(self, kit: Kit, body: str) -> None:

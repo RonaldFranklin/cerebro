@@ -98,7 +98,7 @@ class ValidateProposal:
             Finding(
                 code=ViolationCode.POSSIBLE_DUPLICATE,
                 field="title",
-                message=f"similar to {hit.id} ({hit.score:.0%})",
+                message=f"similar to an existing note ({hit.score:.0%})",
             )
             for hit in hits
             if hit.score >= DUPLICATE_MIN_SCORE and hit.id != candidate.id

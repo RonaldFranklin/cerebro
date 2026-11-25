@@ -37,11 +37,14 @@ class AuthenticateToken:
         try:
             presented = hash_token_secret(secret)
         except UnicodeEncodeError:  # e.g. a lone surrogate: must fail like any other bad secret
-            raise AuthenticationFailed from None
+            presented = None  # raised below, outside the handler: ``__context__`` would hold the secret
+        if presented is None:
+            raise AuthenticationFailed
         token = self._tokens.find_by_hash(presented)
         if token is None or not hmac.compare_digest(token.token_hash.hexdigest.encode(), presented.hexdigest.encode()):
             raise AuthenticationFailed
         try:
             return token.to_context(request.listener, self._clock.now())
         except DomainError:
-            raise AuthenticationFailed from None
+            pass
+        raise AuthenticationFailed

@@ -52,8 +52,9 @@ def _parse[E: StrEnum](enum: type[E], value: str, field: str) -> E:
     try:
         return enum(value)
     except ValueError:
-        allowed = ", ".join(member.value for member in enum)
-        raise InvalidValueError(field, f"not one of: {allowed}") from None
+        pass  # raised below, outside the handler: ``__context__`` would otherwise keep the received value
+    allowed = ", ".join(member.value for member in enum)
+    raise InvalidValueError(field, f"not one of: {allowed}")
 
 
 class Priority(_OrderedStrEnum):
