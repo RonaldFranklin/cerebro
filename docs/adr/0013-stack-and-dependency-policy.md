@@ -14,6 +14,18 @@ The owner wants mature libraries in stable versions, used only where needed.
 - Only stable releases (no alpha/beta/rc). Projects must be actively maintained and widely used.
 - Pin exact versions in committed lockfiles (`uv.lock`, `pnpm-lock.yaml`). Upgrade deliberately, one
   dependency at a time, with tests green.
+- **Release age ≥ 7 days.** Use only versions published at least 7 days ago, as protection against
+  compromised releases (which are usually detected and yanked within days). This applies to every pinned
+  artifact: Python packages (direct and transitive), the build backend, uv itself, GitHub Actions, and later
+  Node, pnpm and npm packages.
+  - Python packages are enforced by uv: `[tool.uv] exclude-newer = "7 days"` in `backend/pyproject.toml`
+    (stored in `uv.lock` as `exclude-newer-span = "P7D"`). `uv lock` refuses to pick anything newer.
+  - Tools and actions that uv cannot check (the uv binary and `tool.uv.required-version`, `uv_build`'s
+    `build-system` pin, the uv version in CI, GitHub Action SHAs) are checked by hand before bumping: look up
+    the release date (PyPI upload time or GitHub release date) and pin the newest release that is at least
+    7 days old.
+  - Frontend (Phase 5): use pnpm's equivalent setting (minimum release age), or the same manual check if the
+    chosen pnpm version lacks it.
 - Runtime versions:
   - Python = newest minor that has been GA for at least 12 months. Chosen and pinned at bootstrap (Phase 0).
   - Node = the Active LTS line current when Phase 5 (web UI) starts. Only this policy is fixed now; the exact

@@ -194,17 +194,18 @@ releases and recorded here once the lockfile is generated, so this table matches
 
 ### Pinned backend versions (Phase 0)
 
-Source of truth: `backend/uv.lock`. Update this table in the same commit as any upgrade.
+Source of truth: `backend/uv.lock`. Update this table in the same commit as any upgrade. Every version must
+have been published at least 7 days earlier ([ADR-0013](adr/0013-stack-and-dependency-policy.md)).
 
 | Tool | Version | Role |
 |---|---|---|
 | Python | 3.14 (`requires-python = "==3.14.*"`, `.python-version`) | runtime; 3.14.10 installed at bootstrap |
-| uv | ≥ 0.13.10 (`tool.uv.required-version`) | env, lockfile, runner |
-| uv_build | 0.13.10 | build backend |
+| uv | ≥ 0.13.9 (`tool.uv.required-version`; 0.13.9 in CI) | env, lockfile, runner |
+| uv_build | 0.13.9 | build backend |
 | pytest | 9.2.0 | tests |
-| pytest-cov | 7.1.0 (pulls coverage 7.17.5) | coverage; `fail_under = 90` on `cerebro.domain` + `cerebro.application` |
-| ruff | 0.17.6 | lint + format |
+| pytest-cov | 7.1.0 (pulls coverage 7.17.3) | coverage; `fail_under = 90` on `cerebro.domain` + `cerebro.application` |
+| ruff | 0.17.5 | lint + format |
 | mypy | 2.4.1 | type checking (`strict`) |
-| import-linter | 2.17 | import contracts (pulls grimp 3.20) |
+| import-linter | 2.16 | import contracts (pulls grimp 3.20) |
 
 Runtime dependencies: none yet. Frontend versions (Node, pnpm, packages) are added in Phase 5.
