@@ -65,8 +65,9 @@ Pending phase approval. Record each adjustment here with the affected PR numbers
    Keep the public listener disabled. Exercise its ceiling on a second test socket. Derive no authority from
    forwarding headers or tool arguments. Accept HTTP bearer credentials and a separately provisioned dev token
    from the stdio process environment. Reserve stdout for the stdio protocol. Treat stdio as a private dev
-   entry point. Reauthenticate each call with AuthenticateToken, including on an established session, and require
-   read scope. The resulting context uses min(listener, token). Phase 6 handles deployment and Phase 8 handles
+   entry point. Choose stateless HTTP with event replay disabled. Authenticate every HTTP request and
+   reauthenticate each tool call with AuthenticateToken, including on established stdio connections. Require
+   read scope. Test that reconnecting with a different or revoked credential cannot retrieve earlier results. The resulting context uses min(listener, token). Phase 6 handles deployment and Phase 8 handles
    Cloudflare. Tokens travel off-host only over HTTPS.
    [ADR-0005](../adr/0005-sensitivity-and-access-ceiling.md) · [ADR-0010](../adr/0010-network-access.md)
 5. **Bound input before use cases.** Proposed starting limits are 64 KiB per MCP message or CLI structured input,
