@@ -1,0 +1,44 @@
+"""Time, ids, secrets, encryption and backup: small outbound ports."""
+
+from datetime import datetime
+from typing import Protocol
+
+
+class Clock(Protocol):
+    def now(self) -> datetime:
+        """The current time, timezone-aware (UTC)."""
+        ...
+
+
+class IdGenerator(Protocol):
+    def new_proposal_id(self) -> str:
+        """A unique, time-sortable proposal id (1-64 characters of letters, digits, ``_`` or ``-``)."""
+        ...
+
+    def new_token_id(self) -> str:
+        """A unique token id (same alphabet as proposal ids)."""
+        ...
+
+    def new_token_secret(self) -> str:
+        """A new unguessable token secret. Shown once at issue time; only its SHA-256 hash is stored."""
+        ...
+
+
+class Cipher(Protocol):
+    """Encrypts the payload of restricted notes. Used only by the filesystem adapter; the core sees plaintext."""
+
+    def encrypt(self, plaintext: bytes) -> bytes: ...
+
+    def decrypt(self, ciphertext: bytes) -> bytes:
+        """Raises ``DecryptionError`` for a wrong key or tampered data."""
+        ...
+
+
+class VersionControl(Protocol):
+    """Backup side of the content repository. Commits are made by ``NoteRepository.apply`` (one commit per
+    applied change, with the trailers of ``CommitMessage``); this port only publishes them.
+    """
+
+    def push(self) -> None:
+        """Push the commits to the backup remote. A no-op when none is configured."""
+        ...

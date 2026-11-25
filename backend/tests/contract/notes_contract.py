@@ -1,0 +1,126 @@
+"""Contract for ``NoteRepository``. Phase 2 adapters subclass it and override the ``repo`` fixture."""
+
+from dataclasses import replace
+
+import pytest
+
+from cerebro.application.ports import NoteChange, NoteRepository
+from cerebro.domain.commit_message import CommitMessage
+from cerebro.domain.content_hash import content_hash
+from cerebro.domain.errors import ContentConflict, InvalidValueError
+from cerebro.domain.note import NoteId
+from tests.unit.domain.builders import make_note
+
+MESSAGE = CommitMessage(
+    subject="Add note: server-ssh-access",
+    proposal_id="proposal-0001",
+    proposed_by="claude-code",
+    curated_by="null-curator",
+    approved_by="owner",
+)
+
+
+class NoteRepositoryContract:
+    @pytest.fixture
+    def repo(self) -> NoteRepository:
+        raise NotImplementedError
+
+    def test_get_unknown_returns_none(self, repo: NoteRepository) -> None:
+        assert repo.get(NoteId("nothing-here")) is None
+        assert repo.list_notes() == ()
+        assert repo.list_refs() == ()
+
+    def test_create_then_get_roundtrips(self, repo: NoteRepository) -> None:
+        note = make_note()
+        revision = repo.apply([NoteChange(note=note)], MESSAGE)
+        assert revision
+        assert repo.get(note.id) == note
+
+    def test_each_apply_returns_a_new_revision(self, repo: NoteRepository) -> None:
+        first = repo.apply([NoteChange(note=make_note(id=NoteId("note-a")))], MESSAGE)
+        second = repo.apply([NoteChange(note=make_note(id=NoteId("note-b")))], MESSAGE)
+        assert first != second
+
+    def test_listings_are_ordered_by_id_and_refs_match_notes(self, repo: NoteRepository) -> None:
+        for name in ("zeta-note", "alpha-note", "mid-note"):
+            repo.apply([NoteChange(note=make_note(id=NoteId(name)))], MESSAGE)
+        ids = [n.id.value for n in repo.list_notes()]
+        assert ids == ["alpha-note", "mid-note", "zeta-note"]
+        assert [r.id.value for r in repo.list_refs()] == ids
+
+    def test_refs_carry_no_body_but_the_extracted_links(self, repo: NoteRepository) -> None:
+        repo.apply([NoteChange(note=make_note(body="See [[other-note#Part]]."))], MESSAGE)
+        (ref,) = repo.list_refs()
+        assert [(w.target.value, w.section) for w in ref.body_links] == [("other-note", "Part")]
+        assert not hasattr(ref, "body")
+
+    def test_update_with_matching_hash_succeeds(self, repo: NoteRepository) -> None:
+        note = make_note()
+        repo.apply([NoteChange(note=note)], MESSAGE)
+        newer = replace(note, body="Changed.\n")
+        repo.apply([NoteChange(note=newer, expected_hash=content_hash(note))], MESSAGE)
+        assert repo.get(note.id) == newer
+
+    def test_update_with_stale_hash_conflicts_and_changes_nothing(self, repo: NoteRepository) -> None:
+        note = make_note()
+        repo.apply([NoteChange(note=note)], MESSAGE)
+        stale = content_hash(note)
+        current = replace(note, body="Edited by someone else.\n")
+        repo.apply([NoteChange(note=current, expected_hash=stale)], MESSAGE)
+        with pytest.raises(ContentConflict) as info:
+            repo.apply([NoteChange(note=replace(note, body="Mine.\n"), expected_hash=stale)], MESSAGE)
+        assert info.value.expected == stale
+        assert info.value.actual == content_hash(current)
+        assert repo.get(note.id) == current
+
+    def test_create_over_existing_note_conflicts(self, repo: NoteRepository) -> None:
+        note = make_note()
+        repo.apply([NoteChange(note=note)], MESSAGE)
+        with pytest.raises(ContentConflict):
+            repo.apply([NoteChange(note=replace(note, body="Other.\n"))], MESSAGE)
+        assert repo.get(note.id) == note
+
+    def test_update_of_missing_note_conflicts(self, repo: NoteRepository) -> None:
+        with pytest.raises(ContentConflict):
+            repo.apply([NoteChange(note=make_note(), expected_hash=content_hash(make_note()))], MESSAGE)
+        assert repo.get(make_note().id) is None
+
+    def test_apply_is_atomic(self, repo: NoteRepository) -> None:
+        existing = make_note(id=NoteId("existing-note"))
+        repo.apply([NoteChange(note=existing)], MESSAGE)
+        fresh = make_note(id=NoteId("fresh-note"))
+        edited = replace(existing, body="Edited.\n")
+        with pytest.raises(ContentConflict):
+            repo.apply(
+                [
+                    NoteChange(note=fresh),
+                    NoteChange(
+                        note=edited, expected_hash=content_hash(make_note(id=NoteId("existing-note"), body="x"))
+                    ),
+                ],
+                MESSAGE,
+            )
+        assert repo.get(fresh.id) is None
+        assert repo.get(existing.id) == existing
+
+    def test_multi_note_apply_writes_every_note(self, repo: NoteRepository) -> None:
+        a, b = make_note(id=NoteId("note-a")), make_note(id=NoteId("note-b"))
+        repo.apply([NoteChange(note=a), NoteChange(note=b)], MESSAGE)
+        assert repo.get(a.id) == a
+        assert repo.get(b.id) == b
+
+    def test_empty_change_list_is_rejected(self, repo: NoteRepository) -> None:
+        with pytest.raises(InvalidValueError):
+            repo.apply([], MESSAGE)
+
+    def test_same_note_twice_is_rejected_without_writing(self, repo: NoteRepository) -> None:
+        note = make_note()
+        with pytest.raises(InvalidValueError):
+            repo.apply([NoteChange(note=note), NoteChange(note=note)], MESSAGE)
+        assert repo.get(note.id) is None
+
+    def test_note_change_rejects_wrong_types(self) -> None:
+        with pytest.raises(InvalidValueError):
+            NoteChange(note="not a note")  # type: ignore[arg-type]
+        with pytest.raises(InvalidValueError):
+            NoteChange(note=make_note(), expected_hash=3)  # type: ignore[arg-type]

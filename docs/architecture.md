@@ -63,6 +63,7 @@ backend/
 │   │   └── errors.py
 │   ├── application/
 │   │   ├── ports/             # Protocols (see section 3)
+│   │   ├── errors.py          # NoteNotFound, PermissionDenied, ...
 │   │   ├── use_cases/         # one module per use case (see section 4)
 │   │   └── dto.py             # plain dataclasses crossing the boundary
 │   ├── adapters/
@@ -90,15 +91,19 @@ backend/
 
 | Port | Responsibility | Adapter(s) |
 |---|---|---|
-| `NoteRepository` | load/save/list notes in the content repo | filesystem; in-memory fake |
-| `SearchIndex` | full-text search with filters, returns summaries only | SQLite FTS5 |
-| `GraphIndex` | backlinks, neighbors up to N hops, orphans, broken links | SQLite tables |
-| `ProposalStore` | persist proposals and decisions (audit) | SQLite |
-| `VersionControl` | commit with trailers, push to backup remote | git CLI |
-| `Cipher` | encrypt/decrypt restricted note payloads | Fernet |
-| `Curator` | suggest a decision for a validated proposal | Anthropic, OpenAI, `NullCurator` |
-| `TokenStore` | agent tokens (hashed), scopes and ceilings | SQLite |
-| `Clock`, `IdGenerator` | time and ids, for deterministic tests | system / fixed fakes |
+| `NoteRepository` | `get`, `list_refs` (body-free `NoteRef` snapshot), `list_notes`, and `apply(changes, message)`: write one or more notes and record **one** commit with the trailers, all-or-nothing; each `NoteChange` carries the `expected_hash` (`None` = must not exist) and a mismatch raises `ContentConflict` | filesystem; in-memory fake |
+| `SearchIndex` | `upsert` / `remove` / `rebuild`, `search(SearchQuery)` (ceiling mandatory; order: score, priority, id) and `find_similar` (duplicate detection); returns summaries only | SQLite FTS5 |
+| `GraphIndex` | `graph`, `backlinks`, `neighbors(hops)`, `orphans`, `broken_links`; every query takes the ceiling, hidden notes are neither nodes nor broken links | SQLite tables |
+| `ProposalStore` | `add`, `get`, `save`, `find(status, source_agent)`: proposals and decisions (audit) | SQLite |
+| `VersionControl` | `push` to the backup remote. Commits are made by `NoteRepository.apply`, so a write and its commit cannot diverge | git CLI |
+| `Cipher` | encrypt/decrypt restricted note payloads (used by the filesystem adapter only); `DecryptionError` on tampering | Fernet |
+| `Curator` | `name` (recorded as `Curated-by`) and `curate(CurationRequest) -> Decision` for a validated proposal | Anthropic, OpenAI, `NullCurator` |
+| `TokenStore` | `add`, `get`, `find_by_hash` (also returns revoked tokens), `save`, `all`; tokens are stored hashed | SQLite |
+| `Clock`, `IdGenerator` | `now()`; proposal ids, token ids and token secrets, for deterministic tests | system / fixed fakes |
+
+Ports know nothing about access: use cases apply the ceiling and raise `NoteNotFound` for hidden notes exactly as
+for missing ones, while the two indexes filter by the mandatory ceiling argument. Application exceptions live in
+`cerebro.application.errors`.
 
 Ports are `typing.Protocol` classes in `cerebro.application.ports`. Each one has an in-memory fake in
 `tests/fakes` and a contract test suite in `tests/contract`.
