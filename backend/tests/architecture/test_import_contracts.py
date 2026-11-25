@@ -67,6 +67,16 @@ def run_lint_imports(tmp_path: Path, module: str, source: str) -> subprocess.Com
             "import cerebro.adapters.outbound\n",
             "cerebro.adapters.inbound.canary -> cerebro.adapters.outbound (l.1)",
         ),
+        (
+            "cerebro.adapters.inbound.canary",
+            "import cerebro.bootstrap.container\n",
+            "cerebro.adapters.inbound.canary -> cerebro.bootstrap.container (l.1)",
+        ),
+        (
+            "cerebro.adapters.inbound.canary",
+            "from cerebro.bootstrap import settings\n",
+            "cerebro.adapters.inbound.canary -> cerebro.bootstrap",
+        ),
     ],
 )
 def test_forbidden_import_breaks_a_contract(tmp_path: Path, module: str, source: str, expected: str) -> None:

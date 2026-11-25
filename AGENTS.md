@@ -42,6 +42,7 @@ Inbox, which are validated, curated and approved before becoming notes.
 - `cerebro.adapters.inbound` never imports `cerebro.application.ports` nor `cerebro.adapters.outbound`: inbound
   adapters talk only to use cases and DTOs, and wiring goes through `cerebro.bootstrap`.
 - Third-party libraries are imported **only** inside `cerebro.adapters.*` and `cerebro.bootstrap`.
+- Inbound adapters never import `cerebro.bootstrap`: the entry point wires use cases into them.
 - These rules are enforced by `import-linter` in CI. A failing contract is a failing build.
 
 **Write path**

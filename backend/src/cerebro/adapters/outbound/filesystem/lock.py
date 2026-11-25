@@ -18,11 +18,12 @@ POLL_INTERVAL = 0.02
 
 
 @contextmanager
-def file_lock(path: Path, *, exclusive: bool, timeout: float) -> Iterator[None]:
+def file_lock(path: Path, *, exclusive: bool, timeout: float, label: str = "content repository lock") -> Iterator[None]:
+    """``label`` names the lock in error messages (a fixed text chosen by the caller, never user data)."""
     try:
         fd = os.open(path, os.O_RDWR | os.O_CREAT | os.O_CLOEXEC | os.O_NOFOLLOW, 0o600)
     except OSError:
-        raise NoteWriteError("could not open the content repository lock file") from None
+        raise NoteWriteError(f"could not open the {label} file") from None
     try:
         flags = (fcntl.LOCK_EX if exclusive else fcntl.LOCK_SH) | fcntl.LOCK_NB
         deadline = time.monotonic() + timeout
@@ -32,7 +33,7 @@ def file_lock(path: Path, *, exclusive: bool, timeout: float) -> Iterator[None]:
                 break
             except BlockingIOError:
                 if time.monotonic() >= deadline:
-                    raise WriterBusyError("the content repository is locked by another writer") from None
+                    raise WriterBusyError(f"the {label} is held by another writer") from None
                 time.sleep(POLL_INTERVAL)
         try:
             yield

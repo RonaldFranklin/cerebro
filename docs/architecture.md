@@ -35,10 +35,11 @@ about YAML, SQLite, git, HTTP, MCP or any LLM provider. See [ADR-0001](adr/0001-
 | `cerebro.application` | `cerebro.domain`, standard library |
 | `cerebro.adapters.*` | `cerebro.application`, `cerebro.domain`, third-party libraries |
 | `cerebro.adapters.inbound` | use cases, DTOs and errors of `cerebro.application`, `cerebro.domain`, third-party libraries; **never** `cerebro.application.ports` nor `cerebro.adapters.outbound` |
-| `cerebro.bootstrap` | everything (composition root) |
+| `cerebro.bootstrap` | everything (composition root); **never** imported by `cerebro.adapters.inbound` |
 
 Inbound adapters talk only to use cases and DTOs; the concrete ports and outbound adapters are wired into the
-use cases in `cerebro.bootstrap`. Indirect imports (inbound -> use case -> ports) are allowed.
+use cases in `cerebro.bootstrap`. Inbound code never receives the `Container`, only individual use cases wired by
+the entry point. Indirect imports (inbound -> use case -> ports) are allowed.
 
 Enforced with `import-linter` contracts in CI. The "standard library only" rule for `cerebro.domain` and
 `cerebro.application` is enforced by a contract of the custom `stdlib_only` type, defined in
@@ -151,12 +152,14 @@ body (whole or one section) whose target the reader cannot see, or that does not
 - `HealthReport` — orphans, broken links, hub chains, overdue `review_by`, budget violations, secrets in existing
   notes (never echoed), stale or orphaned proposals, stale indexes (owner only, restricted ceiling).
   An index is stale when its `built_from()` differs from the repository `head()` (`index_is_stale`; the
-  container will use it at start-up to decide whether to reindex, planned for Phase 2 PR 8), or when its content
+  `Container.start()` reindexes when it is stale, implemented in Phase 2 PR 8), or when its content
   differs note by note. `RebuildIndex` records `head()` (read before the notes); `ApplyProposal` and
   `OwnerEditNote` advance the recorded revision after updating an index that was fresh before the commit, so a
   failed index update stays visible until `RebuildIndex` runs.
   **Single writer:** reading `head()`, `apply` and advancing the revision must run under ONE writer lock held by
-  the composition root (ADR-0002: writes are serialized through the application). Without it, a concurrent
+  the composition root (ADR-0002: writes are serialized through the application). Implemented as `WriterLock` in
+  `cerebro.bootstrap.container` (a thread lock plus `flock` on `<state_dir>/writer.lock`) wrapping `ApplyProposal`,
+  `OwnerEditNote` and `RebuildIndex`. Without it, a concurrent
   commit between those steps can make the conditional advance hide a failed index update. `rebuild(revision=)`
   must store the revision atomically with the rows.
 - `IssueAgentToken` / `RevokeAgentToken` — owner only; only the SHA-256 hash is stored, the secret is shown once.
@@ -199,7 +202,7 @@ Workstation                                    Server (docker compose: cerebro-<
 Filesystem repository, operating notes (Phase 2):
 
 - `list_notes`/`list_refs` read the working tree while `head()` reports `HEAD`: the container must keep the content
-  tree clean. `apply` enforces it for writes (it refuses when anything is staged, or when a planned note is untracked,
+  tree clean (`Container` does not check this itself; start-up reindexing does not detect uncommitted edits). `apply` enforces it for writes (it refuses when anything is staged, or when a planned note is untracked,
   has uncommitted edits, or a new note's path is already known to git) and commits only the planned paths.
 - `get` takes no lock (each file is replaced atomically); whole-tree listings take a shared lock.
 - Replacing an encrypted restricted file by a plaintext file declaring `internal` or `public` cannot be detected by
