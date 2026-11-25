@@ -218,6 +218,23 @@ the search and the graph tables, so start-up must compare **both** `built_from()
 not coordinated with other processes using the file: rolling deploys with different schema versions are unsupported
 (stop the old process first).
 
+### Accepted risks (owner decision, 2026-11-25)
+
+- **Token rows are not authenticated.** `state.sqlite` stores token rows (ceiling, scopes, revocation) in clear and
+  unsigned; only the file mode (0600) and the directory (0700) protect them. Anyone who can write the file can raise
+  a ceiling or clear a revocation.
+- **No rollback or replay protection for proposal rows.** The sealed payload binds the proposal id, but not its
+  revision: restoring a whole older row (for example from a backup) passes every check.
+- **Raw payloads exist briefly.** `SubmitProposal` stores the submitted payload (sealed with the cipher) before
+  `ValidateProposal` runs. A rejection by validation overwrites it with a scrubbed copy; sealed residue can remain in
+  the WAL and in backups until a checkpoint, and forever if the process dies between the two steps.
+- **A note raised to `restricted` leaves plaintext history.** The previous public or internal version stays in the
+  content repository's git history and in backups; history is never rewritten. `ApplyProposal` and `OwnerEditNote`
+  return a warning when this happens ([domain-model](domain-model.md)).
+- The content repository's own `.git/config` is trusted (filter drivers, `core.sshCommand`, `receivepack`), and the
+  writer lock only stops Cérebro's own writers: an outside edit between the clean-state check and the write is
+  overwritten.
+
 ## 6. Frontend
 
 - React + TypeScript + Vite. Data fetching through a small `api/` layer (the UI's port); components never call

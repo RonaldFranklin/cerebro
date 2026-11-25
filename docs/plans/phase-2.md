@@ -58,13 +58,20 @@ Order: 1 and 2 first; 3 before 4 and 7; 5 and 6 are independent; 7 needs 3 and 6
 already named in [ADR-0013](../adr/0013-stack-and-dependency-policy.md); pinned exactly to the newest stable release
 published at least 7 days earlier, and recorded in `docs/architecture.md` section 7 in the same PR.
 
-## 5. Delivery notes
+## 5. Report (final)
 
-- Actual merge order: 1 (#25), 2 (#26), 3 crypto (#27), 6 git (#28), 5 index (#29), 4 state (#30), 7 filesystem (#31),
-  8 acceptance (#32). Every security-relevant PR went through at least one fresh Opus review; the findings were fixed
-  before merge (details in each PR's "Decisions for review" and review sections).
-- Dependencies added: `cryptography==50.0.2`, `pyyaml==6.0.3` (owner-authorized) and the dev-only
-  `types-pyyaml==6.0.12.20261113` (needed by `mypy --strict`; not covered by the original authorization, flagged to the owner).
-- Beyond the plan: the FTS5 index keeps one table per sensitivity tier (bm25 statistics would otherwise leak hidden
-  terms), `GitRepo` gained rollback-by-path and a hardened environment, the container holds a single writer lock, and
-  an import contract keeps inbound adapters away from `cerebro.bootstrap`.
+**Done 2026-11-25.** PRs #25-#32 (code) and #33 (close); the table above has the mapping. Tests: 2041 passing,
+99.8 % coverage on domain + application (gate 90 %); ruff, `mypy --strict` and import-linter (4 contracts) clean.
+Acceptance met: `RebuildIndex` over a sample repository with an encrypted note, plus a full write path through the
+container (`tests/integration/test_rebuild_acceptance.py`).
+
+- **Added beyond the plan:** one FTS5 table per sensitivity tier (a shared table leaked hidden terms through bm25
+  scores); rollback by path in `GitRepo` and a clean-state precheck in `apply`; a single writer lock; a start-up
+  reindex when the index revision differs from `HEAD`; an import contract keeping `adapters.inbound` away from
+  `cerebro.bootstrap`; a warning when a note is raised to `restricted` (follow-up PR).
+- **Dependencies:** `cryptography==50.0.2`, `pyyaml==6.0.3`, dev `types-pyyaml==6.0.12.20261113` (the last was not in
+  the original authorization; pending owner confirmation).
+- **Security:** every security-relevant PR had at least one fresh Opus review; all findings were fixed before merge.
+  Accepted residual risks are in [architecture.md](../architecture.md) ("Accepted risks").
+- **Process lessons:** merge only through `scripts/merge-pr.sh` (GitHub sometimes lags on the PR head); never
+  force-push; stage explicit paths.
