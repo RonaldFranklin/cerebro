@@ -23,19 +23,23 @@ Inbox, which are validated, curated and approved before becoming notes.
 
 ## 3. Current status
 
-- Phase 0 (bootstrap) is **done**: `backend/` skeleton with uv (Python 3.14), pytest, ruff, mypy `--strict`,
-  import-linter (layers + custom `stdlib_only` contract type, with canary tests) and GitHub Actions CI.
-- Phase 1 (domain and application core) is **done** (PRs 1-10): value objects, validation, budgets, links and
-  cross-note rules, secret scanner, access ceiling and agent tokens, proposals and commit trailers, ports with
-  in-memory fakes and shared contract tests, and every use case (read, write, maintenance, token authentication)
-  running against the fakes.  The human security checkpoint was approved on
-  2026-11-25 after a batch of follow-up PRs (see `docs/plans/phase-1.md` section 7).
-- Phase 2 (outbound adapters) is **done** (PRs 1-8, #25-#32): system, crypto (Fernet, `MultiFernet`), hardened git,
-  SQLite index (FTS5, one table per sensitivity tier) and state store (proposals sealed with the cipher), filesystem
-  `NoteRepository`, and a minimal composition root with a single writer lock and start-up reindex. Plan:
-  [`docs/plans/phase-2.md`](docs/plans/phase-2.md). **Next: Phase 3 (CLI and read-only MCP).**
+- **Phases 0, 1 and 2 are done.** Phase 0: skeleton, tooling, CI. Phase 1: domain and application core (all use cases
+  against in-memory fakes); its security checkpoint was approved on 2026-11-25 after follow-up PRs #15-#23. Phase 2:
+  outbound adapters (system, Fernet crypto, hardened git, SQLite index and state store, filesystem `NoteRepository`) and a
+  minimal composition root in `bootstrap` (PRs #25-#33). Plans and records: [`docs/plans/phase-1.md`](docs/plans/phase-1.md),
+  [`docs/plans/phase-2.md`](docs/plans/phase-2.md).
+- **Last merged PR:** see `git log -1` on `main` (at the time of writing: the Phase 2 close, then the hand-off PRs).
+  No PR should be open when a session starts; if one is, read it before anything else.
+- **Exact next step:** **plan Phase 3** (CLI and read-only MCP, see `docs/roadmap.md`). Write
+  `docs/plans/phase-3.md` in the same format as the Phase 2 plan (pull requests with branch, content, dependencies,
+  status; design decisions; owner adjustments) and **present it to the owner for approval before opening any code
+  PR**. The roadmap already lists the Phase 3 carry-overs: input size limits in every inbound adapter, a
+  `ListAgentTokens` use case, MCP `cerebro_neighbors` capped at depth 2. The CLI library (Typer or argparse) and the
+  MCP SDK are new dependencies: they need the owner's approval.
+- **Pending with the owner:** (1) approval of the Phase 3 plan; (2) approval of new dependencies for Phase 3;
+  (3) the open question in PR #30: whether to add a MAC over token rows in `state.sqlite`; (4) the dev dependency
+  `types-pyyaml` (added in #31) was not covered by the original authorization: confirm or reject.
 - Update this section and `docs/roadmap.md` whenever a phase starts or finishes.
-- Phase 1 plan (pull requests, status, design decisions): [`docs/plans/phase-1.md`](docs/plans/phase-1.md).
 
 ## 4. Non-negotiable rules
 
@@ -69,22 +73,31 @@ Inbox, which are validated, curated and approved before becoming notes.
 ## 5. How to work
 
 - Small, verifiable steps. One phase at a time; within a phase, one use case or adapter at a time.
-- **Git workflow:** one branch per step (e.g. `phase-1/value-objects`, `docs/<topic>`), never commit to `main`
+- **Git workflow:** one branch per step (e.g. `phase-3/cli-skeleton`, `docs/<topic>`), never commit to `main`
   directly. Commits follow Conventional Commits (`feat:`, `fix:`, `docs:`, `build:`, `ci:`, `chore:`, `test:`,
-  `refactor:`), one commit per step plus review fixes. For every pull request:
-  1. open it with `gh pr create` and wait for CI with `gh pr checks <n> --watch`; it must be green;
-  2. run a review with a **fresh** sub-agent (or a separate session) that reads only the diff and the relevant
-     docs/ADRs and reports problems. Reviewer sub-agents use **Sonnet**, except for pull requests that touch
-     security (access ceiling, tokens, encryption, the secret scanner), which use **Opus**;
-  3. fix what the review reports, push, and wait for CI again;
-  4. merge with `gh pr merge <n> --squash --delete-branch`.
+  `refactor:`), one commit per step plus review fixes. Stage explicit paths, never `git add -A`. Never force-push:
+  to fix a pull request, add commits (merge `main` into the branch if it moved). For every pull request:
+  1. open it with `gh pr create`; the body ends with a "Decisions for review" section;
+  2. **review before merging**, with fresh eyes that see only the diff and the relevant docs/ADRs:
+     - agent runtimes **with sub-agents** (e.g. Claude Code): a fresh sub-agent. Use a stronger model for pull
+       requests that touch security (access ceiling, tokens, encryption, the secret scanner, subprocess or
+       filesystem hardening);
+     - agent runtimes **without sub-agents** (e.g. Codex): a **new session** (empty context) that reads only
+       `gh pr diff <n>`, `AGENTS.md`, the docs and ADRs the diff touches, and reports ranked findings with file, line
+       and a failing scenario. The author does not review its own diff in the same session;
+  3. fix what the review reports, push new commits, wait for CI again; review again when the fix is large or touches
+     security;
+  4. merge **only** with `scripts/merge-pr.sh <n>`. It waits for `gh pr checks <n> --watch --fail-fast`, confirms
+     that GitHub's PR head is the pushed tip, and runs `gh pr merge --squash --delete-branch` only if every check is
+     green. Do not call `gh pr merge` directly.
 - **Do not merge — stop and hand over to the owner** when the pull request:
   - creates or changes an ADR, or changes rules in `docs/architecture.md` or `docs/domain-model.md`;
   - touches security: access ceiling, tokens, encryption, the secret scanner;
   - adds a new dependency (runtime or dev);
   - has a review finding that was not resolved.
   In that case, leave the pull request open with CI green and report what the owner should review.
-- **Never merge while CI is pending or failing**: wait for `gh pr checks <n> --watch` to finish green first.
+- **Never merge while CI is pending or failing.** `scripts/merge-pr.sh` enforces it. If GitHub's GraphQL API is
+  flaky, the script retries; do not bypass it.
 - Do not start a step that depends on an unmerged pull request; branch from an up-to-date `main`.
 - Domain and application code is written test-first with in-memory fakes. Adapters get integration tests and
   shared **contract tests** that both the fake and the real adapter must pass.
@@ -95,6 +108,20 @@ Inbox, which are validated, curated and approved before becoming notes.
 - Pin dependencies exactly (lockfiles committed). Prefer the standard library; add a dependency only when it
   removes real complexity, and record why in an ADR or in the dependency table in `docs/architecture.md`.
 - Differentiate in reports: **planned**, **implemented**, **tested**.
+
+### Working mode with the owner
+
+- The owner approves **plans** (pull requests, design decisions) before a phase starts, and reviews a security
+  checkpoint when a phase touches security. Inside an approved plan the agent works autonomously and merges its own
+  pull requests with `scripts/merge-pr.sh`, **except** when the owner's authorization for the phase says otherwise.
+  Outside an approved plan, stop and ask.
+- Minor doubts: decide, and list them under "Decisions for review" in the PR description.
+- Keep the orchestrating session light: delegate implementation and review per pull request when the runtime
+  supports it; otherwise work one pull request at a time and keep each small.
+- Final report of a phase to the owner: merged PRs, tests and coverage, every "Decisions for review", and a security
+  section. Short reports in the chat; details in the PR descriptions and `docs/plans/phase-N.md`.
+- A new session must read, in this order: this file, `docs/plans/phase-N.md` of the current phase, the last merged
+  PRs (`git log`, `gh pr list --state all --limit 10`).
 
 ## 6. Commands
 
