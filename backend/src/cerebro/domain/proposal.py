@@ -127,6 +127,8 @@ class Proposal:
 
     ``source_agent`` always comes from the access context, never from the payload. ``conflict`` is set when
     applying found that the target changed after ``base_hash``.
+    ``revision`` is the optimistic-concurrency counter of the stored copy: 0 on creation, bumped only by
+    ``ProposalStore.save`` (transitions never touch it; a loaded proposal carries the revision it was read at).
     """
 
     id: str
@@ -145,6 +147,7 @@ class Proposal:
     curated_by: str | None = None
     approved_by: str | None = None
     conflict: bool = False
+    revision: int = 0
 
     def __post_init__(self) -> None:
         if not isinstance(self.id, str) or _PROPOSAL_ID.fullmatch(self.id) is None:
@@ -172,6 +175,8 @@ class Proposal:
         for name, value in (("curated_by", self.curated_by), ("approved_by", self.approved_by)):
             if value is not None:
                 CommitMessage.check_attribution(value, name)
+        if not isinstance(self.revision, int) or isinstance(self.revision, bool) or self.revision < 0:
+            raise InvalidValueError("revision", "expected a non-negative integer")
         if not isinstance(self.conflict, bool):
             raise InvalidValueError("conflict", "expected a bool")
         if self.curated_by is not None and self.curated_by == self.source_agent:

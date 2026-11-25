@@ -1,5 +1,6 @@
 """The write path wired to the in-memory fakes, for the write use case tests."""
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -140,6 +141,22 @@ class Kit:
         proposal = self.store.get(proposal_id)
         assert proposal is not None
         return proposal
+
+    def overwrite(self, proposal: Proposal) -> Proposal:
+        """Replace a stored proposal behind the use cases' back (tampering, legacy data)."""
+        return self.store.save(proposal, expected_revision=self.stored(proposal.id).revision)
+
+    def race_after_next_get(self, action: Callable[[], object]) -> None:
+        """Run ``action`` once right after the next ``ProposalStore.get``: the caller then holds a stale copy."""
+        original = self.store.get
+
+        def get(proposal_id: str) -> Proposal | None:
+            self.store.get = original  # type: ignore[method-assign]
+            loaded = original(proposal_id)
+            action()
+            return loaded
+
+        self.store.get = get  # type: ignore[method-assign]
 
     @property
     def commits(self) -> int:

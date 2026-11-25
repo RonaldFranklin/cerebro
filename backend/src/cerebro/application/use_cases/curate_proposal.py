@@ -60,7 +60,7 @@ class CurateProposal:
         curated = proposal.mark_curated(decision, self._curator.name, now)
         if decision.kind is DecisionKind.NEEDS_OWNER:
             curated = curated.mark_needs_owner(now)  # the lifecycle only lets the owner approve from there
-        self._proposals.save(curated)
+        curated = self._proposals.save(curated, expected_revision=proposal.revision)
         return ProposalOutcome(proposal_id=curated.id, status=curated.status, decision=decision)
 
 

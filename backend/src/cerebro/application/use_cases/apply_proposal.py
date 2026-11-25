@@ -2,7 +2,13 @@
 
 from cerebro.application.access import require_owner, visible_note
 from cerebro.application.dto import ApplyOutcome, ApplyProposalResult, ProposalIdRequest
-from cerebro.application.errors import NoteNotFound, PermissionDenied, ProposalNotApplicable, ProposalNotFound
+from cerebro.application.errors import (
+    NoteNotFound,
+    PermissionDenied,
+    ProposalConflict,
+    ProposalNotApplicable,
+    ProposalNotFound,
+)
 from cerebro.application.ports.graph import GraphIndex
 from cerebro.application.ports.notes import NoteChange, NoteRepository
 from cerebro.application.ports.proposals import ProposalStore
@@ -32,8 +38,11 @@ class ApplyProposal:
     Then one commit with the trailers of ``Proposal.commit_message``, the proposal is marked ``applied`` and the
     derived indexes are updated (the repository is the source of truth; ``RebuildIndex`` repairs the indexes).
 
-    **Retries.** ``ProposalStore.save`` has no concurrency control, so a crash or a concurrent call can leave an
-    ``approved`` proposal whose change is already committed. Applying again then finds the target changed, but
+    **Retries and races.** ``ProposalStore.save`` is a compare-and-swap on the proposal's ``revision`` and the note
+    write is a compare-and-swap on the content hash, so two racing applies commit the change at most once. The
+    note commit comes first and the proposal save second: a crash, or a proposal changed by someone else in that
+    window (``ProposalConflict``, never swallowed), can leave an ``approved`` proposal whose
+    change is already committed. Applying again then finds the target changed, but
     ``is_noop`` shows that writing the proposal would change nothing: it is marked ``applied`` without a second
     commit (``ALREADY_APPLIED``). Two simultaneous calls are serialized by the repository's compare-and-swap, so
     at most one commit is made. An already ``applied`` proposal returns ``ALREADY_APPLIED`` and touches nothing.
@@ -103,7 +112,7 @@ class ApplyProposal:
             revision = self._notes.apply([change], proposal.commit_message())
         except ContentConflict:
             return self._conflict(proposal, candidate, self._notes.get(note_id))
-        self._proposals.save(proposal.mark_applied(self._clock.now()))
+        self._mark_applied(proposal)
         self._reindex(candidate)
         return ApplyProposalResult(
             proposal_id=proposal.id,
@@ -116,7 +125,7 @@ class ApplyProposal:
 
     def _conflict(self, proposal: Proposal, candidate: Note, current: Note | None) -> ApplyProposalResult:
         if current is not None and is_noop(candidate, current):
-            self._proposals.save(proposal.mark_applied(self._clock.now()))
+            self._mark_applied(proposal)
             self._reindex(current)
             return ApplyProposalResult(
                 proposal_id=proposal.id,
@@ -126,11 +135,24 @@ class ApplyProposal:
             )
         return self._send_back(proposal, ApplyOutcome.CONFLICT, None, candidate.id)
 
+    def _mark_applied(self, proposal: Proposal) -> None:
+        """Save ``applied``; if a concurrent apply already did, that is the same end state, not an error.
+
+        Any other lost race is re-raised (``ProposalConflict``): the change may already be committed, and a retry
+        is safe because it ends in ``ALREADY_APPLIED`` without a second commit.
+        """
+        try:
+            self._proposals.save(proposal.mark_applied(self._clock.now()), expected_revision=proposal.revision)
+        except ProposalConflict:
+            stored = self._proposals.get(proposal.id)
+            if stored is None or stored.status is not ProposalStatus.APPLIED:
+                raise
+
     def _send_back(
         self, proposal: Proposal, outcome: ApplyOutcome, report: ValidationReport | None, note_id: NoteId
     ) -> ApplyProposalResult:
         sent = proposal.mark_needs_owner(self._clock.now(), conflict=True)
-        self._proposals.save(sent)
+        self._proposals.save(sent, expected_revision=proposal.revision)
         return ApplyProposalResult(
             proposal_id=sent.id, status=sent.status, outcome=outcome, note_id=note_id, validation=report
         )

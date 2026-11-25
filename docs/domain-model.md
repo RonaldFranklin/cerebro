@@ -355,11 +355,19 @@ Authorization lives in the use cases, never in the adapters:
   against the stored note's content hash (a `create` target must not exist), then validation again with the proposal
   policy. A mismatch or an error sends the proposal back to `needs_owner` with `conflict` set (`conflict` /
   `invalid` outcomes) and **writes nothing**. Then one commit, `applied`, and the derived indexes are updated.
-  **Retries:** `ProposalStore.save` has no concurrency control, so an `approved` proposal may already be committed
-  (crash after the commit, or two simultaneous calls). Applying finds the target changed but recognizes that writing
-  the proposal would change nothing but the `updated` date: it marks the proposal `applied` without a second commit
-  (`already_applied`). Concurrent writers are serialized by `NoteRepository.apply`'s compare-and-swap. Resolving a
-  conflict is currently done by rejecting and re-proposing; a `rebase` use case comes later (the domain method exists).
+  **Races and retries:** the proposal carries an integer `revision` (0 on creation; domain transitions never touch
+  it). `ProposalStore.save(proposal, expected_revision=n)` is a compare-and-swap: it stores the proposal with
+  revision `n + 1` only if the stored revision is `n`, otherwise raises `ProposalConflict`. Every use case that
+  saves passes the revision of the copy it loaded and **never swallows** the conflict (two racing reviews,
+  validations or curations: exactly one wins, the other gets `ProposalConflict` and must reload). `ApplyProposal`
+  commits the note first (guarded by the content-hash compare-and-swap) and saves the proposal second, so the one
+  non-atomic window is a lost proposal save after a successful commit. Two racing applies commit at most once; the
+  loser finds the note changed, recognizes that writing the proposal would change nothing but the `updated` date,
+  and if the winner already saved `applied` it simply reports `already_applied`. If the proposal was changed by
+  something else in that window, `ProposalConflict` is raised after the commit; a crash there has the same effect.
+  In both cases the proposal is not `applied` while the note is committed; retrying `apply` is safe (if the proposal
+  is still `approved` it ends in `already_applied` without a second commit), otherwise the owner resolves it.
+  Resolving a conflict is currently done by rejecting and re-proposing; a `rebase` use case comes later (the domain method exists).
 - **Owner edits.** `OwnerEditNote` takes the full new note and the hash the owner loaded (`None` to create);
   `ContentConflict` if the note changed, `id` immutable, `created` kept, `updated` today. It uses
   `OWNER_EDIT_POLICY` (broken links warn) and the same secret scan; errors are returned and nothing is written. The

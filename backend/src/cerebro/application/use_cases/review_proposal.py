@@ -33,6 +33,7 @@ class ReviewProposal:
         proposal = self._proposals.get(request.proposal_id)
         if proposal is None:
             raise ProposalNotFound(request.proposal_id)
+        expected = proposal.revision
         now = self._clock.now()
         if request.action is ReviewAction.REJECT:
             reason = request.reason or ""
@@ -46,7 +47,7 @@ class ReviewProposal:
             if proposal.kind is not ProposalKind.CREATE and proposal.target is not None:
                 visible_note(self._notes, proposal.target, ctx, include_history=True)
             result = proposal.approve(OWNER_APPROVER, now)
-        self._proposals.save(result)
+        result = self._proposals.save(result, expected_revision=expected)
         return ProposalOutcome(
             proposal_id=result.id, status=result.status, decision=result.decision, conflict=result.conflict
         )

@@ -16,6 +16,7 @@ from cerebro.application.dto import (
 from cerebro.application.errors import (
     NoteNotFound,
     PermissionDenied,
+    ProposalConflict,
     ProposalNotApplicable,
     ProposalNotFound,
 )
@@ -303,7 +304,7 @@ class TestValidateProposal:
         # Defense in depth: SubmitProposal screens secrets, but the validator must not rely on it.
         pid = kit.submit_create()
         leaked = replace(kit.stored(pid), content=new_content(body=f"api_key = '{SECRET}'\n"), source_context=SECRET)
-        kit.store.save(leaked)
+        kit.overwrite(leaked)
         outcome = kit.validate(pid)
         assert outcome.status is S.REJECTED
         assert outcome.validation is not None
@@ -409,6 +410,43 @@ class TestCurateProposal:
 
 
 # -- ReviewProposal ------------------------------------------------------------------------------------------------
+
+
+class TestProposalRevisions:
+    def test_every_saved_transition_bumps_the_revision(self, kit: Kit) -> None:
+        pid = kit.submit_create()
+        assert kit.stored(pid).revision == 0
+        kit.validate(pid)
+        assert kit.stored(pid).revision == 1
+        kit.curate(pid)
+        assert kit.stored(pid).revision == 2
+        kit.review(pid)
+        assert kit.stored(pid).revision == 3
+        kit.apply(pid)
+        assert kit.stored(pid).revision == 4
+
+    def test_a_racing_reject_beats_an_approval_that_loaded_the_stale_copy(self, kit: Kit) -> None:
+        pid = kit.submit_create()
+        kit.validate(pid)
+        kit.curate(pid)
+        kit.race_after_next_get(lambda: kit.review(pid, ReviewAction.REJECT, reason="no"))
+        with pytest.raises(ProposalConflict):
+            kit.review(pid)
+        stored = kit.stored(pid)
+        assert (stored.status, stored.approved_by) == (S.REJECTED, None)
+
+    def test_two_racing_validations_cannot_both_win(self, kit: Kit) -> None:
+        pid = kit.submit_create()
+        kit.race_after_next_get(lambda: kit.validate(pid))
+        with pytest.raises(ProposalConflict):
+            kit.validate(pid)
+
+    def test_two_racing_curations_cannot_both_win(self, kit: Kit) -> None:
+        pid = kit.submit_create()
+        kit.validate(pid)
+        kit.race_after_next_get(lambda: kit.curate(pid))
+        with pytest.raises(ProposalConflict):
+            kit.curate(pid)
 
 
 class TestReviewProposal:
@@ -636,11 +674,11 @@ class TestApplyProposal:
         pid = kit.approved(kit.submit_create() if create else kit.submit_update())
         saves = kit.store.save
 
-        def failing_save(proposal: Any) -> None:
+        def failing_save(proposal: Any, *, expected_revision: int) -> Any:
             if proposal.status is S.APPLIED:
                 kit.store.save = saves  # type: ignore[method-assign]
                 raise RuntimeError("store unavailable")
-            saves(proposal)
+            return saves(proposal, expected_revision=expected_revision)
 
         kit.store.save = failing_save  # type: ignore[method-assign]
         with pytest.raises(RuntimeError):
@@ -650,6 +688,27 @@ class TestApplyProposal:
         retry = kit.apply(pid)
         assert (retry.outcome, retry.status) == (ApplyOutcome.ALREADY_APPLIED, S.APPLIED)
         assert kit.commits == 6
+
+    def test_two_racing_applies_commit_once_and_both_end_applied(self, kit: Kit) -> None:
+        pid = kit.approved(kit.submit_create())
+        commits = kit.commits
+        winner: list[Any] = []
+        kit.race_after_next_get(lambda: winner.append(kit.apply(pid)))
+        loser = kit.apply(pid)  # loaded the approved copy, then the other apply finished
+        assert winner[0].outcome is ApplyOutcome.APPLIED
+        assert (loser.outcome, loser.status) == (ApplyOutcome.ALREADY_APPLIED, S.APPLIED)
+        assert kit.commits == commits + 1
+        assert kit.stored(pid).status is S.APPLIED
+
+    def test_a_lost_proposal_race_after_the_commit_is_not_swallowed(self, kit: Kit) -> None:
+        pid = kit.approved(kit.submit_create())
+        commits = kit.commits
+        stored = kit.stored(pid)
+        kit.race_after_next_get(lambda: kit.overwrite(stored.mark_needs_owner(stored.updated_at, conflict=True)))
+        with pytest.raises(ProposalConflict):
+            kit.apply(pid)
+        assert kit.commits == commits + 1  # the note is committed; the owner sees the proposal as needs_owner
+        assert kit.stored(pid).status is S.NEEDS_OWNER
 
     def test_a_concurrent_writer_between_check_and_write_is_a_conflict(self, kit: Kit) -> None:
         class Racing(InMemoryNoteRepository):
@@ -692,7 +751,7 @@ class TestApplyProposal:
     def test_target_mismatch_is_refused_and_nothing_is_written(self, kit: Kit) -> None:
         pid = kit.approved(kit.submit_update())
         tampered = replace(kit.stored(pid), decision=Decision.merge_into(NID("core-rules")))
-        kit.store.save(tampered)
+        kit.overwrite(tampered)
         before = kit.world.notes.get(NID("core-rules"))
         with pytest.raises(ProposalNotApplicable):
             kit.apply(pid)
@@ -711,7 +770,7 @@ class TestApplyProposal:
     )
     def test_decisions_of_the_wrong_shape_are_refused(self, kit: Kit, update: bool, decision: Decision) -> None:
         pid = kit.approved(kit.submit_update() if update else kit.submit_create())
-        kit.store.save(replace(kit.stored(pid), decision=decision))
+        kit.overwrite(replace(kit.stored(pid), decision=decision))
         with pytest.raises(ProposalNotApplicable):
             kit.apply(pid)
         assert kit.commits == 5
@@ -732,7 +791,7 @@ class TestApplyProposal:
     def test_content_is_validated_again_right_before_writing(self, kit: Kit) -> None:
         pid = kit.approved(kit.submit_create())
         invalid = replace(kit.stored(pid), content=new_content(summary="too short"))
-        kit.store.save(invalid)
+        kit.overwrite(invalid)
         result = kit.apply(pid)
         assert (result.outcome, result.status) == (ApplyOutcome.INVALID, S.NEEDS_OWNER)
         assert result.validation is not None
@@ -743,7 +802,7 @@ class TestApplyProposal:
     def test_a_secret_in_approved_content_is_never_written_or_echoed(self, kit: Kit) -> None:
         pid = kit.approved(kit.submit_create())
         leaked = replace(kit.stored(pid), content=new_content(body=f"password = '{SECRET}'\n"))
-        kit.store.save(leaked)
+        kit.overwrite(leaked)
         result = kit.apply(pid)
         assert result.outcome is ApplyOutcome.INVALID
         assert result.validation is not None
@@ -753,7 +812,7 @@ class TestApplyProposal:
 
     def test_content_that_cannot_be_built_is_sent_back(self, kit: Kit) -> None:
         pid = kit.approved(kit.submit_create())
-        kit.store.save(replace(kit.stored(pid), content=new_content(summary=None)))
+        kit.overwrite(replace(kit.stored(pid), content=new_content(summary=None)))
         result = kit.apply(pid)
         assert result.outcome is ApplyOutcome.INVALID
         assert kit.commits == 5

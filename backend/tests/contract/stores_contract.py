@@ -2,17 +2,25 @@
 
 import hashlib
 import re
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from cerebro.application.errors import AlreadyExists, DecryptionError, ProposalNotFound, TokenNotFound
+from cerebro.application.errors import (
+    AlreadyExists,
+    DecryptionError,
+    ProposalConflict,
+    ProposalNotFound,
+    TokenNotFound,
+)
 from cerebro.application.ports import Cipher, Clock, CurationRequest, Curator, IdGenerator, ProposalStore, TokenStore
 from cerebro.domain.access import AccessCeiling, Scope
 from cerebro.domain.agent_token import AgentToken
 from cerebro.domain.commit_message import CommitMessage
 from cerebro.domain.decision import Decision
 from cerebro.domain.enums import Sensitivity
+from cerebro.domain.errors import InvalidValueError
 from cerebro.domain.proposal import Proposal, ProposalKind, ProposalStatus, ProposedContent
 from cerebro.domain.report import ValidationReport
 
@@ -61,10 +69,42 @@ class ProposalStoreContract:
         proposal = make_proposal()
         store.add(proposal)
         moved = proposal.mark_validated(ValidationReport(), T0 + timedelta(minutes=1))
-        store.save(moved)
-        assert store.get(proposal.id) == moved
+        saved = store.save(moved, expected_revision=0)
+        assert saved == replace(moved, revision=1)
+        assert store.get(proposal.id) == saved
         with pytest.raises(ProposalNotFound):
-            store.save(make_proposal("proposal-0099"))
+            store.save(make_proposal("proposal-0099"), expected_revision=0)
+
+    def test_add_requires_revision_zero(self, store: ProposalStore) -> None:
+        with pytest.raises(InvalidValueError):
+            store.add(replace(make_proposal(), revision=3))
+
+    def test_save_with_a_stale_revision_conflicts_and_changes_nothing(self, store: ProposalStore) -> None:
+        proposal = make_proposal()
+        store.add(proposal)
+        first = store.save(proposal.mark_validated(ValidationReport(), T0 + timedelta(minutes=1)), expected_revision=0)
+        with pytest.raises(ProposalConflict):
+            store.save(proposal.mark_validated(ValidationReport(), T0 + timedelta(minutes=2)), expected_revision=0)
+        with pytest.raises(ProposalConflict):
+            store.save(first, expected_revision=5)
+        assert store.get(proposal.id) == first
+        assert first.revision == 1
+        assert store.save(first, expected_revision=1).revision == 2
+
+    def test_two_saves_from_the_same_revision_second_fails(self, store: ProposalStore) -> None:
+        proposal = make_proposal()
+        store.add(proposal)
+        loaded_a = store.get(proposal.id)
+        loaded_b = store.get(proposal.id)
+        assert loaded_a is not None
+        assert loaded_b is not None
+        store.save(loaded_a.mark_validated(ValidationReport(), T0), expected_revision=loaded_a.revision)
+        later = loaded_b.mark_validated(ValidationReport(), T0 + timedelta(minutes=9))
+        with pytest.raises(ProposalConflict):
+            store.save(later, expected_revision=loaded_b.revision)
+        stored = store.get(proposal.id)
+        assert stored is not None
+        assert stored.updated_at == T0  # the first writer's copy
 
     def test_find_filters_and_orders_oldest_first(self, store: ProposalStore) -> None:
         store.add(make_proposal("p-late", at=T0 + timedelta(hours=2)))
