@@ -155,8 +155,13 @@ if p["source_agent"] != sys.argv[1] or p["status"] != "needs_owner":
 print(p["revision"])' "$agent" <<<"$preview")"
   read -rp "Approve the displayed revision $revision for $agent? [y/N] " answer
   if [[ "$answer" != y ]]; then continue; fi
-  "${cli[@]}" inbox approve "$pid" --revision "$revision"
-  git -C "$repo" log -1 --format=%B
+  if approval="$("${cli[@]}" inbox approve "$pid" --revision "$revision")"; then
+    printf '%s\n' "$approval"
+    commit="$("$bin/python" -c 'import json, sys; print(json.load(sys.stdin)["commit"])' <<<"$approval")"
+    git -C "$repo" log -1 --format=%B "$commit" --
+  else
+    printf 'Approval failed for %s. Inspect the latest preview before retrying.\n' "$pid" >&2
+  fi
 done
 ```
 

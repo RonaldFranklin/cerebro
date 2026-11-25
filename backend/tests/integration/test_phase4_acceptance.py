@@ -78,10 +78,21 @@ def test_proposal_admission_review_and_commit(tmp_path: Path) -> None:
         ]
         assert str(CREATE["body"]) in raw_git(settings.content_repo, "show", "HEAD:notes/workspace-guidelines.md")
 
+        # Preserve the exact first inserted row image, even if the service immediately updates it.
+        monitor.executescript("""
+            CREATE TABLE observed_insert (id TEXT, status TEXT, payload BLOB);
+            CREATE TRIGGER capture_proposal AFTER INSERT ON proposals BEGIN
+                INSERT INTO observed_insert VALUES (NEW.id, NEW.status, NEW.payload);
+            END;
+        """)
         rejected = await client.call_tool(PROPOSE, {**CREATE, "body": fake_key})
         assert rejected.structured_content
         rejected_id = rejected.structured_content["proposal_id"]
         assert rejected.structured_content == {"proposal_id": rejected_id, "valid": False}
+        [(first_id, first_status, first_payload)] = monitor.execute("SELECT * FROM observed_insert").fetchall()
+        assert first_id == rejected_id
+        assert first_status == "rejected"
+        assert marker.encode() not in app.cipher.decrypt(first_payload)
         row = app.proposals.get(rejected_id)
         assert row
         assert row.status is ProposalStatus.REJECTED

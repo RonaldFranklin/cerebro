@@ -103,7 +103,8 @@ zero warnings, Ruff lint and format, strict mypy and four passing import contrac
 received only its id and validation outcome. The encrypted Inbox row contained successful validation and a
 NullCurator decision before the owner's CLI preview. Approving that revision produced one git commit with
 the proposed body and its proposer, curator, approver and proposal-id trailers. A second submission with a
-synthetic private-key marker produced a scrubbed rejection. Refusals at the pending and hourly limits
+synthetic private-key marker produced a scrubbed rejection. A test-only SQLite trigger preserved the first
+insert so the test could inspect its status and decrypted payload. Refusals at the pending and hourly limits
 returned the same error and left the content HEAD and an independent SQLite connection's data_version
 unchanged. [Acceptance test](../../backend/tests/integration/test_phase4_acceptance.py)
 
