@@ -181,7 +181,6 @@ def connect(path: Path) -> Iterator[sqlite3.Connection]:
         yield connection
 
 
-
 def _enable_wal(connection: sqlite3.Connection) -> None:
     """Switch to WAL. The switch does not honour ``busy_timeout`` while another connection is doing the same, so
     retry for a while on ``locked``."""
