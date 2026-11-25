@@ -143,8 +143,10 @@ body (whole or one section) whose target the reader cannot see, or that does not
   and goes straight to `needs_owner` (`Curated-by: curator/policy`), enforced here whatever the adapter
   ([ADR-0016](adr/0016-curator-never-sees-restricted.md)).
 - `ReviewProposal` — owner approves, edits or rejects.
-- `ApplyProposal` — turn an approved decision into note changes + commit.
-- `OwnerEditNote` — owner edits directly (still validated, committed with owner as author).
+- `ApplyProposal` — turn an approved decision into note changes + commit. When an existing note's sensitivity rises
+  to `restricted`, the result carries a `PREVIOUS_VERSION_IN_HISTORY` warning (the old version stays in git history).
+- `OwnerEditNote` — owner edits directly (still validated, committed with owner as author); same warning on a rise
+  to `restricted` (see `docs/domain-model.md` section 4).
 
 **Maintenance**
 - `RebuildIndex` — re-read the content repo, decrypt restricted notes in memory, rebuild the index (owner only; also
