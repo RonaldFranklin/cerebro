@@ -28,7 +28,7 @@ independent review, resolution of findings and completed green CI. Use scripts/m
 
 | Adjustment approved on 2026-11-25 | PRs |
 |---|---|
-| Bind both sockets to 127.0.0.1 by default. Expose the private service with Tailscale Serve. | 2, 9 |
+| Bind both sockets to 127.0.0.1 by default and reject non-loopback addresses in Phase 3. Expose the private service with Tailscale Serve. | 2, 9 |
 | Use distinct ports with fixed startup ceilings (private restricted and public internal). Disable public by default. Only the accepting port identifies the listener. | 2, 9 |
 | Accept tokens only through Authorization: Bearer. Reject query credentials. Exclude tokens, note bodies and proposal payloads from logs. | 2–10 |
 | Automate acceptance with the SDK client, sample dev content, a restricted note and an internal token. Document exact commands for the owner to test both real clients. Preserve all global configuration, including ~/.claude and ~/.codex. | 10 |
@@ -110,5 +110,6 @@ dependencies exactly and check uv sync --locked. Record exact versions and relea
   with an internal token and call all four tools. Check the visible fixture and the hidden-id result. Exercise
   connection loss, recovery and dev stdio. Record automated results and versions.
 - In docs/agent-integration.md provide exact commands for the owner to repeat the four calls, offline check and
-  recovery in real Claude Code and Codex. Use isolated project or process configuration and synthetic examples.
+  recovery in real Claude Code and Codex. Verify each reports “Cérebro offline” and continues when the dev server
+  is stopped. Use isolated project or process configuration and synthetic examples.
 - Record merged PRs, coverage, review decisions and residual risks. Hand the Phase 3 security checkpoint to the owner.

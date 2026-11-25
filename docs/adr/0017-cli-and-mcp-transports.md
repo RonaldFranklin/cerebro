@@ -16,7 +16,7 @@ ADR-0014 defines the agent tool schemas.
   versions and upload dates for both packages and their transitive dependencies under ADR-0013's seven-day rule.
 - Bind both listeners to 127.0.0.1 by default, on distinct ports. The private socket has a fixed restricted
   ceiling and the public socket a fixed internal ceiling. Enable only the private listener by default.
-  Configure both at startup. The accepting port supplies the ceiling even when a proxy sends forwarding
+  At startup reject non-loopback binds for either Phase 3 listener. The accepting port supplies the ceiling even when a proxy sends forwarding
   headers. Tailscale Serve provides private network exposure over HTTPS.
 - Accept tokens exclusively in the Authorization header using the Bearer scheme. Reject token query parameters.
   Exclude tokens, note bodies and proposal payloads from application, server, access and error logs.
