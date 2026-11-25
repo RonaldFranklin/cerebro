@@ -262,9 +262,9 @@ Full policy in [ADR-0013](adr/0013-stack-and-dependency-policy.md). Summary:
 | Git | `git` CLI via `subprocess` | no git library |
 | Crypto | `cryptography` (Fernet) | adapter only |
 | Password hashing | `hashlib.scrypt` (stdlib) | single admin user |
-| HTTP | FastAPI + Uvicorn | adapter only |
+| HTTP | Uvicorn for MCP, FastAPI planned for Phase 5 | adapter and bootstrap only |
 | MCP | official `mcp` Python SDK | adapter only |
-| CLI | Typer (or argparse if we want zero deps) | decided in Phase 3 |
+| CLI | argparse (stdlib) | local owner commands, ADR-0017 |
 | LLM | provider SDKs, one adapter each | optional, Phase 7 |
 | Quality | pytest, ruff, mypy (strict), import-linter | custom `stdlib_only` contract type in `backend/devtools/` |
 | Web | Node Active LTS (exact version chosen in Phase 5), pnpm, React, TypeScript, Vite, TanStack Query, Sigma.js, graphology, CodeMirror 6 | |
@@ -273,7 +273,7 @@ All versions are pinned exactly in lockfiles. Exact versions are the newest stab
 7 days earlier ([ADR-0013](adr/0013-stack-and-dependency-policy.md)), and recorded here once the lockfile is
 generated, so this table matches the lock.
 
-### Pinned backend versions (Phase 0)
+### Pinned backend versions
 
 Source of truth: `backend/uv.lock`. Update this table in the same commit as any upgrade. Every version must
 have been published at least 7 days earlier ([ADR-0013](adr/0013-stack-and-dependency-policy.md)).
@@ -291,5 +291,8 @@ have been published at least 7 days earlier ([ADR-0013](adr/0013-stack-and-depen
 | cryptography | 50.0.2 (runtime, `==` pinned; pulls cffi 2.1.1, pycparser 3.12) | Fernet / `MultiFernet` behind the `Cipher` port; adapter only (`cerebro.adapters.outbound.crypto`) |
 | PyYAML | 6.0.3 (runtime, `==` pinned) | frontmatter and `schema/*.yaml` through a restricted `SafeLoader` (no anchors, aliases, tags, duplicate keys; everything but `null` stays text) and a quoting `SafeDumper`; adapter only (`cerebro.adapters.outbound.filesystem`) |
 | types-PyYAML | 6.0.12.20261113 (dev, `==` pinned) | type stubs so `mypy --strict` can check the PyYAML adapter |
+| mcp | 2.3.0 (released 2026-10-02) | official SDK for tool schemas, Streamable HTTP and dev stdio support |
+| uvicorn | 0.54.0 (released 2026-09-25) | ASGI server for MCP listeners |
 
-Runtime dependencies: `cryptography`, `PyYAML` (Phase 2). Frontend versions (Node, pnpm, packages) are added in Phase 5.
+The Phase 3 dependency PR records the versions and upload dates of the full MCP and Uvicorn dependency trees.
+Frontend versions (Node, pnpm, packages) are added in Phase 5.
