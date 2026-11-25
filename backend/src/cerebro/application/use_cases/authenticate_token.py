@@ -10,6 +10,9 @@ from cerebro.application.token_support import hash_token_secret
 from cerebro.domain.access import AccessContext
 from cerebro.domain.errors import DomainError
 
+MAX_SECRET_LENGTH = 512
+"""Longer presented secrets cannot be genuine (generated ones are ~43 characters): refused before hashing."""
+
 
 class AuthenticateToken:
     """The one place a secret becomes an identity. Used by every inbound adapter, before any other use case.
@@ -29,9 +32,12 @@ class AuthenticateToken:
 
     def execute(self, request: AuthenticateTokenRequest) -> AccessContext:
         secret: object = request.secret  # runtime guard: callers may hold untyped data
-        if not isinstance(secret, str) or not secret:
+        if not isinstance(secret, str) or not secret or len(secret) > MAX_SECRET_LENGTH:
             raise AuthenticationFailed
-        presented = hash_token_secret(secret)
+        try:
+            presented = hash_token_secret(secret)
+        except UnicodeEncodeError:  # e.g. a lone surrogate: must fail like any other bad secret
+            raise AuthenticationFailed from None
         token = self._tokens.find_by_hash(presented)
         if token is None or not hmac.compare_digest(token.token_hash.encode(), presented.encode()):
             raise AuthenticationFailed

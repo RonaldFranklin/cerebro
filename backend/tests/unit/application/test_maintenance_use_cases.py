@@ -264,6 +264,14 @@ class TestAuthenticateToken:
             messages.add(str(error.value))
         assert messages == {"authentication failed"}
 
+    def test_unencodable_and_oversized_secrets_fail_like_any_other(self, tk: TokenKit) -> None:
+        tk.issue()
+        for secret in ("\ud800" * 40, "a" * 100_000):
+            with pytest.raises(AuthenticationFailed) as error:
+                tk.authenticate(secret)
+            assert str(error.value) == "authentication failed"
+            assert error.value.__cause__ is None
+
     def test_revoked_and_expired_tokens_fail_like_unknown_ones(self, tk: TokenKit) -> None:
         revoked = tk.issue()
         expiring = tk.issue(agent="codex@workstation", expires_at=tk.clock.now() + timedelta(hours=1))

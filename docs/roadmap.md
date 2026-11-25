@@ -64,6 +64,8 @@ ceiling and token handling has not happened yet. Nothing in Phase 1 runs exposed
 - `git` VersionControl (`push`) via subprocess; the filesystem `NoteRepository.apply` records the single commit with
   trailers, all-or-nothing. Its contract test must also read the commit back (`git log`) and assert the trailers,
   which the shared contract cannot observe.
+- `system` adapters: UTC `Clock` and an `IdGenerator` whose `new_token_secret` is `secrets.token_urlsafe(32)`
+  (CSPRNG, >= 256 bits; the in-memory fake is deterministic and must never be used outside tests).
 - `crypto` Fernet Cipher; encrypted file format for restricted notes.
 - Each adapter passes the same contract tests as its fake.
 
