@@ -45,7 +45,9 @@ all use cases runnable against fakes in tests.
 
 ## ⬜ Phase 2 — Outbound adapters
 
-- `filesystem` NoteRepository (PyYAML frontmatter, content repo layout).
+- `filesystem` NoteRepository (PyYAML frontmatter, content repo layout). Load with a resolver that keeps
+  YAML 1.1 implicit booleans/numbers (`no`, `on`, `2026`, `0x1f`) as strings where the domain expects text, and
+  dump such scalars quoted; contract-test it. Checks that `id` equals the file name.
 - `sqlite` SearchIndex (FTS5) + GraphIndex + ProposalStore + TokenStore.
 - `git` VersionControl via subprocess (commit with trailers, push).
 - `crypto` Fernet Cipher; encrypted file format for restricted notes.

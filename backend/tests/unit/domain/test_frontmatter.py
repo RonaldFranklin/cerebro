@@ -97,11 +97,15 @@ def test_reports_missing_required_fields(missing: str) -> None:
         ("related", "server-docker-conventions"),
         ("related", ["ok-id", "Bad Id"]),
         ("superseded_by", 3),
-        ("lang", ""),
         ("lang", 1),
+        ("lang", False),
+        ("title", True),
+        ("id", 2026),
         ("created", "24/11/2026"),
         ("created", "20261124"),
         ("created", "2026-02-30"),
+        ("created", " 2026-11-24"),
+        ("hub", {"id": "x"}),
         ("created", datetime(2026, 11, 24, 10, 0)),
         ("updated", 20261124),
         ("review_by", "soon"),
@@ -111,6 +115,34 @@ def test_reports_invalid_values_with_the_field_name(field: str, value: object) -
     report = parse_fail(make_raw(**{field: value}))
 
     assert [(v.code, v.field) for v in report.errors] == [(ViolationCode.INVALID_FIELD, field)]
+
+
+def test_yaml_booleans_and_numbers_suggest_quoting() -> None:
+    report = parse_fail(make_raw(lang=False))
+
+    assert "quote the value" in report.errors[0].message
+
+
+@pytest.mark.parametrize("raw", [None, ["id", "x"], "id: x"])
+def test_reports_frontmatter_that_is_not_a_mapping(raw: object) -> None:
+    result = parse_note(raw, BODY)
+
+    assert isinstance(result, ValidationReport)
+    assert (ViolationCode.INVALID_FIELD, None) in [(v.code, v.field) for v in result.errors]
+
+
+def test_related_may_be_a_tuple() -> None:
+    assert parse_ok(make_raw(related=("a", "b"))).related == (NoteId("a"), NoteId("b"))
+
+
+def test_empty_related_list_is_empty() -> None:
+    assert parse_ok(make_raw(related=[])).related == ()
+
+
+def test_structural_problems_are_always_errors() -> None:
+    report = parse_fail(make_raw(priority="P9"))
+
+    assert report.warnings == ()
 
 
 def test_null_required_fields_count_as_missing() -> None:
@@ -147,7 +179,7 @@ def test_accumulates_every_problem_at_once() -> None:
 
 
 def test_body_must_be_a_string() -> None:
-    result = parse_note(make_raw(), None)  # type: ignore[arg-type]
+    result = parse_note(make_raw(), None)
 
     assert isinstance(result, ValidationReport)
     assert [(v.code, v.field) for v in result.errors] == [(ViolationCode.INVALID_FIELD, "body")]
@@ -177,7 +209,17 @@ class TestNoteToRaw:
         assert raw["related"] == ["server-docker-conventions"]
         assert raw["created"] == date(2026, 11, 24)
 
-    def test_round_trips_through_parse(self) -> None:
-        note = make_note(review_by=date(2027, 5, 24), related=(NoteId("a"), NoteId("b")))
+    @pytest.mark.parametrize(
+        "overrides",
+        [
+            {"review_by": date(2027, 5, 24), "related": (NoteId("a"), NoteId("b"))},
+            {"status": Status.SUPERSEDED, "superseded_by": NoteId("server-ssh-v2"), "hub": None},
+            {"type": NoteType("core"), "priority": Priority.P0, "hub": None, "related": ()},
+            {"type": NoteType("hub"), "priority": Priority.P1, "hub": NoteId("parent-hub")},
+            {"lang": "", "title": ""},
+        ],
+    )
+    def test_round_trips_through_parse(self, overrides: dict[str, object]) -> None:
+        note = make_note(**overrides)
 
         assert parse_note(note_to_raw(note), note.body) == note

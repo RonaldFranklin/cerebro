@@ -1,6 +1,15 @@
 import pytest
 
-from cerebro.domain.report import Severity, ValidationReport, Violation, ViolationCode
+from cerebro.domain.report import (
+    OWNER_EDIT_POLICY,
+    PROPOSAL_POLICY,
+    Finding,
+    Severity,
+    SeverityPolicy,
+    ValidationReport,
+    Violation,
+    ViolationCode,
+)
 
 ERROR = Violation(code=ViolationCode.SUMMARY_LENGTH, field="summary", message="too short", severity=Severity.ERROR)
 WARNING = Violation(code=ViolationCode.BODY_OVER_SOFT_LIMIT, field="body", message="long", severity=Severity.WARNING)
@@ -43,3 +52,30 @@ def test_codes_lists_the_violation_codes() -> None:
 def test_violations_must_be_a_tuple() -> None:
     with pytest.raises(TypeError):
         ValidationReport(violations=[ERROR])  # type: ignore[arg-type]
+
+
+class TestSeverityPolicy:
+    def test_assigns_warning_only_to_listed_codes(self) -> None:
+        policy = SeverityPolicy(name="test", warnings=frozenset({ViolationCode.DUPLICATE_RELATED}))
+        findings = [
+            Finding(code=ViolationCode.DUPLICATE_RELATED, field="related", message="dup"),
+            Finding(code=ViolationCode.TITLE_BLANK, field="title", message="blank"),
+        ]
+
+        report = policy.report(findings)
+
+        assert [(v.code, v.severity) for v in report.violations] == [
+            (ViolationCode.DUPLICATE_RELATED, Severity.WARNING),
+            (ViolationCode.TITLE_BLANK, Severity.ERROR),
+        ]
+        assert report.violations[0].field == "related"
+        assert report.violations[0].message == "dup"
+
+    @pytest.mark.parametrize("policy", [PROPOSAL_POLICY, OWNER_EDIT_POLICY])
+    def test_soft_limit_and_duplicate_related_only_warn_on_every_path(self, policy: SeverityPolicy) -> None:
+        assert policy.severity(ViolationCode.BODY_OVER_SOFT_LIMIT) is Severity.WARNING
+        assert policy.severity(ViolationCode.DUPLICATE_RELATED) is Severity.WARNING
+        assert policy.severity(ViolationCode.BODY_OVER_HARD_LIMIT) is Severity.ERROR
+
+    def test_empty_findings_give_an_ok_report(self) -> None:
+        assert PROPOSAL_POLICY.report([]).violations == ()

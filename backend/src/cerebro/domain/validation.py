@@ -1,27 +1,49 @@
 """Rules a single note must satisfy on its own. Rules that need other notes live with links (step 3)."""
 
-from cerebro.domain.budgets import body_budget_report
+from cerebro.domain.budgets import body_budget_findings
 from cerebro.domain.enums import Priority, Sensitivity, Status
 from cerebro.domain.note import Note
-from cerebro.domain.report import Severity, ValidationReport, Violation, ViolationCode
-from cerebro.domain.vocabulary import CORE, HUB, Vocabulary
+from cerebro.domain.report import Finding, SeverityPolicy, ValidationReport, ViolationCode
+from cerebro.domain.vocabulary import CORE, HUB, NoteType, Vocabulary
 
 MAX_TITLE_LENGTH = 120
 SUMMARY_MIN_LENGTH = 40
 SUMMARY_MAX_LENGTH = 300
 
+_PRIORITIES_BY_TYPE: dict[NoteType, frozenset[Priority]] = {
+    CORE: frozenset({Priority.P0}),
+    HUB: frozenset({Priority.P1}),
+}
+_REGULAR_PRIORITIES = frozenset({Priority.P2, Priority.P3})
 
-def validate_note(note: Note, vocabulary: Vocabulary) -> ValidationReport:
-    """Return every violation of the per-note rules, including the note's own body budget."""
-    found: list[Violation] = []
 
-    def add(code: ViolationCode, field: str | None, message: str, severity: Severity = Severity.ERROR) -> None:
-        found.append(Violation(code=code, field=field, message=message, severity=severity))
+def allowed_priorities(note_type: NoteType) -> frozenset[Priority]:
+    """``core`` is P0, ``hub`` is P1, every other type is P2 or P3."""
+    return _PRIORITIES_BY_TYPE.get(note_type, _REGULAR_PRIORITIES)
 
-    if not note.title.strip():
+
+def validate_note(note: Note, vocabulary: Vocabulary, policy: SeverityPolicy) -> ValidationReport:
+    """Every per-note rule violation, including the body budget, with severities from ``policy``."""
+    return policy.report(note_findings(note, vocabulary) + body_budget_findings(note))
+
+
+def note_findings(note: Note, vocabulary: Vocabulary) -> tuple[Finding, ...]:
+    """Per-note rules except the body budget. Type is authoritative: rules key on it, not on priority."""
+    found: list[Finding] = []
+
+    def add(code: ViolationCode, field: str | None, message: str) -> None:
+        found.append(Finding(code=code, field=field, message=message))
+
+    title = note.title.strip()
+    if not title:
         add(ViolationCode.TITLE_BLANK, "title", "title is blank")
-    elif len(note.title) > MAX_TITLE_LENGTH:
+    elif len(title) > MAX_TITLE_LENGTH:
         add(ViolationCode.TITLE_TOO_LONG, "title", f"longer than {MAX_TITLE_LENGTH} characters")
+    if "\n" in note.title or "\r" in note.title:
+        add(ViolationCode.TITLE_MULTILINE, "title", "title must be a single line")
+
+    if not note.lang.strip():
+        add(ViolationCode.LANG_BLANK, "lang", "lang is blank")
 
     if not vocabulary.has_type(note.type):
         add(ViolationCode.UNKNOWN_TYPE, "type", f"{note.type} is not in schema/types.yaml")
@@ -36,15 +58,18 @@ def validate_note(note: Note, vocabulary: Vocabulary) -> ValidationReport:
             f"{summary_length} characters; must be {SUMMARY_MIN_LENGTH}-{SUMMARY_MAX_LENGTH}",
         )
 
-    if (note.type == CORE) != (note.priority is Priority.P0):
-        add(ViolationCode.PRIORITY_TYPE_MISMATCH, "priority", "type core and priority P0 go together")
-    if (note.type == HUB) != (note.priority is Priority.P1):
-        add(ViolationCode.PRIORITY_TYPE_MISMATCH, "priority", "type hub and priority P1 go together")
-    if note.priority is Priority.P0 and note.sensitivity is Sensitivity.RESTRICTED:
-        add(ViolationCode.CORE_RESTRICTED, "sensitivity", "P0 notes cannot be restricted")
+    allowed = allowed_priorities(note.type)
+    if note.priority not in allowed:
+        expected = " or ".join(sorted(p.value for p in allowed))
+        add(ViolationCode.PRIORITY_TYPE_MISMATCH, "priority", f"type {note.type} requires priority {expected}")
+    if (note.type == CORE or note.priority is Priority.P0) and note.sensitivity is Sensitivity.RESTRICTED:
+        add(ViolationCode.CORE_RESTRICTED, "sensitivity", "core (P0) notes cannot be restricted")
 
-    if note.hub is None and note.priority is not Priority.P0 and not note.is_hub:
-        add(ViolationCode.HUB_REQUIRED, "hub", "required for notes other than P0 and hubs")
+    if note.type == CORE:
+        if note.hub is not None:
+            add(ViolationCode.HUB_NOT_ALLOWED, "hub", "core notes do not belong to a hub")
+    elif note.hub is None and not note.is_hub:
+        add(ViolationCode.HUB_REQUIRED, "hub", "required for notes other than core notes and hubs")
     if note.hub == note.id:
         add(ViolationCode.SELF_REFERENCE, "hub", "a note cannot be its own hub")
 
@@ -58,9 +83,9 @@ def validate_note(note: Note, vocabulary: Vocabulary) -> ValidationReport:
     if note.id in note.related:
         add(ViolationCode.SELF_REFERENCE, "related", "a note cannot be related to itself")
     if len(set(note.related)) != len(note.related):
-        add(ViolationCode.DUPLICATE_RELATED, "related", "duplicate ids", Severity.WARNING)
+        add(ViolationCode.DUPLICATE_RELATED, "related", "duplicate ids")
 
     if note.updated < note.created:
         add(ViolationCode.DATES_OUT_OF_ORDER, "updated", "updated is before created")
 
-    return ValidationReport(tuple(found)) + body_budget_report(note)
+    return tuple(found)

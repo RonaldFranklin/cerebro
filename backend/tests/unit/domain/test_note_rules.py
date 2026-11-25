@@ -4,18 +4,26 @@ import pytest
 
 from cerebro.domain.enums import Priority, Sensitivity, Status
 from cerebro.domain.note import NoteId
-from cerebro.domain.report import Severity, ViolationCode
-from cerebro.domain.validation import validate_note
+from cerebro.domain.report import OWNER_EDIT_POLICY, PROPOSAL_POLICY, Severity, SeverityPolicy, ViolationCode
+from cerebro.domain.validation import allowed_priorities, validate_note
 from cerebro.domain.vocabulary import Area, NoteType
 from tests.unit.domain.builders import VOCABULARY, make_note, words
 
+CORE = {"type": NoteType("core"), "priority": Priority.P0, "sensitivity": Sensitivity.INTERNAL, "hub": None}
+HUB = {"type": NoteType("hub"), "priority": Priority.P1, "hub": None}
+
 
 def codes(**overrides: object) -> list[ViolationCode]:
-    return [v.code for v in validate_note(make_note(**overrides), VOCABULARY).violations]
+    return [v.code for v in validate_note(make_note(**overrides), VOCABULARY, PROPOSAL_POLICY).violations]
 
 
 def test_a_valid_note_has_no_violations() -> None:
-    assert validate_note(make_note(), VOCABULARY).violations == ()
+    assert validate_note(make_note(), VOCABULARY, PROPOSAL_POLICY).violations == ()
+
+
+@pytest.mark.parametrize("overrides", [CORE, HUB, {**HUB, "hub": NoteId("infrastructure")}])
+def test_valid_core_and_hub_notes(overrides: dict[str, object]) -> None:
+    assert codes(**overrides) == []
 
 
 class TestTitle:
@@ -23,9 +31,19 @@ class TestTitle:
     def test_must_not_be_blank(self, title: str) -> None:
         assert codes(title=title) == [ViolationCode.TITLE_BLANK]
 
-    def test_is_limited_to_120_characters(self) -> None:
+    def test_is_limited_to_120_characters_after_trimming(self) -> None:
         assert codes(title="x" * 120) == []
+        assert codes(title="  " + "x" * 120 + "  ") == []
         assert codes(title="x" * 121) == [ViolationCode.TITLE_TOO_LONG]
+
+    @pytest.mark.parametrize("title", ["first\nsecond", "first\r\nsecond"])
+    def test_must_be_a_single_line(self, title: str) -> None:
+        assert codes(title=title) == [ViolationCode.TITLE_MULTILINE]
+
+
+@pytest.mark.parametrize("lang", ["", "  "])
+def test_lang_must_not_be_blank(lang: str) -> None:
+    assert codes(lang=lang) == [ViolationCode.LANG_BLANK]
 
 
 class TestVocabulary:
@@ -53,32 +71,51 @@ class TestHubField:
     def test_is_required_for_regular_notes(self) -> None:
         assert codes(hub=None) == [ViolationCode.HUB_REQUIRED]
 
-    def test_is_not_required_for_core_notes(self) -> None:
-        assert codes(type=NoteType("core"), priority=Priority.P0, sensitivity=Sensitivity.INTERNAL, hub=None) == []
-
-    def test_is_optional_for_hubs(self) -> None:
-        assert codes(type=NoteType("hub"), priority=Priority.P1, hub=None) == []
-        assert codes(id=NoteId("infra-docker"), type=NoteType("hub"), priority=Priority.P1) == []
+    def test_is_not_allowed_for_core_notes(self) -> None:
+        assert codes(**{**CORE, "hub": NoteId("infrastructure")}) == [ViolationCode.HUB_NOT_ALLOWED]
 
     def test_cannot_point_to_the_note_itself(self) -> None:
         assert codes(hub=NoteId("server-ssh-access")) == [ViolationCode.SELF_REFERENCE]
 
 
-class TestPriorityAndType:
-    def test_core_type_requires_p0(self) -> None:
-        assert codes(type=NoteType("core")) == [ViolationCode.PRIORITY_TYPE_MISMATCH]
+class TestPriorityFollowsType:
+    @pytest.mark.parametrize(
+        ("note_type", "expected"),
+        [
+            ("core", {Priority.P0}),
+            ("hub", {Priority.P1}),
+            ("runbook", {Priority.P2, Priority.P3}),
+            ("concept", {Priority.P2, Priority.P3}),
+        ],
+    )
+    def test_allowed_priorities(self, note_type: str, expected: set[Priority]) -> None:
+        assert allowed_priorities(NoteType(note_type)) == expected
 
-    def test_p0_requires_core_type(self) -> None:
-        assert codes(priority=Priority.P0, sensitivity=Sensitivity.INTERNAL) == [ViolationCode.PRIORITY_TYPE_MISMATCH]
+    @pytest.mark.parametrize(
+        "overrides",
+        [
+            {**CORE, "priority": Priority.P2},
+            {**CORE, "priority": Priority.P1},
+            {**HUB, "priority": Priority.P0, "sensitivity": Sensitivity.INTERNAL},
+            {**HUB, "priority": Priority.P3},
+            {"priority": Priority.P1},
+        ],
+    )
+    def test_one_violation_per_mismatch(self, overrides: dict[str, object]) -> None:
+        report = validate_note(make_note(**overrides), VOCABULARY, PROPOSAL_POLICY)
 
-    def test_hub_type_requires_p1(self) -> None:
-        assert codes(type=NoteType("hub")) == [ViolationCode.PRIORITY_TYPE_MISMATCH]
+        assert [v.code for v in report.violations] == [ViolationCode.PRIORITY_TYPE_MISMATCH]
 
-    def test_p1_requires_hub_type(self) -> None:
-        assert codes(priority=Priority.P1) == [ViolationCode.PRIORITY_TYPE_MISMATCH]
+    def test_message_names_the_expected_priority(self) -> None:
+        report = validate_note(make_note(**{**HUB, "priority": Priority.P3}), VOCABULARY, PROPOSAL_POLICY)
+
+        assert report.violations[0].message == "type hub requires priority P1"
+
+    def test_regular_note_at_p0_is_a_mismatch_and_cannot_be_restricted(self) -> None:
+        assert codes(priority=Priority.P0) == [ViolationCode.PRIORITY_TYPE_MISMATCH, ViolationCode.CORE_RESTRICTED]
 
     def test_core_notes_cannot_be_restricted(self) -> None:
-        assert codes(type=NoteType("core"), priority=Priority.P0, hub=None) == [ViolationCode.CORE_RESTRICTED]
+        assert codes(**{**CORE, "sensitivity": Sensitivity.RESTRICTED}) == [ViolationCode.CORE_RESTRICTED]
 
 
 class TestSupersededBy:
@@ -101,8 +138,9 @@ class TestRelated:
     def test_cannot_contain_the_note_itself(self) -> None:
         assert codes(related=(NoteId("server-ssh-access"),)) == [ViolationCode.SELF_REFERENCE]
 
-    def test_duplicates_are_a_warning(self) -> None:
-        report = validate_note(make_note(related=(NoteId("a"), NoteId("a"))), VOCABULARY)
+    @pytest.mark.parametrize("policy", [PROPOSAL_POLICY, OWNER_EDIT_POLICY])
+    def test_duplicates_only_warn(self, policy: SeverityPolicy) -> None:
+        report = validate_note(make_note(related=(NoteId("a"), NoteId("a"))), VOCABULARY, policy)
 
         assert report.ok
         assert [(v.code, v.severity) for v in report.violations] == [
@@ -118,8 +156,21 @@ class TestDates:
         assert codes(created=date(2026, 11, 1), updated=date(2026, 11, 24)) == []
 
 
-def test_includes_the_body_budget() -> None:
-    assert codes(body=words(3001)) == [ViolationCode.BODY_OVER_HARD_LIMIT]
+class TestBudgetSeverity:
+    def test_hard_limit_is_an_error(self) -> None:
+        report = validate_note(make_note(body=words(3001)), VOCABULARY, PROPOSAL_POLICY)
+
+        assert [(v.code, v.severity) for v in report.violations] == [
+            (ViolationCode.BODY_OVER_HARD_LIMIT, Severity.ERROR)
+        ]
+
+    def test_soft_limit_is_a_warning(self) -> None:
+        report = validate_note(make_note(body=words(1501)), VOCABULARY, PROPOSAL_POLICY)
+
+        assert report.ok
+        assert [(v.code, v.severity) for v in report.violations] == [
+            (ViolationCode.BODY_OVER_SOFT_LIMIT, Severity.WARNING)
+        ]
 
 
 def test_reports_every_problem_at_once() -> None:
