@@ -1,7 +1,7 @@
 """In-memory ``ProposalStore`` and ``TokenStore``, and a scriptable ``Curator``."""
 
 from dataclasses import replace
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from threading import RLock
 
 from cerebro.application.errors import (
@@ -39,7 +39,7 @@ class InMemoryProposalStore:
         validate_token_id(token_id)
         require_admissible(proposal)
         with self._lock:
-            now = clock.now()
+            now = clock.now().astimezone(UTC)
             cutoff = now - timedelta(hours=1)
             admitted = [(pid, at) for pid, (token, at) in self._admissions.items() if token == token_id]
             if (

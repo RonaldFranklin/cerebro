@@ -199,7 +199,7 @@ class SqliteProposalStore:
         require_admissible(proposal)
         # BEGIN IMMEDIATE protects the counts through insertion, including against other server processes.
         with self._db.write() as conn:
-            now = clock.now()
+            now = clock.now().astimezone(UTC)
             cutoff = utc_key(now - timedelta(hours=1))
             recent = conn.execute(
                 "SELECT count(*) FROM proposals WHERE admission_token_id = ? AND admitted_key > ?",

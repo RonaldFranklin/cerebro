@@ -4,6 +4,7 @@ import hashlib
 import re
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
+from zoneinfo import ZoneInfo
 
 import pytest
 
@@ -79,6 +80,15 @@ class ProposalStoreContract:
         assert store.get("third") is None
         clock.advance(timedelta(microseconds=1))
         store.admit(make_reviewable("third"), token_id="token-a", limits=limits, clock=clock)
+
+    def test_rolling_hour_uses_elapsed_time_across_daylight_saving(self, store: ProposalStore) -> None:
+        zone = ZoneInfo("America/New_York")
+        clock = FixedClock(datetime(2026, 3, 8, 3, 15, tzinfo=zone))
+        limits = ProposalLimits(per_hour=1, pending=10)
+        store.admit(make_reviewable("first"), token_id="a", limits=limits, clock=clock)
+        clock.set(datetime(2026, 3, 8, 3, 30, tzinfo=zone))
+        with pytest.raises(ProposalLimitReached):
+            store.admit(make_reviewable("second"), token_id="a", limits=limits, clock=clock)
 
     def test_received_and_unscrubbed_rejected_proposals_are_never_admitted(self, store: ProposalStore) -> None:
         raw = make_proposal()
