@@ -58,7 +58,10 @@ def _read_config(path: Path) -> dict[str, str]:
         if key in _LIMIT_KEYS:
             if type(entry) is not int or entry <= 0:
                 raise ConfigurationError("quota settings must be positive integers")
-            data[key] = str(entry)
+            try:
+                data[key] = str(entry)
+            except ValueError:
+                raise ConfigurationError("quota setting exceeds integer size") from None
         elif type(entry) is not str:
             raise ConfigurationError("configuration contains an invalid value")
     return data

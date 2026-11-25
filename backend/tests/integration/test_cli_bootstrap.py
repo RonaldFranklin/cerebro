@@ -126,3 +126,10 @@ def test_invalid_environment_quota(tmp_path: Path, value: str) -> None:
     file.write_text(SAMPLE)
     with pytest.raises(ConfigurationError):
         load_settings(file, {"CEREBRO_PROPOSALS_PENDING": value})
+
+
+def test_large_toml_hex_quota_reports_configuration_error(tmp_path: Path) -> None:
+    file = tmp_path / "settings.toml"
+    file.write_text(SAMPLE + "proposals_per_hour = 0x" + "f" * 8000)
+    with pytest.raises(ConfigurationError):
+        load_settings(file, {})
