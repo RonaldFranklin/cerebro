@@ -51,7 +51,7 @@ def _tool(name: str, description: str, properties: dict[str, object], *required:
     )
 
 
-_TEXT = {"type": "string", "maxLength": MAX_FIELD_BYTES}
+_TEXT = {"type": "string", "maxLength": MAX_FIELD_BYTES, "description": f"Up to {MAX_FIELD_BYTES} UTF-8 bytes."}
 _TOOLS = {
     tool.name: tool
     for tool in (
@@ -60,7 +60,11 @@ _TOOLS = {
             "cerebro_search",
             "Search note summaries.",
             {
-                "query": {"type": "string", "maxLength": MAX_QUERY_BYTES},
+                "query": {
+                    "type": "string",
+                    "maxLength": MAX_QUERY_BYTES,
+                    "description": f"Up to {MAX_QUERY_BYTES} UTF-8 bytes.",
+                },
                 "area": _TEXT,
                 "type": _TEXT,
                 "priority": {"type": "string", "enum": [p.value for p in Priority]},
@@ -102,6 +106,15 @@ def parse_tool(name: str, arguments: object) -> ToolRequest:
             raise InvalidToolArguments
         return bounded_text(val, limit)
 
+    def integer(key: str, default: int) -> int:
+        value = args.get(key, default)
+        # JSON Schema treats numbers such as 1.0 as integers. JSON booleans are a separate type.
+        if type(value) is int:
+            return value
+        if type(value) is float and value.is_integer():
+            return int(value)
+        raise InvalidToolArguments
+
     try:
         if name == "cerebro_overview":
             return GetOverviewRequest()
@@ -113,13 +126,13 @@ def parse_tool(name: str, arguments: object) -> ToolRequest:
                 priorities=frozenset([Priority(text("priority"))]) if "priority" in args else frozenset(),
                 statuses=frozenset([Status(text("status"))]) if "status" in args else frozenset(),
                 include_history=args.get("include_history", False),
-                limit=args.get("limit", 5),
+                limit=integer("limit", 5),
             )
         note_id = NoteId(text("id"))
         if name == "cerebro_read":
             return ReadNoteRequest(note_id=note_id, section=text("section") if "section" in args else None)
-        depth = args.get("depth", 1)
-        if type(depth) is not int or not 1 <= depth <= 2:
+        depth = integer("depth", 1)
+        if not 1 <= depth <= 2:
             raise InvalidToolArguments
         return GetNeighborsRequest(note_id=note_id, hops=depth)
     except DomainError, ValueError:

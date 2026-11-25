@@ -93,6 +93,8 @@ def test_arguments_normalize_before_authentication(container: Container) -> None
     near = parse_tool("cerebro_neighbors", {"id": "example"})
     assert isinstance(near, GetNeighborsRequest)
     assert near.hops == 1
+    assert parse_tool("cerebro_neighbors", {"id": "example", "depth": 1.0}) == near
+    assert parse_tool("cerebro_search", {"query": "", "limit": 5.0}) == parse_tool("cerebro_search", {"query": ""})
 
     def forbidden() -> AccessContext:
         pytest.fail("invalid arguments must be rejected before authenticating or running a use case")
@@ -107,6 +109,7 @@ def test_arguments_normalize_before_authentication(container: Container) -> None
         ("cerebro_overview", {"ceiling": "restricted"}),
         ("cerebro_neighbors", {"id": "note", "depth": 3}),
         ("cerebro_neighbors", {"id": "note", "depth": True}),
+        ("cerebro_neighbors", {"id": "note", "depth": 1.5}),
         ("cerebro_propose", {}),
         ("cerebro_search", {"query": None}),
     ]:
