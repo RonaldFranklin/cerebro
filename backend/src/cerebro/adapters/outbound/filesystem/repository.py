@@ -24,9 +24,21 @@ fsync of the directory), staged and committed with the rendered ``CommitMessage`
 are restored through ``GitRepo.discard_changes`` (a draft that already sat at a planned path is never deleted) and a
 sanitized ``NoteWriteError`` is raised. An update that changes nothing is refused (git has nothing to commit).
 Reads of whole listings take a shared lock so they never see half of an ``apply``.
+
+``apply`` refuses to run on unclean state (``NoteWriteError``): anything staged, a note to update that is untracked or
+differs from ``HEAD``, a note to create whose path exists or is known to git. The commit uses ``--only`` with the
+planned paths, so nothing else can ever be committed. If a failure happens after the commit exists (``HEAD`` moved),
+nothing is rolled back: ``apply`` returns the new revision, or raises ``NoteCommittedError`` when it cannot be read.
+After a rollback, restored encrypted files get mode 0600 again. Leftover ``.<id>.md.<hex>.tmp`` files older than an
+hour are deleted at the start of each ``apply``.
+
+Residual risks: ``get`` takes no lock; ``list_*`` read the working tree while ``head()`` reports ``HEAD`` (keep the
+tree clean); replacing an encrypted file by a plaintext one declaring ``internal`` is indistinguishable from a normal
+note; listing a folder reads its entries by path (an attacker would need write access to the repository directory).
 """
 
 import os
+import time
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -34,9 +46,14 @@ from typing import Final
 
 from cerebro.adapters.outbound.crypto import RestrictedFormatError, decode_restricted, encode_restricted
 from cerebro.adapters.outbound.filesystem.codec import NoteFormatError, parse_note_bytes, render_note
-from cerebro.adapters.outbound.filesystem.errors import NoteFileError, NoteWriteError
+from cerebro.adapters.outbound.filesystem.errors import NoteCommittedError, NoteFileError, NoteWriteError
 from cerebro.adapters.outbound.filesystem.lock import file_lock
-from cerebro.adapters.outbound.filesystem.safeio import read_regular_file, write_file_atomic
+from cerebro.adapters.outbound.filesystem.safeio import (
+    read_regular_file,
+    remove_stale_temp_files,
+    set_mode,
+    write_file_atomic,
+)
 from cerebro.adapters.outbound.git import GitError, GitRepo
 from cerebro.application.errors import DecryptionError
 from cerebro.application.ports import Cipher, NoteChange
@@ -53,6 +70,8 @@ MAX_FILE_BYTES: Final = 512 * 1024
 """Read cap for any note file: a 256 KiB note encrypts to about 350 KB."""
 DEFAULT_LOCK_TIMEOUT: Final = 10.0
 LOCK_FILE: Final = "cerebro-notes.lock"
+STALE_TEMP_SECONDS: Final = 3600.0
+_TEMP_PATTERN: Final = r"\.[a-z0-9-]+\.md\.[0-9a-f]{16}\.tmp"
 _PLAIN_MODE: Final = 0o644
 _RESTRICTED_MODE: Final = 0o600
 
@@ -86,6 +105,9 @@ class FilesystemNoteRepository:
         if not root.is_dir():
             raise ValueError("content root is not a directory")
         self._root = root.resolve()
+        dot_git = self._root / ".git"
+        if dot_git.is_symlink() or not dot_git.is_dir():
+            raise ValueError("the content root must be a git repository with a real .git directory")
         self._git = git
         self._cipher = cipher
         self._lock_timeout = lock_timeout
@@ -221,8 +243,10 @@ class FilesystemNoteRepository:
             raise InvalidValueError("changes", "a note appears more than once")
         prepared = [self._prepare(change) for change in changes]
         with file_lock(self._lock_path, exclusive=True, timeout=self._lock_timeout):
+            self._remove_stale_temp_files()
             self._check(prepared)
-            return self._write(prepared, message)
+            before = self._check_clean(prepared)
+            return self._write(prepared, message, before)
 
     def _prepare(self, change: NoteChange) -> _Prepared:
         note = change.note
@@ -267,33 +291,81 @@ class FilesystemNoteRepository:
         except NoteFileError:
             return ""
 
-    def _write(self, prepared: Sequence[_Prepared], message: CommitMessage) -> str:
+    def _remove_stale_temp_files(self) -> None:
+        now = time.time()
+        for folder in FOLDERS:
+            remove_stale_temp_files(self._root, folder, older_than=STALE_TEMP_SECONDS, now=now, pattern=_TEMP_PATTERN)
+
+    def _check_clean(self, prepared: Sequence[_Prepared]) -> frozenset[str]:
+        """Refuse to write on top of uncommitted state, so that a rollback is exact.
+
+        Nothing may be staged; every note being updated must be tracked in ``HEAD`` with unmodified bytes; no note
+        being created may exist in the index or in ``HEAD`` (a file deleted by hand and recreated, for instance).
+        """
+        planned = [item.relative for item in prepared]
+        try:
+            if self._git.has_staged_changes():
+                raise NoteWriteError("the git index has staged changes: commit or reset them first")
+            before = self._git.snapshot_existing(planned)
+            for item in prepared:
+                if item.change.expected_hash is None:
+                    if item.relative in before:
+                        raise NoteWriteError("a note file for a new note is already known to git or exists")
+                elif not self._git.matches_head(item.relative):
+                    raise NoteWriteError("a note file is untracked or has uncommitted changes: commit or reset it")
+        except GitError:
+            raise NoteWriteError("could not inspect the content repository; nothing was written") from None
+        return before
+
+    def _write(self, prepared: Sequence[_Prepared], message: CommitMessage, before: frozenset[str]) -> str:
         planned = [item.relative for item in prepared]
         created = [item.relative for item in prepared if item.change.expected_hash is None]
         modified = [item.relative for item in prepared if item.change.expected_hash is not None]
         try:
-            before = self._git.snapshot_existing(planned)
+            head_before = self._git.head()
         except GitError:
             raise NoteWriteError("could not inspect the content repository; nothing was written") from None
+        committed = False
         try:
             for item in prepared:
                 write_file_atomic(self._root, item.relative, item.data, mode=item.mode)
             self._git.stage(planned)
-            self._git.commit(message.render())
+            self._git.commit(message.render(), planned)
+            committed = True
             revision = self._git.head()
         except BaseException as failure:
+            try:
+                moved_to = self._git.head()
+            except GitError:
+                if committed:
+                    raise NoteCommittedError("the commit succeeded but its revision could not be read") from None
+                raise NoteWriteError("the change failed and the repository state is unknown: inspect it") from None
+            if moved_to != head_before:  # the commit exists: never roll it back
+                if isinstance(failure, Exception):
+                    return moved_to or ""
+                raise
             self._rollback(created, modified, before)
             if isinstance(failure, OSError | GitError):
                 raise NoteWriteError("the change could not be written or committed; nothing was kept") from None
             raise
         if revision is None:  # pragma: no cover - a successful commit always creates HEAD
-            raise NoteWriteError("commit left no HEAD")
+            raise NoteCommittedError("the commit succeeded but left no readable HEAD")
         return revision
 
     def _rollback(self, created: list[str], modified: list[str], before: frozenset[str]) -> None:
         try:
             self._git.discard_changes(created=created, modified=modified, preexisting=before)
+            for relative in modified:
+                self._restore_mode(relative)
         except GitError, OSError:
             raise NoteWriteError(
                 "the change failed and the rollback was incomplete: inspect the content repository"
             ) from None
+
+    def _restore_mode(self, relative: str) -> None:
+        """``git restore`` recreates files with the umask's mode: encrypted files go back to 0600."""
+        try:
+            if _is_encrypted(read_regular_file(self._root, relative, MAX_FILE_BYTES)):
+                set_mode(self._root, relative, _RESTRICTED_MODE)
+        except FileNotFoundError:
+            return

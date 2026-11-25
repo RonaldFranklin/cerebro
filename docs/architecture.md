@@ -196,6 +196,17 @@ Workstation                                    Server (docker compose: cerebro-<
 | Proposals, decisions, tokens | state dir, `state.sqlite` | no | yes (file backup) |
 | Fernet key, admin password hash | secrets dir | no | owner keeps an offline copy of the key |
 
+Filesystem repository, operating notes (Phase 2):
+
+- `list_notes`/`list_refs` read the working tree while `head()` reports `HEAD`: the container must keep the content
+  tree clean. `apply` enforces it for writes (it refuses when anything is staged, or when a planned note is untracked,
+  has uncommitted edits, or a new note's path is already known to git) and commits only the planned paths.
+- `get` takes no lock (each file is replaced atomically); whole-tree listings take a shared lock.
+- Replacing an encrypted restricted file by a plaintext file declaring `internal` or `public` cannot be detected by
+  the adapter (the file is a valid plaintext note). Protect the working tree and review commits.
+- Directory components are walked with `openat`-style calls (no symlink swap between check and use) for reads and
+  writes; listing a folder by name still reads its entries by path (an attacker needs write access to the repository).
+
 ## 6. Frontend
 
 - React + TypeScript + Vite. Data fetching through a small `api/` layer (the UI's port); components never call

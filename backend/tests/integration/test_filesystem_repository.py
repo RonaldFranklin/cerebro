@@ -14,6 +14,7 @@ import pytest
 from cerebro.adapters.outbound.crypto import FernetCipher, generate_key
 from cerebro.adapters.outbound.filesystem import (
     FilesystemNoteRepository,
+    NoteCommittedError,
     NoteFileError,
     NoteWriteError,
     VocabularyError,
@@ -633,3 +634,149 @@ def test_a_missing_or_symlinked_schema_file_is_refused(root: Path, tmp_path: Pat
 def test_the_repository_rejects_a_missing_root(tmp_path: Path, git: GitRepo, cipher: Cipher) -> None:
     with pytest.raises(ValueError, match="not a directory"):
         FilesystemNoteRepository(tmp_path / "nope", git=git, cipher=cipher)
+
+
+# -- unclean state, post-commit failures, housekeeping -------------------------------------------------------------
+
+
+def committed_base(repo: FilesystemNoteRepository, git: GitRepo) -> tuple[Note, str | None]:
+    base = plain(id=NoteId("base-note"))
+    repo.apply([NoteChange(note=base)], MESSAGE)
+    return base, git.head()
+
+
+def fail_commit(*args: Any, **kwargs: Any) -> Any:
+    raise GitError("boom")
+
+
+def test_an_untracked_hand_made_note_at_an_update_path_is_refused(
+    repo: FilesystemNoteRepository, git: GitRepo, root: Path
+) -> None:
+    from cerebro.adapters.outbound.filesystem.codec import render_note
+
+    note = plain(id=NoteId("hand-made"))
+    (root / "notes").mkdir()
+    (root / "notes/hand-made.md").write_bytes(render_note(note))
+    head = git.head()
+    with pytest.raises(NoteWriteError, match="untracked or has uncommitted"):
+        repo.apply([NoteChange(note=replace(note, body="New.\n"), expected_hash=content_hash(note))], MESSAGE)
+    assert git.head() == head
+    assert (root / "notes/hand-made.md").read_bytes() == render_note(note)
+
+
+def test_a_staged_unrelated_file_refuses_the_apply_and_is_never_committed(
+    repo: FilesystemNoteRepository, git: GitRepo, root: Path
+) -> None:
+    _, head = committed_base(repo, git)
+    (root / "unrelated.txt").write_text("secret draft\n")
+    git.stage(["unrelated.txt"])
+    with pytest.raises(NoteWriteError, match="staged changes"):
+        repo.apply([NoteChange(note=plain(id=NoteId("other-note")))], MESSAGE)
+    assert git.head() == head
+    assert repo.get(NoteId("other-note")) is None
+
+
+def test_an_uncommitted_edit_of_a_tracked_note_refuses_the_update(
+    repo: FilesystemNoteRepository, git: GitRepo, root: Path
+) -> None:
+    base, head = committed_base(repo, git)
+    path = root / "notes/base-note.md"
+    path.write_text(path.read_text() + "hand edit\n")
+    edited = repo.get(base.id)
+    assert edited is not None
+    change = NoteChange(note=replace(edited, summary=edited.summary + " x"), expected_hash=content_hash(edited))
+    with pytest.raises(NoteWriteError, match="uncommitted"):
+        repo.apply([change], MESSAGE)
+    assert git.head() == head
+    assert path.read_text().endswith("hand edit\n")
+
+
+def test_a_note_deleted_by_hand_and_created_again_is_refused(
+    repo: FilesystemNoteRepository, git: GitRepo, root: Path
+) -> None:
+    base, head = committed_base(repo, git)
+    (root / "notes/base-note.md").unlink()
+    with pytest.raises(NoteWriteError, match="already known to git"):
+        repo.apply([NoteChange(note=replace(base, body="Again.\n"))], MESSAGE)
+    assert git.head() == head
+    assert not (root / "notes/base-note.md").exists()
+
+
+def test_a_failure_after_the_commit_does_not_roll_back_and_returns_the_revision(
+    repo: FilesystemNoteRepository, git: GitRepo, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _, head = committed_base(repo, git)
+    real_commit = GitRepo.commit
+
+    def commit_then_raise(self: GitRepo, *args: Any, **kwargs: Any) -> str:
+        real_commit(self, *args, **kwargs)
+        raise GitError("raised after the commit was made")
+
+    monkeypatch.setattr(GitRepo, "commit", commit_then_raise)
+    revision = repo.apply([NoteChange(note=plain(id=NoteId("after-commit")))], MESSAGE)
+    monkeypatch.undo()
+    assert revision == git.head() != head
+    assert repo.get(NoteId("after-commit")) is not None
+    assert git.is_clean()
+
+
+def test_a_failure_after_the_commit_with_an_unreadable_head_raises_note_committed(
+    repo: FilesystemNoteRepository, git: GitRepo, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    committed_base(repo, git)
+    real_head, real_commit = GitRepo.head, GitRepo.commit
+    state = {"after_commit": False}
+
+    def commit(self: GitRepo, *args: Any, **kwargs: Any) -> str:
+        result = real_commit(self, *args, **kwargs)
+        state["after_commit"] = True
+        return result
+
+    def head(self: GitRepo) -> str | None:
+        if state["after_commit"]:
+            raise GitError("unreadable")
+        return real_head(self)
+
+    monkeypatch.setattr(GitRepo, "commit", commit)
+    monkeypatch.setattr(GitRepo, "head", head)
+    with pytest.raises(NoteCommittedError, match="succeeded"):
+        repo.apply([NoteChange(note=plain(id=NoteId("after-commit")))], MESSAGE)
+    monkeypatch.undo()
+    assert repo.get(NoteId("after-commit")) is not None
+
+
+def test_a_rollback_puts_restricted_files_back_to_0600(
+    repo: FilesystemNoteRepository, git: GitRepo, root: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    note = make_note()
+    repo.apply([NoteChange(note=note)], MESSAGE)
+    path = root / "notes/server-ssh-access.md"
+    path.chmod(0o644)  # what a restore under a permissive umask would leave behind
+    monkeypatch.setattr(GitRepo, "commit", fail_commit)
+    with pytest.raises(NoteWriteError):
+        repo.apply([NoteChange(note=replace(note, body="Edited.\n"), expected_hash=content_hash(note))], MESSAGE)
+    assert stat.S_IMODE(path.stat().st_mode) == 0o600
+    assert repo.get(note.id) == note
+
+
+def test_stale_temp_files_are_removed_and_fresh_ones_kept(repo: FilesystemNoteRepository, root: Path) -> None:
+    (root / "notes").mkdir()
+    old = root / "notes/.a-note.md.0123456789abcdef.tmp"
+    fresh = root / "notes/.b-note.md.0123456789abcdef.tmp"
+    other = root / "notes/.keep-me.tmp"
+    for p in (old, fresh, other):
+        p.write_text("x")
+    os.utime(old, (1, 1))
+    os.utime(other, (1, 1))
+    repo.apply([NoteChange(note=plain())], MESSAGE)
+    assert not old.exists()
+    assert fresh.exists()
+    assert other.exists()
+
+
+def test_a_git_file_instead_of_a_directory_is_a_clear_error(tmp_path: Path, git: GitRepo, cipher: Cipher) -> None:
+    other = tmp_path / "worktree"
+    other.mkdir()
+    (other / ".git").write_text("gitdir: elsewhere\n")
+    with pytest.raises(ValueError, match=r"real \.git directory"):
+        FilesystemNoteRepository(other, git=git, cipher=cipher)

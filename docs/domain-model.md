@@ -71,8 +71,10 @@ Structure and rule details enforced by the domain:
 
 - **Strict frontmatter.** Unknown keys are errors. A key whose value is `null` counts as missing (default for
   optional fields, error for required ones). Dates are `YYYY-MM-DD`; timestamps are rejected. Frontmatter that
-  is not a mapping (empty, list, scalar) is reported, not a crash. Values YAML 1.1 turns into booleans or
-  numbers (`no`, `on`, `2026`) are rejected with a hint to quote them.
+  is not a mapping (empty, list, scalar) is reported, not a crash. The filesystem adapter reads every unquoted
+  scalar as literal text (no YAML 1.1 coercion: `no`, `on`, `2026` stay text) and always writes such strings
+  quoted, so files round-trip exactly. `parse_note` still rejects non-text values (booleans, numbers) that reach
+  it from other sources, with a hint to quote them.
 - **Type decides priority:** `core` ⇒ `P0`, `hub` ⇒ `P1`, every other type ⇒ `P2` or `P3`. Rules that depend
   on the kind of note (hub requirement, body budget) key on the type. P0/core notes cannot be `restricted`.
 - **`hub` field:** required for every type except `core` and `hub`; optional for a hub (its parent hub);

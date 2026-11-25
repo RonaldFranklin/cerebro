@@ -33,6 +33,13 @@ class NoteWriteError(Exception):
     """A write could not be completed. Nothing was kept: the tree and ``HEAD`` are as before the call."""
 
 
+class NoteCommittedError(Exception):
+    """The commit **succeeded** but the revision could not be read back afterwards.
+
+    Nothing was rolled back: the notes are in the repository. Read ``head()`` to learn the new revision.
+    """
+
+
 class WriterBusyError(NoteWriteError):
     """Another writer holds the content repository lock and did not release it in time."""
 

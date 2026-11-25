@@ -1,6 +1,7 @@
 """Filesystem adapter: ``NoteRepository`` over markdown files committed with git, and the vocabulary loader."""
 
 from cerebro.adapters.outbound.filesystem.errors import (
+    NoteCommittedError,
     NoteFileError,
     NoteWriteError,
     VocabularyError,
@@ -11,6 +12,7 @@ from cerebro.adapters.outbound.filesystem.vocabulary import load_vocabulary
 
 __all__ = [
     "FilesystemNoteRepository",
+    "NoteCommittedError",
     "NoteFileError",
     "NoteWriteError",
     "VocabularyError",

@@ -12,7 +12,7 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
 
-from cerebro.adapters.outbound.filesystem.errors import WriterBusyError
+from cerebro.adapters.outbound.filesystem.errors import NoteWriteError, WriterBusyError
 
 POLL_INTERVAL = 0.02
 
@@ -22,7 +22,7 @@ def file_lock(path: Path, *, exclusive: bool, timeout: float) -> Iterator[None]:
     try:
         fd = os.open(path, os.O_RDWR | os.O_CREAT | os.O_CLOEXEC | os.O_NOFOLLOW, 0o600)
     except OSError:
-        raise WriterBusyError("could not open the content repository lock") from None
+        raise NoteWriteError("could not open the content repository lock file") from None
     try:
         flags = (fcntl.LOCK_EX if exclusive else fcntl.LOCK_SH) | fcntl.LOCK_NB
         deadline = time.monotonic() + timeout

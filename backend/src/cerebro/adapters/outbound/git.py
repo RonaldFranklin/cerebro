@@ -362,19 +362,48 @@ class GitRepo:
 
     add = stage
 
-    def commit(self, message: str) -> str:
-        """Commit the index with ``message`` (kept verbatim) as the configured identity; returns the new commit id.
+    def commit(self, message: str, paths: Iterable[str | PurePath] | None = None) -> str:
+        """Commit with ``message`` (kept verbatim) as the configured identity; returns the new commit id.
 
+        With ``paths``, ``git commit --only -- <paths>`` records exactly those (already staged or tracked) files and
+        nothing else, whatever else sits in the index. Without, the whole index is committed.
         Hooks and signing are off. Raises ``GitError`` when there is nothing to commit.
         """
         if not message.strip():
             raise GitError("empty commit message")
         text = message if message.endswith("\n") else message + "\n"
-        self._run(["commit", "--no-verify", "--no-gpg-sign", "--cleanup=verbatim", "--quiet", "-F", "-"], stdin=text)
+        args = ["commit", "--no-verify", "--no-gpg-sign", "--cleanup=verbatim", "--quiet", "-F", "-"]
+        redact: list[str] = []
+        if paths is not None:
+            checked = self._check_paths(paths)
+            if not checked:
+                raise GitError("no paths to commit")
+            args += ["--only", "--", *checked]
+            redact = self._names(checked)
+        self._run(args, stdin=text, redact=redact)
         commit_id = self.head()
         if commit_id is None:  # pragma: no cover - a successful commit always creates HEAD
             raise GitError("commit left no HEAD")
         return commit_id
+
+    def has_staged_changes(self) -> bool:
+        """True when the index differs from ``HEAD`` (or, before the first commit, is not empty)."""
+        if self.head() is None:
+            _, listing = self._run(["ls-files", "-z"])
+            return bool(listing)
+        code, _ = self._run(["diff", "--cached", "--quiet"], ok=(0, 1))
+        return code == 1
+
+    def matches_head(self, path: str | PurePath) -> bool:
+        """True when ``path`` is tracked in ``HEAD`` and its working-tree bytes equal the committed ones."""
+        checked = self._check_path(path, allow_final_symlink=True)
+        if self.head() is None:
+            return False
+        _, listing = self._run(["ls-tree", "-z", "HEAD", "--", checked], redact=self._names([checked]))
+        if not listing:
+            return False
+        code, _ = self._run(["diff", "--quiet", "HEAD", "--", checked], ok=(0, 1), redact=self._names([checked]))
+        return code == 0
 
     def snapshot_existing(self, paths: Iterable[str | PurePath]) -> frozenset[str]:
         """Which of ``paths`` already exist (on disk, as a symlink, or in the index) right now.

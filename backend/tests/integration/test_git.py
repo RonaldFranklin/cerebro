@@ -504,3 +504,34 @@ def test_transports_other_than_https_ssh_file_are_denied(tmp_path: Path) -> None
     with pytest.raises(GitError):
         repo.push("git://127.0.0.1:9/x.git", "main", timeout=10)
     assert not marker.exists()
+
+
+def test_commit_with_paths_records_only_those_paths(tmp_path: Path) -> None:
+    repo = make_repo(tmp_path)
+    root = tmp_path / "repo"
+    write(root, "a.md")
+    write(root, "unrelated.txt")
+    repo.stage(["a.md", "unrelated.txt"])
+    assert repo.has_staged_changes()
+    repo.commit("only a", ["a.md"])
+    assert raw_git(root, "show", "--name-only", "--format=", "HEAD").split() == ["a.md"]
+    assert repo.has_staged_changes()  # unrelated.txt is still staged, not committed
+
+
+def test_matches_head_tracks_content_and_deletion(tmp_path: Path) -> None:
+    repo = make_repo(tmp_path)
+    root = tmp_path / "repo"
+    assert not repo.has_staged_changes()
+    assert not repo.matches_head("a.md")
+    write(root, "a.md")
+    repo.stage(["a.md"])
+    repo.commit("add")
+    assert repo.matches_head("a.md")
+    write(root, "a.md", "changed\n")
+    assert not repo.matches_head("a.md")
+    (root / "a.md").unlink()
+    assert not repo.matches_head("a.md")
+    write(root, "b.md")
+    assert not repo.matches_head("b.md")
+    with pytest.raises(GitError):
+        repo.commit("empty", [])
