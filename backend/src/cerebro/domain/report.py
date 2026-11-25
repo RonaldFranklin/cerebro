@@ -41,6 +41,13 @@ class ViolationCode(StrEnum):
     SELF_REFERENCE = "self_reference"
     DUPLICATE_RELATED = "duplicate_related"
     DATES_OUT_OF_ORDER = "dates_out_of_order"
+    # cross-note rules (links.py / cross_note.py)
+    BROKEN_LINK = "broken_link"
+    HUB_NOT_FOUND = "hub_not_found"
+    HUB_NOT_A_HUB = "hub_not_a_hub"
+    SUPERSEDED_BY_CYCLE = "superseded_by_cycle"
+    HUB_CHAIN_CYCLE = "hub_chain_cycle"
+    HUB_CHAIN_TOO_DEEP = "hub_chain_too_deep"
     # budgets
     BODY_OVER_SOFT_LIMIT = "body_over_soft_limit"
     BODY_OVER_HARD_LIMIT = "body_over_hard_limit"
@@ -118,5 +125,5 @@ _ALWAYS_WARNINGS: Final = frozenset({ViolationCode.BODY_OVER_SOFT_LIMIT, Violati
 PROPOSAL_POLICY: Final = SeverityPolicy(name="proposal", warnings=_ALWAYS_WARNINGS)
 """Agent proposals: strict."""
 
-OWNER_EDIT_POLICY: Final = SeverityPolicy(name="owner_edit", warnings=_ALWAYS_WARNINGS)
-"""Owner edits and health reports. Step 3 adds broken links here (warning for the owner, error for agents)."""
+OWNER_EDIT_POLICY: Final = SeverityPolicy(name="owner_edit", warnings=_ALWAYS_WARNINGS | {ViolationCode.BROKEN_LINK})
+"""Owner edits and health reports: broken links only warn (the owner may link to a note not written yet)."""

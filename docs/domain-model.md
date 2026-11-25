@@ -84,17 +84,30 @@ Structure and rule details enforced by the domain:
 - **Severity depends on the write path.** Rules report findings with a stable code and never stop at the first
   one. A severity policy per write path decides which findings are `error` (block the change) and which are
   `warning` (reported, e.g. by the health report, but not blocking). Proposals and owner edits share the same
-  rules; today both treat only the soft word limit and duplicate `related` ids as warnings. Broken links will
-  be a warning for owner edits and an error for proposals. Structural frontmatter problems are always errors.
+  rules; today both treat only the soft word limit and duplicate `related` ids as warnings; **broken links are
+  additionally a warning for owner edits** and an error for proposals. Structural frontmatter problems are
+  always errors.
 - Enforced outside the domain: `id` equals the file name (filesystem repository adapter, Phase 2); `id` is
-  immutable (`OwnerEditNote` / `ApplyProposal`). Rules that need other notes (existence of `hub`, `related`,
-  `superseded_by`; broken links; cycles; hub chain depth) come with link extraction.
+  immutable (`OwnerEditNote` / `ApplyProposal`).
+- **Cross-note rules** are pure functions over a snapshot `Mapping[NoteId, NoteRef]` (see Links); the proposed
+  note's `NoteRef` replaces the stored one when validating a change. They report only problems that involve the
+  validated note; a health report runs them for every note.
 
 ### Links
 
 - Body links use wikilinks: `[[note-id]]` or `[[note-id#Section heading]]`.
 - The domain extracts links from the body plus `hub`, `related` and `superseded_by` to build the graph.
-- A link to a missing id is a **broken link** (validation warning for owner edits, error for proposals).
+- Links inside fenced code blocks and inline code are examples and are ignored; so are targets that are not
+  valid note ids. The `[[id|alias]]` form is not supported. Duplicate links are collapsed.
+- A link (body, `related`, `superseded_by`) to a missing id is a **broken link** (`broken_link`: warning for
+  owner edits, error for proposals). Section anchors are not checked against the target (that needs its body).
+- A `hub` that does not exist (`hub_not_found`) or whose type is not `hub` (`hub_not_a_hub`) is always an error.
+- `superseded_by` chains that lead back to the note are a `superseded_by_cycle` error.
+- `NoteRef` is the body-free view used by these rules: id, title, type, priority, sensitivity, status, `hub`,
+  `related`, `superseded_by` and the wikilinks already extracted from the body.
+- **Sections.** `ReadNote` reads one section by heading: ATX headings (`#` to `######`), matched ignoring case
+  and extra whitespace, first match wins; the section includes its sub-sections and ends at the next heading of
+  the same or a higher level. Headings in fenced code blocks do not count.
 
 ### Hubs
 
@@ -107,7 +120,8 @@ See [ADR-0015](adr/0015-hub-membership-computed-at-read-time.md).
   `include_history` is set, and ordered by priority, then title.
 - Member entries carry `id`, `title`, `type`, `priority`, `status`, `summary` — never the body.
 - A hub may set `hub` to a parent hub (sub-area). Hub chains must be acyclic and at most **3 hubs** deep
-  (area hub + two sub-area levels); violations are validation errors.
+  (area hub + two sub-area levels); violations (`hub_chain_cycle`, `hub_chain_too_deep`) are validation errors
+  on every write path. A hub counts itself: a hub three levels under an area hub is the 4th and is rejected.
 
 ### Note types
 

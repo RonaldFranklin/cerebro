@@ -1,4 +1,4 @@
-"""Rules a single note must satisfy on its own. Rules that need other notes live with links (step 3)."""
+"""Rules a single note must satisfy on its own. Rules that need other notes live in ``cross_note``."""
 
 from cerebro.domain.budgets import body_budget_findings
 from cerebro.domain.enums import Priority, Sensitivity, Status
