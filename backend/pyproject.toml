@@ -4,7 +4,9 @@ version = "0.0.0"
 description = "Self-hosted, single-user knowledge base that gives AI agents curated context through MCP."
 license = "Apache-2.0"
 requires-python = "==3.14.*"
-dependencies = []
+dependencies = [
+    "cryptography==50.0.2",
+]
 
 [dependency-groups]
 dev = [
