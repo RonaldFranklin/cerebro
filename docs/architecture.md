@@ -217,7 +217,7 @@ Full policy in [ADR-0013](adr/0013-stack-and-dependency-policy.md). Summary:
 | Python | 3.14 (newest minor GA for ≥ 12 months at bootstrap) | `uv` for env + lockfile |
 | Core | standard library only | `dataclasses`, `enum`, `re`, `typing` |
 | Index | `sqlite3` (stdlib) with FTS5 | |
-| Frontmatter | PyYAML (`safe_load` / `safe_dump`) | adapter only |
+| Frontmatter | PyYAML (restricted `SafeLoader` / `SafeDumper` subclasses, never `yaml.load` with an unsafe loader) | adapter only (`cerebro.adapters.outbound.filesystem.yaml_io`) |
 | Git | `git` CLI via `subprocess` | no git library |
 | Crypto | `cryptography` (Fernet) | adapter only |
 | Password hashing | `hashlib.scrypt` (stdlib) | single admin user |
@@ -248,5 +248,7 @@ have been published at least 7 days earlier ([ADR-0013](adr/0013-stack-and-depen
 | mypy | 2.4.1 | type checking (`strict`) |
 | import-linter | 2.16 | import contracts (pulls grimp 3.20) |
 | cryptography | 50.0.2 (runtime, `==` pinned; pulls cffi 2.1.1, pycparser 3.12) | Fernet / `MultiFernet` behind the `Cipher` port; adapter only (`cerebro.adapters.outbound.crypto`) |
+| PyYAML | 6.0.3 (runtime, `==` pinned) | frontmatter and `schema/*.yaml` through a restricted `SafeLoader` (no anchors, aliases, tags, duplicate keys; everything but `null` stays text) and a quoting `SafeDumper`; adapter only (`cerebro.adapters.outbound.filesystem`) |
+| types-PyYAML | 6.0.12.20261113 (dev, `==` pinned) | type stubs so `mypy --strict` can check the PyYAML adapter |
 
-Runtime dependencies: `cryptography` (Phase 2). Frontend versions (Node, pnpm, packages) are added in Phase 5.
+Runtime dependencies: `cryptography`, `PyYAML` (Phase 2). Frontend versions (Node, pnpm, packages) are added in Phase 5.
