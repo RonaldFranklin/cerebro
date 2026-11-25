@@ -72,8 +72,13 @@ def initialize_content(settings: Settings) -> None:
             (checkout / _SCHEMA[1]).write_text(
                 "types:\n" + "".join(f"  - {name}\n" for name in names), encoding="utf-8"
             )
-            git.stage(_SCHEMA)
-            git.commit("Initialize content schema", paths=_SCHEMA)
+            # Git omits empty directories on clone. Dotfiles are ignored by the note repository.
+            markers = tuple(f"{folder}/.gitkeep" for folder in ("core", "hubs", "notes"))
+            for marker in markers:
+                (checkout / marker).touch()
+            files = (*_SCHEMA, *markers)
+            git.stage(files)
+            git.commit("Initialize content schema", paths=files)
             try:
                 _publish(checkout, root)
             except OSError as error:

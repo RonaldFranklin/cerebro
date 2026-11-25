@@ -60,7 +60,7 @@ Cérebro makes that context a single, structured, versioned source that agents c
 
 ### Initialize local content
 
-From `backend/`, set the instance environment variables shown in `.env.example` or supply the corresponding
+On Linux or WSL, from `backend/`, set the instance environment variables shown in `.env.example` or supply the corresponding
 settings with `--config <file.toml>`. Point `content_dir` at a new directory under an owner-controlled parent.
 Run `uv run cerebro init-content` to create the private git repository. Set the allowed areas in
 `schema/areas.yaml` before adding notes. Repeating the command verifies the layout and preserves owner edits.

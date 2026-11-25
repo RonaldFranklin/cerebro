@@ -143,3 +143,17 @@ def test_key_path_cannot_be_created_as_content_parent(tmp_path: Path) -> None:
     result = invoke("--config", str(config), "init-content")
     assert result.returncode != 0
     assert not (tmp_path / "keys").exists()
+
+
+def test_restored_checkout_preserves_the_empty_layout(tmp_path: Path) -> None:
+    from tests.integration.test_git import raw_git
+
+    config = tmp_path / "settings.toml"
+    config.write_text(SAMPLE)
+    assert invoke("--config", str(config), "init-content").returncode == 0
+    root = tmp_path / "content"
+    restored = tmp_path / "restored"
+    raw_git(tmp_path, "clone", "--no-local", "--", str(root), str(restored))
+    restored.chmod(0o700)
+    config.write_text(SAMPLE.replace('"content"', '"restored"'))
+    assert invoke("--config", str(config), "init-content").returncode == 0
