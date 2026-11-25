@@ -16,3 +16,25 @@ class InvalidValueError(DomainError, ValueError):
         super().__init__(f"{field}: {message}")
         self.field = field
         self.message = message
+
+
+class InvalidTransition(DomainError):  # noqa: N818
+    """A proposal lifecycle transition that the lifecycle does not allow (e.g. applying a rejected proposal).
+
+    Domain error: the application layer lets it propagate and adapters map it to their error format
+    (plan: the "typed application exception" ``InvalidTransition`` is this class, defined once, here).
+    """
+
+    def __init__(self, action: str, current: str) -> None:
+        super().__init__(f"cannot {action} a proposal that is {current}")
+        self.action = action
+        self.current = current
+
+
+class ContentConflict(DomainError):  # noqa: N818
+    """The note changed since the base hash a change was prepared against (optimistic concurrency)."""
+
+    def __init__(self, expected: str, actual: str) -> None:
+        super().__init__("the note changed since the change was prepared")
+        self.expected = expected
+        self.actual = actual
