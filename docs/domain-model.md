@@ -14,7 +14,7 @@ Folders are shallow on purpose: structure lives in metadata and hubs, not in the
 ├── notes/       # all other notes (P2/P3), flat, file name = note id
 └── schema/
     ├── areas.yaml   # controlled list of areas (only the owner adds areas)
-    └── types.yaml   # controlled list of note types
+    └── types.yaml   # controlled list of user note types (core and hub are built in)
 ```
 
 `AGENTS.md`-style entry text is **not** stored here; agents get it from `GetOverview`.
@@ -54,7 +54,7 @@ review_by: 2027-05-24            # optional; health report flags overdue notes
 |---|---|---|
 | `id` | yes | `^[a-z0-9]+(-[a-z0-9]+)*$`, ≤ 80 chars, equals file name, immutable |
 | `title` | yes | ≤ 120 chars |
-| `type` | yes | in `schema/types.yaml` |
+| `type` | yes | built-in (`core`, `hub`) or in `schema/types.yaml` |
 | `area` | yes | in `schema/areas.yaml` |
 | `priority` | yes | P0–P3 |
 | `sensitivity` | yes | public / internal / restricted |
@@ -73,9 +73,12 @@ review_by: 2027-05-24            # optional; health report flags overdue notes
 - The domain extracts links from the body plus `hub`, `related` and `superseded_by` to build the graph.
 - A link to a missing id is a **broken link** (validation warning for owner edits, error for proposals).
 
-### Initial note types (`schema/types.yaml`)
+### Note types
 
-`core`, `hub`, `concept`, `guide`, `runbook`, `reference`, `config`, `decision`, `project`.
+- **Built-in:** `core` (P0 notes) and `hub`. Domain rules depend on them, so they are always allowed and are not
+  listed in `schema/types.yaml`. Declaring them there anyway is accepted and does not duplicate them.
+- **User types** live in `schema/types.yaml`. The initial list written by `init-content` is `concept`, `guide`,
+  `runbook`, `reference`, `config`, `decision`, `project`.
 
 ## 3. Priority (context budget)
 
