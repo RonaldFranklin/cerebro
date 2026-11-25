@@ -18,6 +18,8 @@ decide which later.
   merge/create decisions.
 - The curator writes notes in English regardless of the proposal's language.
 - Token usage and cost per curation are logged.
+- The curator never receives `restricted` notes; proposals that create, change or link them skip the curator and
+  go straight to `needs_owner` ([ADR-0016](0016-curator-never-sees-restricted.md)).
 
 ## Consequences
 
