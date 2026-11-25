@@ -45,6 +45,20 @@ def _publish(checkout: Path, root: Path) -> None:
         raise OSError(number, os.strerror(number))
 
 
+def _prepare_parent(parent: Path) -> None:
+    """Verify from the filesystem root down before placing staging files in an owner-controlled directory."""
+    for directory in (*reversed(parent.parents), parent):
+        try:
+            info = directory.lstat()
+        except FileNotFoundError:
+            directory.mkdir(mode=0o700, exist_ok=True)
+            info = directory.lstat()
+        if not stat.S_ISDIR(info.st_mode) or info.st_uid not in (0, os.geteuid()):
+            raise InitializationError("content parent must be an owner-controlled directory")
+        if info.st_mode & 0o022 and not info.st_mode & stat.S_ISVTX:
+            raise InitializationError("content parent must protect entries from other writers")
+
+
 def initialize_content(settings: Settings) -> None:
     root = settings.content_repo
     identity = GitIdentity(name=settings.git_name, email=settings.git_email)
@@ -55,10 +69,10 @@ def initialize_content(settings: Settings) -> None:
             raise InitializationError("the key file cannot be a content directory")
         if any(path.resolve().is_relative_to(root) for path in (settings.key_file, settings.state_dir)):
             raise InitializationError("keep secrets and state outside the content repository")
+        _prepare_parent(root.parent)
         if root.exists():
             _check_existing(root, identity)
             return
-        root.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
         # Build beside the target: a failed git commit or schema write never publishes a partial repository.
         with TemporaryDirectory(prefix=".cerebro-init-", dir=root.parent) as staging:
             checkout = Path(staging) / "content"

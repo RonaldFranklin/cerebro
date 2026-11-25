@@ -157,3 +157,13 @@ def test_restored_checkout_preserves_the_empty_layout(tmp_path: Path) -> None:
     restored.chmod(0o700)
     config.write_text(SAMPLE.replace('"content"', '"restored"'))
     assert invoke("--config", str(config), "init-content").returncode == 0
+
+
+def test_refuse_shared_writable_ancestor_before_creating_parents(tmp_path: Path) -> None:
+    shared = tmp_path / "shared"
+    shared.mkdir()
+    shared.chmod(0o777)
+    config = tmp_path / "settings.toml"
+    config.write_text(SAMPLE.replace('"content"', '"shared/new/content"'))
+    assert invoke("--config", str(config), "init-content").returncode != 0
+    assert list(shared.iterdir()) == []

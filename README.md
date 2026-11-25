@@ -66,7 +66,8 @@ Run `uv run cerebro init-content` to create the private git repository. Set the 
 `schema/areas.yaml` before adding notes. Repeating the command verifies the layout and preserves owner edits.
 
 Provision the Fernet key separately, before starting a command that opens the container. For a new instance,
-export `CEREBRO_KEY_FILE` to a path outside the content directory. From `backend/`, run the following as the
+export `CEREBRO_KEY_FILE` as an absolute path in a private secrets directory outside both the application and
+content repositories. From `backend/`, run the following as the
 service user. The parent directory must have mode 0700. The exclusive create preserves an existing key.
 
 ```bash
