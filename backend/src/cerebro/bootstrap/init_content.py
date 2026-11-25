@@ -28,7 +28,7 @@ def _check_existing(root: Path, identity: GitIdentity) -> None:
         raise InitializationError("incomplete content repository")
     load_vocabulary(root)
     git = GitRepo(root, identity=identity)
-    if not all(git.tracked_in_head(path) for path in _SCHEMA):
+    if not all(git.regular_file_in_head(path) for path in _SCHEMA):
         raise InitializationError("content repository has no schema commit")
 
 

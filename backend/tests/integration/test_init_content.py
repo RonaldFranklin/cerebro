@@ -116,3 +116,22 @@ def test_untracked_schema_is_refused(tmp_path: Path) -> None:
     repo.commit("Remove types from history")
     assert invoke("--config", str(config), "init-content").returncode != 0
     assert (root / "schema/types.yaml").is_file()
+
+
+def test_committed_schema_must_be_a_regular_file(tmp_path: Path) -> None:
+    from tests.integration.test_git import raw_git
+
+    config = tmp_path / "settings.toml"
+    config.write_text(SAMPLE)
+    assert invoke("--config", str(config), "init-content").returncode == 0
+    root = tmp_path / "content"
+    types = root / "schema/types.yaml"
+    content = types.read_bytes()
+    types.unlink()
+    types.symlink_to("areas.yaml")
+    raw_git(root, "add", "--", "schema/types.yaml")
+    GitRepo(root, identity=GitIdentity(name="Fixture", email="fixture@example.invalid")).commit("Replace schema")
+    types.unlink()
+    types.write_bytes(content)
+    assert invoke("--config", str(config), "init-content").returncode != 0
+    assert types.read_bytes() == content
