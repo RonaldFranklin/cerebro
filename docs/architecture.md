@@ -171,7 +171,7 @@ Full policy in [ADR-0013](adr/0013-stack-and-dependency-policy.md). Summary:
 
 | Area | Choice | Notes |
 |---|---|---|
-| Python | newest minor GA for ≥ 12 months (decided at bootstrap) | `uv` for env + lockfile |
+| Python | 3.14 (newest minor GA for ≥ 12 months at bootstrap) | `uv` for env + lockfile |
 | Core | standard library only | `dataclasses`, `enum`, `re`, `typing` |
 | Index | `sqlite3` (stdlib) with FTS5 | |
 | Frontmatter | PyYAML (`safe_load` / `safe_dump`) | adapter only |
@@ -182,8 +182,24 @@ Full policy in [ADR-0013](adr/0013-stack-and-dependency-policy.md). Summary:
 | MCP | official `mcp` Python SDK | adapter only |
 | CLI | Typer (or argparse if we want zero deps) | decided in Phase 3 |
 | LLM | provider SDKs, one adapter each | optional, Phase 7 |
-| Quality | pytest, ruff, mypy (strict), import-linter | |
-| Web | Node Active LTS, pnpm, React, TypeScript, Vite, TanStack Query, Sigma.js, graphology, CodeMirror 6 | |
+| Quality | pytest, ruff, mypy (strict), import-linter | custom `stdlib_only` contract in `backend/devtools/` |
+| Web | Node Active LTS (exact version chosen in Phase 5), pnpm, React, TypeScript, Vite, TanStack Query, Sigma.js, graphology, CodeMirror 6 | |
 
-All versions are pinned exactly in lockfiles. Exact versions are chosen at bootstrap after checking the
-latest stable releases, and recorded here.
+All versions are pinned exactly in lockfiles. Exact versions are chosen after checking the latest stable
+releases and recorded here once the lockfile is generated, so this table matches the lock.
+
+### Pinned backend versions (Phase 0)
+
+Source of truth: `backend/uv.lock`. Update this table in the same commit as any upgrade.
+
+| Tool | Version | Role |
+|---|---|---|
+| Python | 3.14 (`requires-python = "==3.14.*"`, `.python-version`) | runtime; 3.14.10 installed at bootstrap |
+| uv | ≥ 0.13.10 (`tool.uv.required-version`) | env, lockfile, runner |
+| uv_build | 0.13.10 | build backend |
+| pytest | 9.2.0 | tests |
+| ruff | 0.17.6 | lint + format |
+| mypy | 2.4.1 | type checking (`strict`) |
+| import-linter | 2.17 | import contracts (pulls grimp 3.20) |
+
+Runtime dependencies: none yet. Frontend versions (Node, pnpm, packages) are added in Phase 5.
