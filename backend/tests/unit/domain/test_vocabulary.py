@@ -1,7 +1,7 @@
 import pytest
 
 from cerebro.domain.errors import InvalidValueError
-from cerebro.domain.vocabulary import DEFAULT_NOTE_TYPES, Area, NoteType, Vocabulary
+from cerebro.domain.vocabulary import BUILTIN_NOTE_TYPES, INITIAL_USER_NOTE_TYPES, Area, NoteType, Vocabulary
 
 
 def test_area_and_type_are_kebab_case_values() -> None:
@@ -18,10 +18,12 @@ def test_rejects_non_kebab_case(cls: type[Area] | type[NoteType], field: str, va
     assert excinfo.value.field == field
 
 
-def test_default_note_types_match_the_domain_model() -> None:
-    assert {t.value for t in DEFAULT_NOTE_TYPES} == {
-        "core",
-        "hub",
+def test_builtin_types_are_core_and_hub() -> None:
+    assert frozenset({NoteType("core"), NoteType("hub")}) == BUILTIN_NOTE_TYPES
+
+
+def test_initial_user_types_match_the_domain_model() -> None:
+    assert {t.value for t in INITIAL_USER_NOTE_TYPES} == {
         "concept",
         "guide",
         "runbook",
@@ -33,7 +35,7 @@ def test_default_note_types_match_the_domain_model() -> None:
 
 
 def test_vocabulary_answers_membership() -> None:
-    vocabulary = Vocabulary(areas=frozenset({Area("infrastructure")}), types=DEFAULT_NOTE_TYPES)
+    vocabulary = Vocabulary(areas=frozenset({Area("infrastructure")}), types=INITIAL_USER_NOTE_TYPES)
 
     assert vocabulary.has_area(Area("infrastructure"))
     assert not vocabulary.has_area(Area("cooking"))
@@ -41,12 +43,21 @@ def test_vocabulary_answers_membership() -> None:
     assert not vocabulary.has_type(NoteType("recipe"))
 
 
-@pytest.mark.parametrize("missing", ["core", "hub"])
-def test_vocabulary_must_contain_the_types_the_domain_relies_on(missing: str) -> None:
-    types = frozenset(t for t in DEFAULT_NOTE_TYPES if t.value != missing)
-    with pytest.raises(InvalidValueError) as excinfo:
-        Vocabulary(areas=frozenset(), types=types)
-    assert excinfo.value.field == "types"
+def test_builtin_types_are_always_present() -> None:
+    vocabulary = Vocabulary(areas=frozenset(), types=frozenset())
+
+    assert vocabulary.has_type(NoteType("core"))
+    assert vocabulary.has_type(NoteType("hub"))
+    assert vocabulary.types == BUILTIN_NOTE_TYPES
+
+
+def test_declaring_builtin_types_is_accepted_without_duplicates() -> None:
+    declared = frozenset({NoteType("core"), NoteType("hub"), NoteType("runbook")})
+
+    vocabulary = Vocabulary(areas=frozenset(), types=declared)
+
+    assert vocabulary.types == declared
+    assert vocabulary.user_types == frozenset({NoteType("runbook")})
 
 
 def test_area_and_type_with_the_same_text_are_different_values() -> None:
@@ -59,4 +70,4 @@ def test_area_and_type_sort_by_value() -> None:
 
 
 def test_empty_vocabulary_of_areas_has_no_area() -> None:
-    assert not Vocabulary(areas=frozenset(), types=DEFAULT_NOTE_TYPES).has_area(Area("infrastructure"))
+    assert not Vocabulary(areas=frozenset(), types=INITIAL_USER_NOTE_TYPES).has_area(Area("infrastructure"))

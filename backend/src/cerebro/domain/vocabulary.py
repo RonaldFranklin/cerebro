@@ -37,29 +37,33 @@ class NoteType:
 CORE = NoteType("core")
 HUB = NoteType("hub")
 
-DEFAULT_NOTE_TYPES: frozenset[NoteType] = frozenset(
-    NoteType(name)
-    for name in ("core", "hub", "concept", "guide", "runbook", "reference", "config", "decision", "project")
-)
+BUILTIN_NOTE_TYPES: frozenset[NoteType] = frozenset({CORE, HUB})
+"""Types the domain rules depend on (P0 core notes, hubs). Always allowed; not listed in ``schema/types.yaml``."""
 
-_REQUIRED_TYPES = frozenset({CORE, HUB})
+INITIAL_USER_NOTE_TYPES: frozenset[NoteType] = frozenset(
+    NoteType(name) for name in ("concept", "guide", "runbook", "reference", "config", "decision", "project")
+)
+"""User types written to ``schema/types.yaml`` when a content repository is initialised."""
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class Vocabulary:
     """The areas and note types a content repository allows.
 
-    ``core`` and ``hub`` are always required because domain rules (P0 notes, hubs) refer to them.
+    ``types`` is given the user types from ``schema/types.yaml``; the built-in ``core`` and ``hub`` types are
+    always added. Declaring them in the schema as well is accepted and does not duplicate them.
     """
 
     areas: frozenset[Area]
     types: frozenset[NoteType]
 
     def __post_init__(self) -> None:
-        missing = _REQUIRED_TYPES - self.types
-        if missing:
-            names = ", ".join(sorted(t.value for t in missing))
-            raise InvalidValueError("types", f"missing required note types: {names}")
+        object.__setattr__(self, "types", frozenset(self.types) | BUILTIN_NOTE_TYPES)
+
+    @property
+    def user_types(self) -> frozenset[NoteType]:
+        """The allowed types other than the built-in ones."""
+        return self.types - BUILTIN_NOTE_TYPES
 
     def has_area(self, area: Area) -> bool:
         return area in self.areas
