@@ -21,6 +21,20 @@ def visible_note(notes: NoteRepository, note_id: NoteId, ctx: AccessContext, *, 
     return note
 
 
+def visible_id(
+    notes: NoteRepository, note_id: NoteId | None, ctx: AccessContext, *, include_history: bool
+) -> NoteId | None:
+    """A reference echoed from a visible note is kept only if its target exists and is visible too."""
+    if note_id is None:
+        return None
+    target = notes.get(note_id)
+    if target is None or not is_visible(
+        target.sensitivity, target.status, ctx.ceiling, include_history=include_history
+    ):
+        return None
+    return note_id
+
+
 def require_owner(ctx: AccessContext, action: str) -> None:
     """Raise ``PermissionDenied`` unless the principal is the owner (review, edit and the steps that follow it)."""
     if not ctx.is_owner:

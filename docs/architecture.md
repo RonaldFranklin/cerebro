@@ -137,7 +137,10 @@ body (whole or one section) whose target the reader cannot see, or that does not
 **Write**
 - `SubmitProposal` — store an incoming proposal in the Inbox (agents only have this).
 - `ValidateProposal` — deterministic checks: schema, budgets, secret scan, duplicates.
-- `CurateProposal` — ask the `Curator` port for a decision (reject / merge / create / needs-human).
+- `CurateProposal` — ask the `Curator` port for a decision (reject / merge / create / needs-human). The curator
+  context is capped at `internal` and a proposal that creates, changes or links a restricted note skips the curator
+  and goes straight to `needs_owner` (`Curated-by: curator/policy`), enforced here whatever the adapter
+  ([ADR-0016](adr/0016-curator-never-sees-restricted.md)).
 - `ReviewProposal` — owner approves, edits or rejects.
 - `ApplyProposal` — turn an approved decision into note changes + commit.
 - `OwnerEditNote` — owner edits directly (still validated, committed with owner as author).

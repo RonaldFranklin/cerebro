@@ -28,12 +28,13 @@ from cerebro.domain.content_hash import content_hash
 from cerebro.domain.decision import Decision, DecisionKind
 from cerebro.domain.enums import Priority, Sensitivity, Status
 from cerebro.domain.errors import ContentConflict, InvalidTransition, InvalidValueError
-from cerebro.domain.note import Note
+from cerebro.domain.note import Note, NoteId
 from cerebro.domain.proposal import ProposalKind, ProposalStatus, ProposedContent
 from cerebro.domain.report import ViolationCode
 from cerebro.domain.vocabulary import CORE, Area
 from tests.fakes.notes import InMemoryNoteRepository
 from tests.fakes.stores import FakeCurator
+from tests.unit.application.world import MESSAGE as SEED_MESSAGE
 from tests.unit.application.world import NID
 from tests.unit.application.write_kit import (
     NEW_ID,
@@ -417,6 +418,179 @@ class TestCurateProposal:
             kit.curate("nope")
         with pytest.raises(InvalidTransition):
             kit.curate(kit.submit_create())  # still received
+
+
+VAULT = NID("vault-layout")  # restricted in the standard world
+
+
+class TestCurateProposalNeverSendsRestrictedToTheCurator:
+    """ADR-0016: enforced by the use case, whatever the curator adapter."""
+
+    def validated_with(self, kit: Kit, **changes: Any) -> str:
+        """A validated proposal whose fields are then replaced behind the use cases' back (the write path would
+        refuse some of these combinations, but stored data may predate a rule)."""
+        pid = kit.submit_create()
+        kit.validate(pid)
+        kit.overwrite(replace(kit.stored(pid), **changes))
+        return pid
+
+    def validated_on(self, kit: Kit, kind: ProposalKind, target: NoteId, content: ProposedContent) -> str:
+        note = kit.world.notes.get(target)
+        assert note is not None
+        return self.validated_with(kit, kind=kind, target=target, base_hash=content_hash(note), content=content)
+
+    def validated_content(self, kit: Kit, **content: Any) -> str:
+        stored_content = new_content(**content)
+        return self.validated_with(kit, content=stored_content)
+
+    def assert_skipped(self, kit: Kit, curator: FakeCurator, pid: str) -> None:
+        outcome = kit.curate(pid)
+        assert curator.requests == []
+        assert outcome.status is S.NEEDS_OWNER
+        assert outcome.decision is not None
+        assert outcome.decision.kind is DecisionKind.NEEDS_OWNER
+        assert outcome.decision.reason == "touches restricted content: the owner decides"
+        stored = kit.stored(pid)
+        assert stored.curated_by == "curator/policy"
+        assert stored.decision == outcome.decision
+
+    def test_a_restricted_new_note_skips_the_curator(self, kit: Kit) -> None:
+        curator = FakeCurator()
+        kit.curator = curator
+        pid = self.validated_content(kit, sensitivity=Sensitivity.RESTRICTED)
+        self.assert_skipped(kit, curator, pid)
+
+    def test_an_update_of_a_restricted_note_skips_the_curator(self, kit: Kit) -> None:
+        curator = FakeCurator()
+        kit.curator = curator
+        pid = self.validated_on(kit, ProposalKind.UPDATE, VAULT, ProposedContent(body="New.\n"))
+        self.assert_skipped(kit, curator, pid)
+
+    def test_an_update_that_raises_sensitivity_to_restricted_skips_the_curator(self, kit: Kit) -> None:
+        curator = FakeCurator()
+        kit.curator = curator
+        content = ProposedContent(body="# SSH\n\nBody.\n", sensitivity=Sensitivity.RESTRICTED)
+        pid = self.validated_on(kit, ProposalKind.UPDATE, SSH, content)
+        self.assert_skipped(kit, curator, pid)
+
+    @pytest.mark.parametrize(
+        "content",
+        [
+            {"hub": VAULT},
+            {"related": (NID("core-rules"), VAULT)},
+            {"superseded_by": VAULT},
+            {"body": "See [[vault-layout]].\n"},
+            {"rationale": "see [[vault-layout]]"},
+            {"title": "About [[vault-layout]]"},
+            {"summary": "Mentions [[vault-layout|it]]."},
+            {"body": "See [[vault-layout|the layout]] and [[vault-layout#Part|x]].\n"},
+            {"body": "Code `[[vault-layout]]` here.\n"},
+            {"body": "```\n[[vault-layout]]\n```\n"},
+        ],
+        ids=[
+            "hub",
+            "related",
+            "superseded_by",
+            "wikilink",
+            "rationale",
+            "title",
+            "summary",
+            "alias",
+            "code-span",
+            "code-block",
+        ],
+    )
+    def test_a_link_to_a_restricted_note_skips_the_curator(self, kit: Kit, content: dict[str, Any]) -> None:
+        curator = FakeCurator()
+        kit.curator = curator
+        pid = self.validated_content(kit, **content)
+        self.assert_skipped(kit, curator, pid)
+
+    def test_a_link_proposal_to_a_restricted_target_skips_the_curator(self, kit: Kit) -> None:
+        curator = FakeCurator()
+        kit.curator = curator
+        content = ProposedContent(related=(SSH,))
+        pid = self.validated_on(kit, ProposalKind.LINK, VAULT, content)
+        self.assert_skipped(kit, curator, pid)
+
+    def test_a_deprecation_superseded_by_a_restricted_note_skips_the_curator(self, kit: Kit) -> None:
+        curator = FakeCurator()
+        kit.curator = curator
+        content = ProposedContent(superseded_by=VAULT)
+        pid = self.validated_on(kit, ProposalKind.DEPRECATE, SSH, content)
+        self.assert_skipped(kit, curator, pid)
+
+    def test_unknown_link_targets_are_not_restricted(self, kit: Kit) -> None:
+        curator = FakeCurator()
+        kit.curator = curator
+        pid = self.validated_content(kit, body="See [[does-not-exist]].\n", related=(NID("also-missing"),))
+        assert kit.curate(pid).status is S.NEEDS_OWNER
+        assert len(curator.requests) == 1
+        assert kit.stored(pid).curated_by == "curator/fake"
+
+    def test_a_proposal_that_touches_no_restricted_note_still_reaches_the_curator(self, kit: Kit) -> None:
+        curator = FakeCurator(Decision.create(NEW_ID, "new topic"))
+        kit.curator = curator
+        pid = kit.submit_create()
+        kit.validate(pid)
+        assert kit.curate(pid).status is S.CURATED
+        assert len(curator.requests) == 1
+        assert curator.requests[0].proposal.id == pid
+
+    def test_the_curator_never_gets_restricted_similar_hits_even_for_an_owner_with_a_restricted_ceiling(
+        self, kit: Kit
+    ) -> None:
+        curator = FakeCurator()
+        kit.curator = curator
+        pid = self.validated_content(kit, title="Vault secrets layout", summary="Where the vault lives.")
+        kit.curate_uc().execute(ProposalIdRequest(proposal_id=pid), owner_ctx(Sensitivity.RESTRICTED))
+        assert len(curator.requests) == 1
+        similar = curator.requests[0].similar
+        assert all(hit.sensitivity <= Sensitivity.INTERNAL for hit in similar)
+        assert all(hit.id != VAULT for hit in similar)
+        # sanity: the owner's own ceiling does see it
+        owner_hits = kit.world.search.find_similar(
+            "Vault secrets layout Where the vault lives.", ceiling=owner_ctx().ceiling, limit=5
+        )
+        assert any(hit.id == VAULT for hit in owner_hits)
+
+    def test_an_internal_target_is_visible_to_the_curator_with_a_restricted_ceiling(self, kit: Kit) -> None:
+        curator = FakeCurator()
+        kit.curator = curator
+        pid = kit.submit_update()
+        kit.validate(pid)
+        kit.curate_uc().execute(ProposalIdRequest(proposal_id=pid), owner_ctx(Sensitivity.RESTRICTED))
+        target = curator.requests[0].target
+        assert target is not None
+        assert target.id == SSH
+
+    def test_the_target_references_to_restricted_notes_are_removed(self, kit: Kit) -> None:
+        curator = FakeCurator()
+        kit.curator = curator
+        ssh = kit.world.notes.get(SSH)
+        assert ssh is not None
+        leaky = replace(ssh, related=(VAULT, NID("core-rules")), superseded_by=VAULT, hub=VAULT)
+        kit.world.notes.apply([NoteChange(note=leaky, expected_hash=content_hash(ssh))], SEED_MESSAGE)
+        pid = self.validated_on(kit, ProposalKind.UPDATE, SSH, ProposedContent(body="# SSH\n\nNew.\n"))
+        kit.curate_uc().execute(ProposalIdRequest(proposal_id=pid), owner_ctx(Sensitivity.RESTRICTED))
+        target = curator.requests[0].target
+        assert target is not None
+        assert (target.hub, target.superseded_by) == (None, None)
+        assert target.related == (NID("core-rules"),)
+
+    def test_the_target_body_given_to_the_curator_has_restricted_links_redacted(self, kit: Kit) -> None:
+        curator = FakeCurator()
+        kit.curator = curator
+        ssh = kit.world.notes.get(SSH)
+        assert ssh is not None
+        leaky = replace(ssh, body="# SSH\n\nSee [[vault-layout|layout]].\n")
+        kit.world.notes.apply([NoteChange(note=leaky, expected_hash=content_hash(ssh))], SEED_MESSAGE)
+        pid = kit.submit_update()
+        kit.validate(pid)
+        kit.curate_uc().execute(ProposalIdRequest(proposal_id=pid), owner_ctx(Sensitivity.RESTRICTED))
+        target = curator.requests[0].target
+        assert target is not None
+        assert "vault-layout" not in target.body
 
 
 # -- ReviewProposal ------------------------------------------------------------------------------------------------
