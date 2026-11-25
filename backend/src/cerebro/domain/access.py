@@ -93,6 +93,15 @@ class Scope(StrEnum):
         return _parse(cls, value, "scope")
 
 
+_TOKEN_ID: Final = re.compile(r"[A-Za-z0-9_-]{1,64}")
+
+
+def validate_token_id(value: object) -> str:
+    if not isinstance(value, str) or _TOKEN_ID.fullmatch(value) is None:
+        raise InvalidValueError("id", "must be 1-64 characters of letters, digits, '_' or '-'")
+    return value
+
+
 def validate_agent_name(name: object) -> str:
     """Return ``name`` if it is a valid agent name (``claude-code@workstation``), else raise."""
     if not isinstance(name, str):
@@ -149,8 +158,13 @@ class AccessContext:
     principal: Principal
     ceiling: AccessCeiling
     scopes: frozenset[Scope]
+    token_id: str | None = None
 
     def __post_init__(self) -> None:
+        if self.token_id is not None:
+            validate_token_id(self.token_id)
+            if not isinstance(self.principal, Agent):
+                raise InvalidValueError("token_id", "only agent contexts have credentials")
         if not isinstance(self.principal, Agent | Owner):
             raise InvalidValueError("principal", f"expected Agent or Owner, got {type(self.principal).__name__}")
         _require_ceiling(self.ceiling, "ceiling")

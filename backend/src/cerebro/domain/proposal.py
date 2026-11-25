@@ -37,6 +37,17 @@ def validate_proposal_id(value: str) -> str:
     return value
 
 
+@dataclass(frozen=True, slots=True, kw_only=True)
+class ProposalLimits:
+    per_hour: int = 20
+    pending: int = 10
+
+    def __post_init__(self) -> None:
+        for field, value in (("per_hour", self.per_hour), ("pending", self.pending)):
+            if type(value) is not int or value <= 0:
+                raise InvalidValueError(field, "expected a positive integer")
+
+
 class ProposalKind(StrEnum):
     CREATE = "create"
     UPDATE = "update"

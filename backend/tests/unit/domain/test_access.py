@@ -228,3 +228,11 @@ class TestScope:
             Scope.parse("admin")
         assert excinfo.value.field == "scope"
         assert isinstance(excinfo.value, DomainError)
+
+
+def test_only_an_agent_context_can_carry_a_valid_public_token_id() -> None:
+    access = AccessCeiling(Sensitivity.INTERNAL)
+    with pytest.raises(InvalidValueError):
+        AccessContext(principal=Owner(), ceiling=access, scopes=frozenset(), token_id="a")
+    with pytest.raises(InvalidValueError):
+        AccessContext(principal=Agent("agent"), ceiling=access, scopes=frozenset(), token_id="")

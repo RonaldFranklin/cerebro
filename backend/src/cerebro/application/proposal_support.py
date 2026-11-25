@@ -15,9 +15,10 @@ from cerebro.domain.budgets import core_budget_findings, word_count
 from cerebro.domain.cross_note import cross_note_findings, inbound_link_sensitivity_findings
 from cerebro.domain.decision import DecisionKind
 from cerebro.domain.enums import Priority, Status
+from cerebro.domain.errors import InvalidValueError
 from cerebro.domain.note import MAX_NOTE_ID_LENGTH, Note, NoteId
 from cerebro.domain.note_ref import NoteRef
-from cerebro.domain.proposal import Proposal, ProposalKind, ProposedContent
+from cerebro.domain.proposal import Proposal, ProposalKind, ProposalStatus, ProposedContent
 from cerebro.domain.report import Finding, SeverityPolicy, ValidationReport, ViolationCode
 from cerebro.domain.secrets import scan_text
 from cerebro.domain.validation import validate_note
@@ -236,3 +237,20 @@ def scrubbed(proposal: Proposal) -> Proposal:
         related=c.related if proposal.kind is ProposalKind.LINK else (),
     )
     return replace(proposal, content=content, source_session=None, source_context=None)
+
+
+def require_admissible(proposal: Proposal) -> None:
+    """Only a validated and curated submission or a scrubbed validation rejection may become durable."""
+    report = proposal.validation
+    if report is not None:
+        if proposal.status is ProposalStatus.REJECTED and not report.ok:
+            if proposal.decision is None and proposal == scrubbed(proposal):
+                return
+        elif (
+            proposal.status is ProposalStatus.NEEDS_OWNER
+            and report.ok
+            and proposal.curated_by is not None
+            and proposal.decision is not None
+        ):
+            return
+    raise InvalidValueError("proposal", "not ready for durable admission")

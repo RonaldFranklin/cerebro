@@ -4,6 +4,7 @@ import hashlib
 import re
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
+from zoneinfo import ZoneInfo
 
 import pytest
 
@@ -11,19 +12,24 @@ from cerebro.application.errors import (
     AlreadyExists,
     DecryptionError,
     ProposalConflict,
+    ProposalLimitReached,
     ProposalNotFound,
     TokenNotFound,
 )
 from cerebro.application.ports import Cipher, Clock, CurationRequest, Curator, IdGenerator, ProposalStore, TokenStore
+from cerebro.application.proposal_support import scrubbed
 from cerebro.domain.access import AccessCeiling, Scope
 from cerebro.domain.agent_token import AgentToken
 from cerebro.domain.commit_message import CommitMessage
 from cerebro.domain.decision import Decision
 from cerebro.domain.enums import Sensitivity
 from cerebro.domain.errors import InvalidValueError
-from cerebro.domain.proposal import Proposal, ProposalKind, ProposalStatus, ProposedContent
+from cerebro.domain.note import NoteId
+from cerebro.domain.proposal import Proposal, ProposalKind, ProposalLimits, ProposalStatus, ProposedContent
 from cerebro.domain.report import ValidationReport
 from cerebro.domain.token_hash import TokenHash
+from tests.fakes.system import FixedClock
+from tests.unit.domain.test_proposal import BAD
 
 T0 = datetime(2026, 11, 25, 12, 0, tzinfo=UTC)
 
@@ -37,6 +43,13 @@ def make_proposal(proposal_id: str = "proposal-0001", *, agent: str = "claude-co
         created_at=at,
         updated_at=at,
     )
+
+
+def make_reviewable(proposal_id: str) -> Proposal:
+    proposal = make_proposal(proposal_id).mark_validated(ValidationReport(), T0)
+    return proposal.mark_curated(
+        Decision.needs_owner("review", target=NoteId("review-note")), "curator/null", T0
+    ).mark_needs_owner(T0)
 
 
 def make_token(token_id: str = "token-0001", secret: str = "s1", *, at: datetime = T0) -> AgentToken:
@@ -54,6 +67,63 @@ class ProposalStoreContract:
     @pytest.fixture
     def store(self) -> ProposalStore:
         raise NotImplementedError
+
+    def test_admissions_use_a_rolling_hour_per_credential_and_count_rejections(self, store: ProposalStore) -> None:
+        clock = FixedClock(T0)
+        limits = ProposalLimits(per_hour=1, pending=2)
+        first = scrubbed(make_proposal("first").reject_invalid(BAD, T0))
+        store.admit(first, token_id="token-a", limits=limits, clock=clock)
+        store.admit(make_reviewable("second"), token_id="token-b", limits=limits, clock=clock)
+        clock.advance(timedelta(hours=1, microseconds=-1))
+        with pytest.raises(ProposalLimitReached, match=r"^Proposal limit reached\.$"):
+            store.admit(make_reviewable("third"), token_id="token-a", limits=limits, clock=clock)
+        assert store.get("third") is None
+        clock.advance(timedelta(microseconds=1))
+        store.admit(make_reviewable("third"), token_id="token-a", limits=limits, clock=clock)
+
+    def test_rolling_hour_uses_elapsed_time_across_daylight_saving(self, store: ProposalStore) -> None:
+        zone = ZoneInfo("America/New_York")
+        clock = FixedClock(datetime(2026, 3, 8, 3, 15, tzinfo=zone))
+        limits = ProposalLimits(per_hour=1, pending=10)
+        store.admit(make_reviewable("first"), token_id="a", limits=limits, clock=clock)
+        clock.set(datetime(2026, 3, 8, 3, 30, tzinfo=zone))
+        with pytest.raises(ProposalLimitReached):
+            store.admit(make_reviewable("second"), token_id="a", limits=limits, clock=clock)
+
+    def test_clock_correction_excludes_future_admissions_from_the_hour(self, store: ProposalStore) -> None:
+        clock = FixedClock(T0 + timedelta(hours=2))
+        limits = ProposalLimits(per_hour=1, pending=1)
+        old = scrubbed(make_proposal("old").reject_invalid(BAD, T0))
+        store.admit(old, token_id="token", limits=limits, clock=clock)
+        clock.set(T0)
+        store.admit(make_reviewable("new"), token_id="token", limits=limits, clock=clock)
+
+    def test_partial_null_curator_transition_is_not_admitted(self, store: ProposalStore) -> None:
+        proposal = make_proposal().mark_validated(ValidationReport(), T0)
+        partial = proposal.mark_curated(Decision.needs_owner("review"), "curator/null", T0)
+        with pytest.raises(InvalidValueError):
+            store.admit(partial, token_id="token", limits=ProposalLimits(), clock=FixedClock())
+        assert store.find() == ()
+
+    def test_received_and_unscrubbed_rejected_proposals_are_never_admitted(self, store: ProposalStore) -> None:
+        raw = make_proposal()
+        for state in (raw, raw.reject_invalid(BAD, T0), raw.mark_validated(ValidationReport(), T0)):
+            with pytest.raises(InvalidValueError):
+                store.admit(state, token_id="token", limits=ProposalLimits(), clock=FixedClock(T0))
+            assert store.find() == ()
+
+    def test_pending_capacity_reopens_on_terminal_transition_only(self, store: ProposalStore) -> None:
+        clock = FixedClock(T0)
+        limits = ProposalLimits(per_hour=8, pending=1)
+        first = make_reviewable("first")
+        store.admit(first, token_id="token", limits=limits, clock=clock)
+        approved = store.save(first.approve("owner", T0), expected_revision=0)
+        clock.advance(timedelta(days=1))
+        with pytest.raises(ProposalLimitReached):
+            store.admit(make_reviewable("second"), token_id="token", limits=limits, clock=clock)
+        assert store.find() == (approved,)
+        store.save(approved.mark_applied(clock.now()), expected_revision=1)
+        store.admit(make_reviewable("second"), token_id="token", limits=limits, clock=clock)
 
     def test_add_then_get(self, store: ProposalStore) -> None:
         proposal = make_proposal()
