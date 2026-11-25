@@ -85,6 +85,7 @@ class HubMember:
 class GraphNode:
     id: NoteId
     title: str
+    summary: str
     type: NoteType
     priority: Priority
     status: Status
@@ -112,7 +113,7 @@ class GraphView:
     ) -> GraphView:
         # Nodes are re-checked against the ceiling here too (defense in depth on top of the index).
         nodes = tuple(
-            GraphNode(id=n.id, title=n.title, type=n.type, priority=n.priority, status=n.status)
+            GraphNode(id=n.id, title=n.title, summary=n.summary, type=n.type, priority=n.priority, status=n.status)
             for n in graph.nodes
             if is_visible(n.sensitivity, n.status, ceiling, include_history=include_history)
         )
