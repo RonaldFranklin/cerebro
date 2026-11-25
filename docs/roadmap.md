@@ -52,8 +52,12 @@ all use cases runnable against fakes in tests.
 tests against the in-memory fakes, including denial and no-leak tests. Delivery record:
 [plans/phase-1.md](plans/phase-1.md).
 
-**Pending before Phase 3:** the human security checkpoint (plan section 5) over the secret scanner, the access
-ceiling and token handling has not happened yet. Nothing in Phase 1 runs exposed.
+**Security checkpoint: done 2026-11-25.** The owner approved the Phase 1 security review, conditioned on a batch of
+follow-up pull requests (#15-#22, merged): links may not point to higher sensitivity (and are redacted on read),
+optimistic concurrency on `ProposalStore`, no raw values in errors and a redacted `TokenHash`, an import contract
+keeping inbound adapters away from ports and outbound adapters, token clock-skew check, `curator/` names, structured
+scanner findings, and [ADR-0016](adr/0016-curator-never-sees-restricted.md) (the curator never receives restricted
+notes). Details: [plans/phase-1.md](plans/phase-1.md) section 7.
 
 ## ⬜ Phase 2 — Outbound adapters
 
