@@ -36,7 +36,8 @@ about YAML, SQLite, git, HTTP, MCP or any LLM provider. See [ADR-0001](adr/0001-
 | `cerebro.adapters.*` | `cerebro.application`, `cerebro.domain`, third-party libraries |
 | `cerebro.bootstrap` | everything (composition root) |
 
-Enforced with `import-linter` contracts in CI.
+Enforced with `import-linter` contracts in CI. The "standard library only" rule for `cerebro.domain` and
+`cerebro.application` is guaranteed by the custom `stdlib_only` contract in `backend/devtools/import_contracts.py`.
 
 ## 2. Backend package layout (target)
 
