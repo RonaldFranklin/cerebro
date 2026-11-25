@@ -2,7 +2,12 @@ from collections.abc import Iterable
 
 import pytest
 
-from cerebro.domain.cross_note import MAX_HUB_CHAIN_DEPTH, Snapshot, cross_note_findings
+from cerebro.domain.cross_note import (
+    MAX_HUB_CHAIN_DEPTH,
+    Snapshot,
+    cross_note_findings,
+    inbound_link_sensitivity_findings,
+)
 from cerebro.domain.enums import Priority, Sensitivity, Status
 from cerebro.domain.links import WikiLink
 from cerebro.domain.note import NoteId
@@ -294,3 +299,23 @@ def test_the_message_names_only_the_target_id() -> None:
     assert "secret" in finding.message
     for revealing in ("Vault", "passphrase", "restricted", "internal", "higher", "sensitivity"):
         assert revealing not in finding.message
+
+
+@pytest.mark.parametrize(
+    "body", ["`[[secret]]`", "```\n[[secret]]\n```", "[[secret|alias]]", "[[ secret # Part | x ]]"]
+)
+def test_code_span_and_alias_links_are_covered_by_the_rule(body: str) -> None:
+    secret = ref("secret", sensitivity=RES)
+    me = NoteRef.from_note(make_note(id=nid("me"), sensitivity=PUB, hub=None, related=(), body=body))
+    assert (ViolationCode.LINK_TO_HIGHER_SENSITIVITY, "body") in leak_fields(me, snap(secret, me))
+
+
+def test_inbound_findings_name_lower_sensitivity_linkers_only() -> None:
+    target = ref("target", sensitivity=RES)
+    low = ref("low", sensitivity=PUB, related=["target"])
+    equal = ref("equal", sensitivity=RES, related=["target"])
+    unrelated = ref("unrelated", sensitivity=PUB)
+    findings = inbound_link_sensitivity_findings(target, snap(target, low, equal, unrelated))
+    assert [(f.code, f.message) for f in findings] == [
+        (ViolationCode.LINK_TO_HIGHER_SENSITIVITY, "low links to this note")
+    ]

@@ -6,6 +6,7 @@ from cerebro.domain.links import (
     LinkKind,
     WikiLink,
     extract_wikilinks,
+    loose_link_targets,
     note_links,
     redact_wikilinks,
 )
@@ -94,3 +95,8 @@ def test_redact_wikilinks_replaces_links_the_reader_may_not_follow() -> None:
 def test_redact_wikilinks_also_covers_code() -> None:
     out = redact_wikilinks("`[[secret]]`\n```\n[[secret]]\n```\n", lambda _: False)
     assert "secret" not in out
+
+
+def test_loose_link_targets_cover_code_and_alias_forms() -> None:
+    body = "[[a]] `[[b]]` ```\n[[c#x]]\n``` [[ d | alias ]] [[Not A Slug]] [[a]]"
+    assert [t.value for t in loose_link_targets(body)] == ["a", "b", "c", "d"]

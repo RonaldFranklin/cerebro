@@ -226,6 +226,31 @@ class TestValidateProposal:
                 assert violation.message == "vault-layout may not be linked from this note"
                 assert "Vault layout" not in violation.message
 
+    @pytest.mark.parametrize("body", ["`[[vault-layout]]`", "[[vault-layout|the vault]]", "```\n[[vault-layout]]\n```"])
+    def test_alias_and_code_span_links_are_caught_for_proposals(self, kit: Kit, body: str) -> None:
+        outcome = kit.validate(kit.submit_create(body=body + "\n"))
+        assert outcome.validation is not None
+        assert ViolationCode.LINK_TO_HIGHER_SENSITIVITY in {v.code for v in outcome.validation.errors}
+
+    def test_superseded_by_a_higher_sensitivity_is_caught_for_deprecations(self, kit: Kit) -> None:
+        deprecate = SubmitProposalRequest(
+            kind=ProposalKind.DEPRECATE,
+            target=SSH,
+            base_hash=note_hash(kit),
+            content=ProposedContent(superseded_by=NID("vault-layout")),
+        )
+        outcome = kit.validate(kit.submit(deprecate).proposal_id)
+        assert outcome.validation is not None
+        assert ViolationCode.LINK_TO_HIGHER_SENSITIVITY in {v.code for v in outcome.validation.errors}
+
+    def test_a_new_note_that_stored_lower_notes_already_link_to_is_rejected(self, kit: Kit) -> None:
+        # core-rules (public) has a body link to the id; a restricted note created under it would be leaked
+        kit.world.add(id=NID("writer"), hub=NID("infrastructure"), body="Plan: [[future-secret]].\n")
+        outcome = kit.validate(kit.submit_create(title="Future secret", sensitivity=INTERNAL))
+        assert outcome.validation is not None
+        messages = [v.message for v in outcome.validation.errors if v.code is ViolationCode.LINK_TO_HIGHER_SENSITIVITY]
+        assert messages == ["writer links to this note"]
+
     def test_links_to_equal_or_lower_sensitivity_are_fine_for_proposals(self, kit: Kit) -> None:
         # internal note -> internal and public targets
         pid = kit.submit_create(sensitivity=INTERNAL, body="See [[server-ssh-access]] and [[core-rules]].\n")
@@ -877,6 +902,32 @@ class TestOwnerEditNote:
             v.message for v in result.validation.violations if v.code is ViolationCode.LINK_TO_HIGHER_SENSITIVITY
         ]
         assert messages == ["vault-layout may not be linked from this note"]
+
+    @pytest.mark.parametrize("body", ["`[[vault-layout]]`", "[[vault-layout|the vault]]"])
+    def test_alias_and_code_span_links_are_errors_for_the_owner(self, kit: Kit, body: str) -> None:
+        current = kit.world.notes.get(SSH)
+        assert current is not None
+        result = self.edit(kit, replace(current, body=body + "\n"), note_hash(kit))
+        assert result.revision is None
+        assert ViolationCode.LINK_TO_HIGHER_SENSITIVITY in {v.code for v in result.validation.errors}
+
+    def test_raising_sensitivity_is_refused_while_lower_notes_link_to_the_note(self, kit: Kit) -> None:
+        # the write kit's data obeys the rule, so add a public note that links to the internal one
+        kit.world.add(id=NID("linker"), hub=NID("infrastructure"), body="See [[server-ssh-access]].\n")
+        current = kit.world.notes.get(SSH)  # internal
+        assert current is not None
+        commits = kit.commits
+        result = self.edit(kit, replace(current, sensitivity=RESTRICTED), note_hash(kit))
+        assert result.revision is None
+        assert "linker links to this note" in [v.message for v in result.validation.errors]
+        assert kit.commits == commits
+
+    def test_raising_a_hubs_sensitivity_is_refused_while_members_point_at_it(self, kit: Kit) -> None:
+        hub = kit.world.notes.get(NID("infrastructure"))  # public hub with public/internal members
+        assert hub is not None
+        result = self.edit(kit, replace(hub, sensitivity=RESTRICTED), note_hash(kit, NID("infrastructure")))
+        assert result.revision is None
+        assert ViolationCode.LINK_TO_HIGHER_SENSITIVITY in {v.code for v in result.validation.errors}
 
     def test_the_owner_may_link_to_equal_or_lower_sensitivity(self, kit: Kit) -> None:
         current = kit.world.notes.get(SSH)

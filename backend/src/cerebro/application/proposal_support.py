@@ -12,7 +12,7 @@ from datetime import date
 from cerebro.application.errors import ProposalNotApplicable
 from cerebro.application.ports.notes import NoteRepository
 from cerebro.domain.budgets import core_budget_findings, word_count
-from cerebro.domain.cross_note import cross_note_findings
+from cerebro.domain.cross_note import cross_note_findings, inbound_link_sensitivity_findings
 from cerebro.domain.decision import DecisionKind
 from cerebro.domain.enums import Priority, Status
 from cerebro.domain.note import MAX_NOTE_ID_LENGTH, Note, NoteId
@@ -184,6 +184,8 @@ def validate_candidate(
         words = {n.id: word_count(n.body) for n in notes.list_notes() if n.priority is Priority.P0 and n.is_current}
         words[note.id] = word_count(note.body)
         findings.extend(core_budget_findings(words))
+    if base is None or note.sensitivity > base.sensitivity:
+        findings.extend(inbound_link_sensitivity_findings(snapshot[note.id], snapshot))
     if base is not None and note.sensitivity < base.sensitivity:
         findings.append(
             Finding(

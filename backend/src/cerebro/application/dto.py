@@ -227,7 +227,7 @@ class NoteView:
     ``members`` is ``None`` for ordinary notes and, for a hub, the members the caller may see (ADR-0015).
     ``content_hash`` is of the whole stored note, whichever part of the body is returned.
     ``hub``, ``related`` and ``superseded_by`` list only references whose target the caller may see; the others are
-    dropped (the body is served as written, so it is up to the curator not to link to restricted notes there).
+    dropped, and wikilinks in ``body`` to notes the caller may not see are replaced by the redaction marker.
     """
 
     id: NoteId

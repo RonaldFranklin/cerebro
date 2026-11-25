@@ -14,8 +14,11 @@ _WIKILINK = re.compile(r"\[\[([^\[\]#|\n]*)(?:#([^\[\]|\n]*))?\]\]")
 # Any ``[[...]]``, broader than ``_WIKILINK`` so that unsupported forms such as ``[[id|alias]]`` are seen by redaction.
 _ANY_BRACKETS = re.compile(r"\[\[([^\[\]\n]*)\]\]")
 
-REDACTED_LINK = "[[redacted]]"
-"""What ``redact_wikilinks`` puts in place of a link the reader may not follow."""
+REDACTED_LINK = "[[redacted link]]"
+"""What ``redact_wikilinks`` puts in place of a link the reader may not follow.
+
+The text between the brackets is deliberately not a valid note id (it has a space), so the marker can never be
+mistaken for a link to a note."""
 
 
 class LinkKind(StrEnum):
@@ -89,6 +92,23 @@ def note_links(note: Note) -> tuple[Link, ...]:
     )
 
 
+def _bracket_target(inner: str) -> NoteId | None:
+    target = re.split(r"[#|]", inner, maxsplit=1)[0].strip()
+    return NoteId(target) if is_slug(target) else None
+
+
+def loose_link_targets(body: str) -> tuple[NoteId, ...]:
+    """Every note id that ``redact_wikilinks`` would treat as a link target: any ``[[...]]`` with a valid id, in code
+    blocks and spans too and in the ``[[id|alias]]`` form. A superset of ``extract_wikilinks`` targets: the
+    sensitivity rule uses it so that it covers everything redaction covers."""
+    found: dict[NoteId, None] = {}
+    for match in _ANY_BRACKETS.finditer(body):
+        target = _bracket_target(match.group(1))
+        if target is not None:
+            found[target] = None
+    return tuple(found)
+
+
 def redact_wikilinks(body: str, may_see: Callable[[NoteId], bool]) -> str:
     """``body`` with every ``[[...]]`` whose target is a note id that ``may_see`` rejects replaced by ``REDACTED_LINK``.
 
@@ -98,8 +118,8 @@ def redact_wikilinks(body: str, may_see: Callable[[NoteId], bool]) -> str:
     """
 
     def replace(match: re.Match[str]) -> str:
-        target = re.split(r"[#|]", match.group(1), maxsplit=1)[0].strip()
-        if is_slug(target) and not may_see(NoteId(target)):
+        target = _bracket_target(match.group(1))
+        if target is not None and not may_see(target):
             return REDACTED_LINK
         return match.group(0)
 

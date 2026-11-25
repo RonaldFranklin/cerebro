@@ -1,6 +1,6 @@
 """``GetOverview``: the first call of every agent."""
 
-from cerebro.application.access import require_scope
+from cerebro.application.access import redacted_body, require_scope
 from cerebro.application.dto import CoreNote, GetOverviewRequest, NoteSummary, Overview
 from cerebro.application.ports.notes import NoteRepository
 from cerebro.application.ports.search import MAX_LIMIT, SearchIndex, SearchQuery
@@ -56,5 +56,9 @@ class GetOverview:
             if words + count > CORE_BUDGET_WORDS:
                 return tuple(served), words, True
             words += count
-            served.append(CoreNote(id=note.id, title=note.title, summary=note.summary, body=note.body))
+            served.append(
+                CoreNote(
+                    id=note.id, title=note.title, summary=note.summary, body=redacted_body(self._notes, ctx, note.body)
+                )
+            )
         return tuple(served), words, False

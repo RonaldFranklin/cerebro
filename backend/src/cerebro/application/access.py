@@ -3,6 +3,7 @@
 from cerebro.application.errors import NoteNotFound, PermissionDenied
 from cerebro.application.ports.notes import NoteRepository
 from cerebro.domain.access import AccessContext, Scope, is_visible
+from cerebro.domain.links import redact_wikilinks
 from cerebro.domain.note import Note, NoteId
 
 
@@ -24,3 +25,21 @@ def require_owner(ctx: AccessContext, action: str) -> None:
     """Raise ``PermissionDenied`` unless the principal is the owner (review, edit and the steps that follow it)."""
     if not ctx.is_owner:
         raise PermissionDenied(action)
+
+
+def redacted_body(notes: NoteRepository, ctx: AccessContext, body: str, *, include_history: bool = False) -> str:
+    """``body`` with every wikilink to a note the caller cannot see (or that does not exist) replaced by the marker.
+
+    Every use case that serves a note body goes through this (defense in depth: the write path forbids such links).
+    """
+    cache: dict[NoteId, bool] = {}
+
+    def may_see(target: NoteId) -> bool:
+        if target not in cache:
+            found = notes.get(target)
+            cache[target] = found is not None and is_visible(
+                found.sensitivity, found.status, ctx.ceiling, include_history=include_history
+            )
+        return cache[target]
+
+    return redact_wikilinks(body, may_see)

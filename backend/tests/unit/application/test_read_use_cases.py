@@ -532,6 +532,19 @@ class TestWikilinkRedaction:
         assert NID("vault-layout") not in [m.id for m in view.members or ()]
         assert "vault-layout" not in repr(view)
 
+    def test_the_overview_redacts_core_bodies_too(self) -> None:
+        w = standard_world()  # core-rules (public) links the internal server-ssh-access
+        public = GetOverview(w.notes, w.search).execute(GetOverviewRequest(), ctx(PUBLIC))
+        assert public.core[0].body == f"Always be kind. See {REDACTED_LINK}.\n"
+        assert "server-ssh-access" not in repr(public)
+        internal = GetOverview(w.notes, w.search).execute(GetOverviewRequest(), ctx(INTERNAL))
+        assert "[[server-ssh-access]]" in internal.core[0].body
+
+    def test_the_marker_is_not_a_valid_note_id(self) -> None:
+        from cerebro.domain.links import extract_wikilinks
+
+        assert extract_wikilinks(REDACTED_LINK) == ()
+
 
 class TestEchoedReferencesAndFaultyIndexes:
     def test_references_to_hidden_notes_are_not_echoed(self, world: World) -> None:

@@ -1,12 +1,12 @@
 """``ReadNote``: one note, or one section of it; hubs also list their members."""
 
-from cerebro.application.access import require_scope, visible_note
+from cerebro.application.access import redacted_body, require_scope, visible_note
 from cerebro.application.dto import HubMember, NoteView, ReadNoteRequest
 from cerebro.application.errors import SectionNotFound
 from cerebro.application.ports.graph import GraphIndex
 from cerebro.application.ports.notes import NoteRepository
 from cerebro.domain.access import AccessContext, Scope, is_visible
-from cerebro.domain.links import LinkKind, redact_wikilinks
+from cerebro.domain.links import LinkKind
 from cerebro.domain.note import Note, NoteId
 from cerebro.domain.sections import extract_section
 
@@ -28,7 +28,7 @@ class ReadNote:
             if found is None:
                 raise SectionNotFound(note.id, request.section)
             body = found
-        body = redact_wikilinks(body, lambda target: self._visible_id(target, ctx, request.include_history) is not None)
+        body = redacted_body(self._notes, ctx, body, include_history=request.include_history)
         members = self._members(note, ctx, request.include_history) if note.is_hub else None
         return NoteView.from_note(
             note,
