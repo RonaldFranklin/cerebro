@@ -24,6 +24,9 @@ class InMemoryNoteRepository:
     def list_notes(self) -> tuple[Note, ...]:
         return tuple(self._notes[i] for i in sorted(self._notes))
 
+    def head(self) -> str | None:
+        return self.commits[-1][0] if self.commits else None
+
     def apply(self, changes: Sequence[NoteChange], message: CommitMessage) -> str:
         if not changes:
             raise InvalidValueError("changes", "at least one change is required")

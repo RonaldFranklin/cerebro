@@ -45,6 +45,13 @@ class NoteRepository(Protocol):
         """Every note, ordered by id (used to rebuild the indexes)."""
         ...
 
+    def head(self) -> str | None:
+        """The current content revision: the id the latest ``apply`` returned, or ``None`` for an empty repository.
+
+        Stable across reads; it changes only when ``apply`` commits. Indexes record it to detect staleness.
+        """
+        ...
+
     def apply(self, changes: Sequence[NoteChange], message: CommitMessage) -> str:
         """Write all ``changes`` and record them as **one** commit with ``message``; return the revision id.
 
