@@ -397,12 +397,13 @@ Authorization lives in the use cases, never in the adapters:
 - **Names in the audit trail cannot be impersonated.** Agent names never contain `/` and `owner` is reserved, so
   an agent cannot appear as `owner` or as a curator. Every `Curated-by` value starts with the mandatory prefix
   `curator/` (e.g. `curator/null`, `curator/anthropic-triage`); the only exception is `owner` in an owner edit.
+- **Approver and curator shape.** `Approved-by` is always `owner` for now (deliberate, until an autonomy policy
+  with its own ADR defines other approvers); `Curated-by` must match `curator/[a-z0-9][a-z0-9._-]*`.
 - **Token clock skew.** A token whose `created_at` is more than 5 minutes ahead of the verifier's clock
   (`CLOCK_SKEW_TOLERANCE`) is not valid and fails authentication like an unknown token.
 - **Secret findings are structured.** The scanner's `Finding` carries `detector` and `line` (kept on the
-  violation) and an optional `preview` (dropped by the severity policy, never shown to agents or in the health
-  report). The human `message` never contains the preview and consumers never parse it: the health report
-  describes secrets from `detector` and `line` only.
+  violation); there is no preview of the value at all. Consumers never parse the human `message`: the health
+  report describes secrets from `detector` and `line` only.
 - The `Vocabulary` (`schema/*.yaml`) is passed to the use cases that validate, loaded once by the composition root;
   it is a value, not a port.
 

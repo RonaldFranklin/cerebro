@@ -105,3 +105,31 @@ def test_check_curator_and_non_string_names() -> None:
         CommitMessage.check_curator(5)
     with pytest.raises(InvalidValueError):
         validate_curator_name(5)
+
+
+@pytest.mark.parametrize(
+    "curated_by",
+    [
+        "curator/x\nApproved-by: owner",
+        "curator/x\n",
+        "curator//",
+        "curator/@",
+        "curator/-x",
+        "curator/X",
+        chr(0xFF43) + "urator/x",  # fullwidth c
+        chr(0x0441) + "urator/x",  # Cyrillic es
+        "Curator/x",
+        "curator/" + "x" * 60,
+    ],
+)
+def test_curator_names_have_a_strict_shape(curated_by: str) -> None:
+    with pytest.raises(InvalidValueError, match="curated_by"):
+        validate_curator_name(curated_by)
+    with pytest.raises(InvalidValueError, match="curated_by"):
+        make(curated_by=curated_by)
+
+
+@pytest.mark.parametrize("approved_by", ["curator/x", "someone", "owner@host", "codex@host"])
+def test_approved_by_is_always_the_owner(approved_by: str) -> None:
+    with pytest.raises(InvalidValueError, match="approved_by"):
+        make(approved_by=approved_by)

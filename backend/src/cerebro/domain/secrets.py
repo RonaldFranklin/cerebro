@@ -2,8 +2,8 @@
 
 Notes may say where a secret lives, never its value. ``scan_note`` looks at every text field of a note
 (title, summary, ids, ... and the body, fenced code blocks included) and returns one ``Finding`` per hit with the
-code ``SECRET_DETECTED``. Findings never contain the secret: only the kind of detector, the field, the line and
-a tiny redacted preview (see ``PREVIEW_CHARS``). The scanner is a heuristic, not a guarantee: see
+code ``SECRET_DETECTED``. Findings never contain any part of the secret: only the detector, the field and the line.
+The scanner is a heuristic, not a guarantee: see
 ``docs/domain-model.md`` section 6 for its known limits.
 """
 
@@ -30,9 +30,6 @@ ASSIGNMENT_MIN_LENGTH: Final = 8
 MAX_FINDINGS_PER_FIELD: Final = 20
 """Findings listed per field; past this one summary finding is added (keeps reports and scan time bounded)."""
 
-PREVIEW_MIN_LENGTH: Final = 16
-PREVIEW_CHARS: Final = 2
-"""A preview (first ``PREVIEW_CHARS`` characters) is shown only for secrets of at least ``PREVIEW_MIN_LENGTH``."""
 
 # (kind, pattern): the whole match is the secret.
 _TOKEN_DETECTORS: Final[tuple[tuple[str, re.Pattern[str]], ...]] = (
@@ -149,7 +146,6 @@ def scan_text(text: str, *, field: str) -> tuple[Finding, ...]:
                     message=secret_message(hit.kind, number),
                     detector=hit.kind,
                     line=number,
-                    preview=_preview(line[hit.start : hit.end]),
                 )
             )
     return tuple(findings)
@@ -158,10 +154,6 @@ def scan_text(text: str, *, field: str) -> tuple[Finding, ...]:
 def normalize(text: str) -> str:
     """NFKC-normalize ``text`` and drop format characters (Unicode category ``Cf``: zero-width, soft hyphen...)."""
     return "".join(c for c in unicodedata.normalize("NFKC", text) if unicodedata.category(c) != "Cf")
-
-
-def _preview(secret: str) -> str | None:
-    return secret[:PREVIEW_CHARS] if len(secret) >= PREVIEW_MIN_LENGTH else None
 
 
 def secret_message(detector: str | None, line: int | None) -> str:

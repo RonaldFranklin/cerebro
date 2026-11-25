@@ -175,7 +175,7 @@ class Proposal:
         if self.curated_by is not None:
             CommitMessage.check_curator(self.curated_by)
         if self.approved_by is not None:
-            CommitMessage.check_attribution(self.approved_by, "approved_by")
+            CommitMessage.check_approver(self.approved_by)
         if not isinstance(self.revision, int) or isinstance(self.revision, bool) or self.revision < 0:
             raise InvalidValueError("revision", "expected a non-negative integer")
         if not isinstance(self.conflict, bool):
@@ -260,7 +260,7 @@ class Proposal:
         is not approvable as is). The owner may approve from ``needs_owner``. The ``conflict`` flag is kept: the
         owner must ``rebase`` a conflicted proposal first.
         """
-        CommitMessage.check_attribution(approved_by, "approved_by")
+        CommitMessage.check_approver(approved_by)
         if self.status is S.CURATED and (
             self.decision is None or self.decision.kind not in (DecisionKind.MERGE_INTO, DecisionKind.CREATE)
         ):

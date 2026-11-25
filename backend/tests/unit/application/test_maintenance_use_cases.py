@@ -30,6 +30,7 @@ from cerebro.application.use_cases import (
     RebuildIndex,
     RevokeAgentToken,
 )
+from cerebro.application.use_cases.health_report import _finding_issue
 from cerebro.domain.access import AccessCeiling, Scope
 from cerebro.domain.enums import Priority, Sensitivity, Status
 from cerebro.domain.errors import InvalidValueError
@@ -418,16 +419,13 @@ class TestHealthReport:
         assert "starts with" not in text
         assert {i.field for i in leaks} >= {"body", "title"}
 
-    def test_the_report_ignores_the_message_text_and_preview_of_secret_findings(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_the_report_ignores_the_message_text_of_secret_findings(self, monkeypatch: pytest.MonkeyPatch) -> None:
         junk = Finding(
             code=ViolationCode.SECRET_DETECTED,
             field="body",
             message=f"starts with {SECRET[:6]!r} whatever; notes must? {SECRET}",
             detector="bearer token",
             line=3,
-            preview=SECRET[:6],
         )
         monkeypatch.setattr("cerebro.domain.validation.scan_note", lambda note: (junk,))
         kit = HealthKit()
@@ -515,3 +513,18 @@ class TestHealthReport:
 
 def _unindexed() -> Any:
     return make_note(id=NID("fresh"), related=(), hub=NID("infrastructure"), sensitivity=PUB)
+
+
+class TestFindingIssue:
+    def test_secret_findings_are_described_from_detector_and_line_only(self) -> None:
+        finding = Finding(
+            code=ViolationCode.SECRET_DETECTED, field="body", message=f"junk {SECRET}", detector="bearer token", line=7
+        )
+        issue = _finding_issue("some-note", finding)
+        assert issue.message == secret_message("bearer token", 7)
+        assert (issue.subject, issue.field, issue.severity) == ("some-note", "body", Severity.ERROR)
+        assert SECRET not in repr(issue)
+
+    def test_other_findings_keep_their_message(self) -> None:
+        finding = Finding(code=ViolationCode.CORE_OVER_BUDGET, field=None, message="too big")
+        assert _finding_issue("core-budget", finding).message == "too big"

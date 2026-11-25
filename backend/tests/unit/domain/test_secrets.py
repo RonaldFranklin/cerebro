@@ -4,6 +4,7 @@ import random
 import string
 import time
 from collections.abc import Callable
+from dataclasses import asdict
 
 import pytest
 
@@ -214,13 +215,12 @@ def test_findings_never_contain_the_secret(secret: str) -> None:
     assert secret[4:] not in repr(report)
 
 
-def test_preview_is_at_most_a_few_characters_and_only_for_long_secrets() -> None:
-    (long_finding,) = scan_text(TOKENS["github classic"], field="body")
-    assert long_finding.preview == "gh"
-    assert "starts with" not in long_finding.message
-    assert "preview" not in repr(long_finding)
-    (short_finding,) = scan_text("password=" + "Ab1" + "defgh", field="body")
-    assert short_finding.preview is None
+def test_no_part_of_the_value_is_in_a_finding() -> None:
+    token = TOKENS["github classic"]
+    (finding,) = scan_text(token, field="body")
+    assert not hasattr(finding, "preview")
+    assert "starts with" not in finding.message
+    assert set(asdict(finding)) == {"code", "field", "message", "detector", "line"}
 
 
 def test_findings_carry_structured_detector_and_line_and_a_message_without_the_preview() -> None:

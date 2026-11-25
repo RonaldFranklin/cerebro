@@ -25,6 +25,7 @@ AGENT_NAME_MAX_LENGTH: Final = 64
 # appear under that name in the audit trail, with or without a host part.
 _RESERVED_AGENT_NAMES: Final = frozenset({"owner"})
 CURATOR_PREFIX: Final = "curator/"
+_CURATOR_NAME: Final = re.compile(r"curator/[a-z0-9][a-z0-9._-]*")
 """Every ``Curated-by`` identity starts with this prefix. Agent names cannot contain ``/``, so an agent can never
 appear in the audit trail as a curator (and ``owner`` is reserved), whatever name its token carries."""
 
@@ -110,8 +111,11 @@ def validate_curator_name(name: object) -> str:
     """Return ``name`` if it is a valid curator identity (``curator/null``), else raise."""
     if not isinstance(name, str):
         raise InvalidValueError("curated_by", f"expected a string, got {type(name).__name__}")
-    if not name.startswith(CURATOR_PREFIX) or len(name) == len(CURATOR_PREFIX):
-        raise InvalidValueError("curated_by", f"a curator name must start with '{CURATOR_PREFIX}'")
+    if len(name) > AGENT_NAME_MAX_LENGTH or _CURATOR_NAME.fullmatch(name) is None:
+        raise InvalidValueError(
+            "curated_by",
+            f"must be '{CURATOR_PREFIX}' then lowercase letters, digits, '.', '_', '-' (max {AGENT_NAME_MAX_LENGTH})",
+        )
     return name
 
 

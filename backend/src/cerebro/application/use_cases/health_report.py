@@ -39,7 +39,7 @@ class HealthReport:
     ``RebuildIndex``).
 
     Secrets in existing notes are reported as ``secret_detected`` with the field, detector and line only,
-    described from the findings' structured fields (the scanner's preview and message text are never used), so the
+    described from the findings' structured fields (the scanner's message text is never used), so the
     report never carries any part of a secret.
     """
 
