@@ -69,8 +69,8 @@ container (`tests/integration/test_rebuild_acceptance.py`).
   scores); rollback by path in `GitRepo` and a clean-state precheck in `apply`; a single writer lock; a start-up
   reindex when the index revision differs from `HEAD`; an import contract keeping `adapters.inbound` away from
   `cerebro.bootstrap`; a warning when a note is raised to `restricted` (follow-up PR).
-- **Dependencies:** `cryptography==50.0.2`, `pyyaml==6.0.3`, dev `types-pyyaml==6.0.12.20261113` (the last was not in
-  the original authorization; pending owner confirmation).
+- **Dependencies:** `cryptography==50.0.2`, `pyyaml==6.0.3`, dev `types-pyyaml==6.0.12.20261113` (the owner approved
+  the dev dependency on 2026-11-25 after PR #31).
 - **Security:** every security-relevant PR had at least one fresh Opus review; all findings were fixed before merge.
   Accepted residual risks are in [architecture.md](../architecture.md) ("Accepted risks").
 - **Process lessons:** merge only through `scripts/merge-pr.sh` (GitHub sometimes lags on the PR head); never
