@@ -8,6 +8,7 @@ from cerebro.application.use_cases.get_neighbors import GetNeighbors
 from cerebro.application.use_cases.get_overview import GetOverview
 from cerebro.application.use_cases.health_report import HealthReport
 from cerebro.application.use_cases.issue_agent_token import IssueAgentToken
+from cerebro.application.use_cases.list_agent_tokens import ListAgentTokens
 from cerebro.application.use_cases.owner_edit_note import OwnerEditNote
 from cerebro.application.use_cases.read_note import ReadNote
 from cerebro.application.use_cases.rebuild_index import RebuildIndex
@@ -26,6 +27,7 @@ __all__ = [
     "GetOverview",
     "HealthReport",
     "IssueAgentToken",
+    "ListAgentTokens",
     "OwnerEditNote",
     "ReadNote",
     "RebuildIndex",

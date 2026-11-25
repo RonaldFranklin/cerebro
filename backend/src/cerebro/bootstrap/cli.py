@@ -4,6 +4,7 @@ import os
 import sys
 
 from cerebro.adapters.inbound.cli import parse_arguments, run_read_command
+from cerebro.adapters.inbound.cli_tokens import run_token_command
 from cerebro.application.dto import ReadNoteRequest, SearchNotesRequest
 from cerebro.application.errors import NoteNotFound, SectionNotFound
 from cerebro.bootstrap.container import build_container
@@ -24,6 +25,14 @@ def main() -> int:
             return 0
         container = build_container(settings)
         ctx = AccessContext.for_owner(AccessCeiling(Sensitivity.RESTRICTED))
+        if options.command == "token":
+            return run_token_command(
+                options.request,
+                ctx,
+                issue=container.use_cases.issue_agent_token,
+                list_tokens=container.use_cases.list_agent_tokens,
+                revoke=container.use_cases.revoke_agent_token,
+            )
         if isinstance(options.request, (SearchNotesRequest, ReadNoteRequest)):
             container.start()
         return run_read_command(

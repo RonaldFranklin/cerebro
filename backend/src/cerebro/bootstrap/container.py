@@ -33,6 +33,7 @@ from cerebro.adapters.outbound.sqlite import (
 )
 from cerebro.adapters.outbound.system import SystemIdGenerator, UtcClock
 from cerebro.application.dto import (
+    AgentTokenSummary,
     ApplyProposalResult,
     AuthenticateTokenRequest,
     GetGraphRequest,
@@ -43,6 +44,7 @@ from cerebro.application.dto import (
     HealthReportResult,
     IssueAgentTokenRequest,
     IssuedToken,
+    ListAgentTokensRequest,
     NoteView,
     Overview,
     OwnerEditNoteRequest,
@@ -83,6 +85,7 @@ from cerebro.application.use_cases import (
     GetOverview,
     HealthReport,
     IssueAgentToken,
+    ListAgentTokens,
     OwnerEditNote,
     ReadNote,
     RebuildIndex,
@@ -172,6 +175,7 @@ class UseCases:
     rebuild_index: ContextUseCase[RebuildIndexRequest, RebuildIndexResult]
     health_report: ContextUseCase[HealthReportRequest, HealthReportResult]
     issue_agent_token: ContextUseCase[IssueAgentTokenRequest, IssuedToken]
+    list_agent_tokens: ContextUseCase[ListAgentTokensRequest, tuple[AgentTokenSummary, ...]]
     revoke_agent_token: ContextUseCase[RevokeAgentTokenRequest, RevokedToken]
     authenticate_token: AnonymousUseCase[AuthenticateTokenRequest, AccessContext]
 
@@ -222,6 +226,7 @@ class Container:
             rebuild_index=Serialized(self._rebuild, lock),
             health_report=HealthReport(notes, proposals, search, graph, clock, vocabulary),
             issue_agent_token=IssueAgentToken(self.tokens, clock, ids),
+            list_agent_tokens=ListAgentTokens(self.tokens),
             revoke_agent_token=RevokeAgentToken(self.tokens, clock),
             authenticate_token=AuthenticateToken(self.tokens, clock),
         )

@@ -3,6 +3,7 @@
 import argparse
 import json
 from collections.abc import Sequence
+from datetime import datetime
 from pathlib import Path
 from typing import Never
 
@@ -10,16 +11,20 @@ from cerebro.adapters.inbound.cli_views import health_view, note_view, search_vi
 from cerebro.application.dto import (
     HealthReportRequest,
     HealthReportResult,
+    IssueAgentTokenRequest,
+    ListAgentTokensRequest,
     NoteView,
     ReadNoteRequest,
     RebuildIndexRequest,
     RebuildIndexResult,
+    RevokeAgentTokenRequest,
     SearchNotesRequest,
     SearchResults,
 )
 from cerebro.application.use_case import ContextUseCase
-from cerebro.domain.access import AccessContext
-from cerebro.domain.enums import Priority, Status
+from cerebro.domain.access import AccessCeiling, AccessContext, Scope
+from cerebro.domain.agent_token import validate_token_id
+from cerebro.domain.enums import Priority, Sensitivity, Status
 from cerebro.domain.errors import DomainError
 from cerebro.domain.note import NoteId
 from cerebro.domain.vocabulary import Area, NoteType
@@ -66,6 +71,17 @@ def parse_arguments(args: Sequence[str]) -> argparse.Namespace:
     commands.add_parser("reindex", help="rebuild the search and graph indexes")
     commands.add_parser("health", help="inspect the repository and index state")
 
+    token = commands.add_parser("token", help="manage agent credentials")
+    actions = token.add_subparsers(dest="token_action", required=True)
+    issue = actions.add_parser("issue", help="issue a token and print its secret once")
+    issue.add_argument("agent", type=short_field)
+    issue.add_argument("--ceiling", type=short_field, default="public", help="public (default), internal or restricted")
+    issue.add_argument("--scope", type=short_field, action="append", help="read (default) or propose; repeatable")
+    issue.add_argument("--expires-at", type=short_field, help="ISO 8601 timestamp with timezone")
+    actions.add_parser("list", help="list credential metadata")
+    revoke = actions.add_parser("revoke", help="revoke a token by its id")
+    revoke.add_argument("token_id", type=short_field)
+
     size = 0
     for arg in args:
         try:
@@ -79,6 +95,21 @@ def parse_arguments(args: Sequence[str]) -> argparse.Namespace:
         parser.error("missing command")
     try:
         match options.command:
+            case "token":
+                match options.token_action:
+                    case "issue":
+                        options.request = IssueAgentTokenRequest(
+                            agent=options.agent,
+                            ceiling=AccessCeiling(Sensitivity.parse(options.ceiling)),
+                            scopes=frozenset(Scope.parse(s) for s in options.scope or ["read"]),
+                            expires_at=datetime.fromisoformat(options.expires_at)
+                            if options.expires_at is not None
+                            else None,
+                        )
+                    case "list":
+                        options.request = ListAgentTokensRequest()
+                    case "revoke":
+                        options.request = RevokeAgentTokenRequest(token_id=validate_token_id(options.token_id))
             case "search":
                 options.request = SearchNotesRequest(
                     text=options.query,
@@ -97,7 +128,7 @@ def parse_arguments(args: Sequence[str]) -> argparse.Namespace:
                 options.request = RebuildIndexRequest()
             case "health":
                 options.request = HealthReportRequest()
-    except DomainError:
+    except DomainError, ValueError:
         parser.error("invalid request")
     return options
 
