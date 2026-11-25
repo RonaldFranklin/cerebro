@@ -8,24 +8,37 @@ dependencies = []
 
 [dependency-groups]
 dev = [
-    "import-linter==2.17",
+    "import-linter==2.16",
     "mypy==2.4.1",
     "pytest==9.2.0",
-    "ruff==0.17.6",
+    "pytest-cov==7.1.0",
+    "ruff==0.17.5",
 ]
 
 [build-system]
-requires = ["uv_build==0.13.10"]
+requires = ["uv_build==0.13.9"]
 build-backend = "uv_build"
 
 [tool.uv]
-required-version = ">=0.13.10"
+required-version = ">=0.13.9"
+# Supply-chain rule (ADR-0013): only resolve packages uploaded at least 7 days ago.
+exclude-newer = "7 days"
 
 [tool.pytest.ini_options]
 minversion = "9.0"
 testpaths = ["tests"]
 addopts = ["--strict-markers", "--strict-config", "-ra"]
 xfail_strict = true
+
+[tool.coverage.run]
+source_pkgs = ["cerebro.domain", "cerebro.application"]
+branch = true
+
+[tool.coverage.report]
+fail_under = 90
+show_missing = true
+skip_covered = true
+exclude_also = ["if TYPE_CHECKING:", "raise NotImplementedError", "^\\s*\\.\\.\\.\\s*$"]
 
 [tool.ruff]
 line-length = 120

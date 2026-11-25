@@ -24,8 +24,10 @@ Inbox, which are validated, curated and approved before becoming notes.
 ## 3. Current status
 
 - Phase 0 (bootstrap) is **done**: `backend/` skeleton with uv (Python 3.14), pytest, ruff, mypy `--strict`,
-  import-linter (layers + custom `stdlib_only` contract with canary tests) and GitHub Actions CI.
-- Next: Phase 1 (domain and application core). There is no domain code yet.
+  import-linter (layers + custom `stdlib_only` contract type, with canary tests) and GitHub Actions CI.
+- Phase 1 (domain and application core) is **in progress**, delivered as a series of pull requests
+  (`phase-1/*` branches). Done so far: value objects (`NoteId`, `Priority`, `Sensitivity`, `Status`, `Area`,
+  `NoteType`, `Vocabulary`, `Note`).
 - Update this section and `docs/roadmap.md` whenever a phase starts or finishes.
 
 ## 4. Non-negotiable rules
@@ -88,6 +90,7 @@ Inbox, which are validated, curated and approved before becoming notes.
 # backend (from backend/)
 uv sync                                         # create .venv from uv.lock
 uv run pytest                                   # tests (incl. import-contract canaries)
+uv run pytest --cov                             # + coverage gate: domain + application >= 90% (as in CI)
 uv run ruff check . && uv run ruff format --check .
 uv run mypy                                     # strict, covers src/, tests/, devtools/
 uv run lint-imports                             # import contracts

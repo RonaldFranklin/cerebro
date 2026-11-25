@@ -36,7 +36,9 @@ about YAML, SQLite, git, HTTP, MCP or any LLM provider. See [ADR-0001](adr/0001-
 | `cerebro.adapters.*` | `cerebro.application`, `cerebro.domain`, third-party libraries |
 | `cerebro.bootstrap` | everything (composition root) |
 
-Enforced with `import-linter` contracts in CI.
+Enforced with `import-linter` contracts in CI. The "standard library only" rule for `cerebro.domain` and
+`cerebro.application` is enforced by a contract of the custom `stdlib_only` type, defined in
+`backend/devtools/import_contracts.py` (static imports only; dynamic imports are not detected).
 
 ## 2. Backend package layout (target)
 
@@ -46,9 +48,11 @@ backend/
 ├── uv.lock
 ├── src/cerebro/
 │   ├── domain/
-│   │   ├── note.py            # Note, NoteId, Frontmatter value objects
+│   │   ├── note.py            # Note (typed frontmatter fields + body), NoteId
 │   │   ├── links.py           # wikilink extraction [[id]] / [[id#Section]]
-│   │   ├── enums.py           # Priority, Sensitivity, Status, NoteType
+│   │   ├── enums.py           # Priority, Sensitivity, Status
+│   │   ├── vocabulary.py      # Area, NoteType, Vocabulary (controlled lists from schema/*.yaml)
+│   │   ├── slug.py            # kebab-case rule shared by ids, areas and types
 │   │   ├── access.py          # AccessCeiling, visibility rules
 │   │   ├── budgets.py         # size/word/summary limits
 │   │   ├── proposal.py        # Proposal, ProposalKind, lifecycle, Decision
@@ -182,24 +186,27 @@ Full policy in [ADR-0013](adr/0013-stack-and-dependency-policy.md). Summary:
 | MCP | official `mcp` Python SDK | adapter only |
 | CLI | Typer (or argparse if we want zero deps) | decided in Phase 3 |
 | LLM | provider SDKs, one adapter each | optional, Phase 7 |
-| Quality | pytest, ruff, mypy (strict), import-linter | custom `stdlib_only` contract in `backend/devtools/` |
+| Quality | pytest, ruff, mypy (strict), import-linter | custom `stdlib_only` contract type in `backend/devtools/` |
 | Web | Node Active LTS (exact version chosen in Phase 5), pnpm, React, TypeScript, Vite, TanStack Query, Sigma.js, graphology, CodeMirror 6 | |
 
-All versions are pinned exactly in lockfiles. Exact versions are chosen after checking the latest stable
-releases and recorded here once the lockfile is generated, so this table matches the lock.
+All versions are pinned exactly in lockfiles. Exact versions are the newest stable releases published at least
+7 days earlier ([ADR-0013](adr/0013-stack-and-dependency-policy.md)), and recorded here once the lockfile is
+generated, so this table matches the lock.
 
 ### Pinned backend versions (Phase 0)
 
-Source of truth: `backend/uv.lock`. Update this table in the same commit as any upgrade.
+Source of truth: `backend/uv.lock`. Update this table in the same commit as any upgrade. Every version must
+have been published at least 7 days earlier ([ADR-0013](adr/0013-stack-and-dependency-policy.md)).
 
 | Tool | Version | Role |
 |---|---|---|
 | Python | 3.14 (`requires-python = "==3.14.*"`, `.python-version`) | runtime; 3.14.10 installed at bootstrap |
-| uv | ≥ 0.13.10 (`tool.uv.required-version`) | env, lockfile, runner |
-| uv_build | 0.13.10 | build backend |
+| uv | ≥ 0.13.9 (`tool.uv.required-version`; 0.13.9 in CI) | env, lockfile, runner |
+| uv_build | 0.13.9 | build backend |
 | pytest | 9.2.0 | tests |
-| ruff | 0.17.6 | lint + format |
+| pytest-cov | 7.1.0 (pulls coverage 7.17.3) | coverage; `fail_under = 90` on `cerebro.domain` + `cerebro.application` |
+| ruff | 0.17.5 | lint + format |
 | mypy | 2.4.1 | type checking (`strict`) |
-| import-linter | 2.17 | import contracts (pulls grimp 3.20) |
+| import-linter | 2.16 | import contracts (pulls grimp 3.20) |
 
 Runtime dependencies: none yet. Frontend versions (Node, pnpm, packages) are added in Phase 5.
