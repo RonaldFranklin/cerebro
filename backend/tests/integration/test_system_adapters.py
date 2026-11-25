@@ -1,6 +1,7 @@
 """The real system adapters run the shared Clock / IdGenerator contracts plus what the contract cannot see."""
 
 import re
+from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime, timedelta
 
 import pytest
@@ -47,18 +48,27 @@ class TestSystemIdGenerator(IdGeneratorContract):
         created = [ids.new_proposal_id() for _ in range(5000)]
         assert created == sorted(created)
 
-    def test_proposal_ids_sort_across_generators(self) -> None:
+    def test_proposal_ids_sort_across_generator_instances_in_one_process(self) -> None:
+        # Same process only: the uuid7 state is process-wide. No claim about ordering across processes.
         created = [SystemIdGenerator().new_proposal_id() for _ in range(100)]
         assert created == sorted(created)
 
     def test_proposal_ids_pass_proposal_validation(self, ids: IdGenerator) -> None:
         now = datetime(2026, 11, 25, 12, 0, tzinfo=UTC)
+        proposal_id = ids.new_proposal_id()
         proposal = Proposal(
-            id=ids.new_proposal_id(),
+            id=proposal_id,
             kind=ProposalKind.CREATE,
             content=ProposedContent(title="A note", body="Body.\n"),
             source_agent="claude-code",
             created_at=now,
             updated_at=now,
         )
-        assert proposal.id
+        assert proposal.id == proposal_id
+
+    def test_ids_are_unique_across_threads(self, ids: IdGenerator) -> None:
+        with ThreadPoolExecutor(max_workers=8) as pool:
+            batches = list(pool.map(lambda _: [ids.new_proposal_id() for _ in range(500)], range(8)))
+        flat = [i for batch in batches for i in batch]
+        assert len(set(flat)) == len(flat) == 4000
+        assert all(batch == sorted(batch) for batch in batches)
