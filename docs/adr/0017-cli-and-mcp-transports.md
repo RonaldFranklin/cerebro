@@ -11,6 +11,7 @@ ADR-0014 defines the agent tool schemas.
 
 ## Decision
 
+- In Phase 3 register the four read tools defined in ADR-0014. Its fifth tool, cerebro_propose, arrives in Phase 4.
 - Use standard-library argparse for the local owner CLI and tomllib for settings.
 - Use the official Python mcp SDK and Uvicorn for stateless Streamable HTTP. PR 7 records the resolved
   versions and upload dates for both packages and their transitive dependencies under ADR-0013's seven-day rule.
