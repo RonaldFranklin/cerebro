@@ -13,6 +13,8 @@ dependencies = [
 
 [project.scripts]
 cerebro = "cerebro.bootstrap.cli:main"
+cerebro-mcp = "cerebro.bootstrap.mcp:serve"
+cerebro-mcp-stdio = "cerebro.bootstrap.mcp:stdio"
 
 [dependency-groups]
 dev = [
