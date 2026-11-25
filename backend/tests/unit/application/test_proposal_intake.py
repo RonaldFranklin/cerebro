@@ -5,8 +5,12 @@ import pytest
 from cerebro.application.dto import AmendProposalRequest, SubmitProposalRequest
 from cerebro.application.errors import NoteNotFound, PermissionDenied, ProposalConflict, ProposalNotApplicable
 from cerebro.application.use_cases import AdmitProposal, AmendProposal
+from cerebro.domain.decision import Decision
 from cerebro.domain.enums import Sensitivity
+from cerebro.domain.errors import InvalidValueError
+from cerebro.domain.note import NoteId
 from cerebro.domain.proposal import Proposal, ProposalKind, ProposalLimits, ProposalStatus
+from tests.fakes.stores import FakeCurator
 from tests.unit.application.write_kit import Kit, agent_ctx, new_content, owner_ctx
 
 AGENT = replace(agent_ctx(), token_id="token-123")
@@ -98,10 +102,21 @@ def test_amend_validates_before_saving_and_preserves_provenance() -> None:
 @pytest.mark.parametrize("field", ["body", "related", "hub"])
 def test_hidden_and_missing_references_are_indistinguishable_before_admission(ref: str, field: str) -> None:
     k = Kit()
-    from cerebro.domain.note import NoteId
 
     values: dict[str, object] = {"body": f"See [[{ref}]].", "related": (NoteId(ref),), "hub": NoteId(ref)}
     req = SubmitProposalRequest(kind=ProposalKind.CREATE, content=new_content(**{field: values[field]}))
     with pytest.raises(NoteNotFound, match=r"^note not found$"):
         intake(k).execute(req, AGENT)
     assert not k.store.find()
+
+
+def test_unexpected_curator_output_never_reaches_admission(monkeypatch: pytest.MonkeyPatch) -> None:
+    k = Kit(curator=FakeCurator(Decision.create(NoteId("new-guide"))))
+
+    def refuse(*args: object, **kwargs: object) -> None:
+        pytest.fail("unexpected curator result reached durable admission")
+
+    monkeypatch.setattr(k.store, "admit", refuse)
+    with pytest.raises(InvalidValueError):
+        intake(k).execute(SubmitProposalRequest(kind=ProposalKind.CREATE, content=new_content()), AGENT)
+    assert k.store.find() == ()
