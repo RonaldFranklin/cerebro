@@ -31,8 +31,10 @@ Inbox, which are validated, curated and approved before becoming notes.
 - **Phase 3 is approved.** The owner CLI and four authenticated MCP read tools are implemented and tested.
   [Delivery record](docs/plans/phase-3.md) · [owner's manual client checks](docs/agent-integration.md).
 - **Phase 3 checkpoint:** only the owner's manual Claude Code and Codex tests remain.
-- **Current step:** deliver the [Phase 4 Inbox plan](docs/plans/phase-4.md). The owner authorized autonomous
-  merges within the roadmap and ADRs after independent review, resolved findings and green CI.
+- **Phase 4 is delivered.** The fifth MCP tool submits agent proposals for quota-controlled validation, curation
+  and local owner review. The [delivery record and security checkpoint](docs/plans/phase-4.md#5-final-report)
+  and [manual proposal checks](docs/agent-integration.md#3-propose-in-both-clients-and-approve-locally)
+  are ready for the owner. Phase 5 planning follows the owner's direction.
 - **Phase 2 decisions (2026-11-25):** the owner declined a MAC for token rows and accepted the
   [residual risk](docs/architecture.md#accepted-risks-owner-decision-2026-11-25). The owner approved
   `types-pyyaml` as a development dependency for strict type checking of the filesystem adapter.
