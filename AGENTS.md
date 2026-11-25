@@ -36,9 +36,10 @@ Inbox, which are validated, curated and approved before becoming notes.
   PR**. The roadmap already lists the Phase 3 carry-overs: input size limits in every inbound adapter, a
   `ListAgentTokens` use case, MCP `cerebro_neighbors` capped at depth 2. The CLI library (Typer or argparse) and the
   MCP SDK are new dependencies: they need the owner's approval.
-- **Pending with the owner:** (1) approval of the Phase 3 plan; (2) approval of new dependencies for Phase 3;
-  (3) the open question in PR #30: whether to add a MAC over token rows in `state.sqlite`; (4) the dev dependency
-  `types-pyyaml` (added in #31) was not covered by the original authorization: confirm or reject.
+- **Pending with the owner:** approval of the Phase 3 plan and its new dependencies.
+- **Phase 2 decisions (2026-11-25):** the owner declined a MAC for token rows and accepted the
+  [residual risk](docs/architecture.md#accepted-risks-owner-decision-2026-11-25). The owner approved
+  `types-pyyaml` as a development dependency for strict type checking of the filesystem adapter.
 - Update this section and `docs/roadmap.md` whenever a phase starts or finishes.
 
 ## 4. Non-negotiable rules

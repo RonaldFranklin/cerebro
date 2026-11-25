@@ -224,7 +224,7 @@ not coordinated with other processes using the file: rolling deploys with differ
 
 - **Token rows are not authenticated.** `state.sqlite` stores token rows (ceiling, scopes, revocation) in clear and
   unsigned; only the file mode (0600) and the directory (0700) protect them. Anyone who can write the file can raise
-  a ceiling or clear a revocation.
+  a ceiling or clear a revocation. The owner declined a per-row MAC and accepted this risk.
 - **No rollback or replay protection for proposal rows.** The sealed payload binds the proposal id, but not its
   revision: restoring a whole older row (for example from a backup) passes every check.
 - **Raw payloads exist briefly.** `SubmitProposal` stores the submitted payload (sealed with the cipher) before
