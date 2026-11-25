@@ -2,7 +2,7 @@
 
 from cerebro.application.access import require_owner, visible_note
 from cerebro.application.dto import ProposalOutcome, ReviewAction, ReviewProposalRequest
-from cerebro.application.errors import ProposalNotFound
+from cerebro.application.errors import ProposalConflict, ProposalNotFound
 from cerebro.application.ports.notes import NoteRepository
 from cerebro.application.ports.proposals import ProposalStore
 from cerebro.application.ports.system import Clock
@@ -34,6 +34,8 @@ class ReviewProposal:
         if proposal is None:
             raise ProposalNotFound(request.proposal_id)
         expected = proposal.revision
+        if request.expected_revision is not None and expected != request.expected_revision:
+            raise ProposalConflict(request.proposal_id)
         now = self._clock.now()
         if request.action is ReviewAction.REJECT:
             reason = request.reason or ""
