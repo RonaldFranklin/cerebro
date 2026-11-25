@@ -16,6 +16,7 @@ from cerebro.domain.enums import Sensitivity
 from cerebro.domain.proposal import ProposalKind, ProposedContent
 from tests.integration.content_kit import ISLAND_ID, make_sample_repo
 from tests.integration.test_cli_bootstrap import SAMPLE, invoke
+from tests.integration.test_git import raw_git
 from tests.unit.application.write_kit import agent_ctx, owner_ctx
 
 
@@ -64,6 +65,13 @@ def test_preview_review_and_retry(tmp_path: Path, action: str) -> None:
         assert row
         assert row.source_agent == "claude-code"
         assert row.curated_by == "curator/policy"
+        message = raw_git(sample.root, "log", "-1", "--format=%B")
+        assert message.strip().splitlines()[-4:] == [
+            "Proposed-by: claude-code",
+            "Curated-by: curator/policy",
+            "Approved-by: owner",
+            f"Proposal-Id: {pid}",
+        ]
         return
     if action == "reject":
         head = c.notes.head()
