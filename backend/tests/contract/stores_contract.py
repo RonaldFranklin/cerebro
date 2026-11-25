@@ -90,6 +90,21 @@ class ProposalStoreContract:
         with pytest.raises(ProposalLimitReached):
             store.admit(make_reviewable("second"), token_id="a", limits=limits, clock=clock)
 
+    def test_clock_correction_excludes_future_admissions_from_the_hour(self, store: ProposalStore) -> None:
+        clock = FixedClock(T0 + timedelta(hours=2))
+        limits = ProposalLimits(per_hour=1, pending=1)
+        old = scrubbed(make_proposal("old").reject_invalid(BAD, T0))
+        store.admit(old, token_id="token", limits=limits, clock=clock)
+        clock.set(T0)
+        store.admit(make_reviewable("new"), token_id="token", limits=limits, clock=clock)
+
+    def test_partial_null_curator_transition_is_not_admitted(self, store: ProposalStore) -> None:
+        proposal = make_proposal().mark_validated(ValidationReport(), T0)
+        partial = proposal.mark_curated(Decision.needs_owner("review"), "curator/null", T0)
+        with pytest.raises(InvalidValueError):
+            store.admit(partial, token_id="token", limits=ProposalLimits(), clock=FixedClock())
+        assert store.find() == ()
+
     def test_received_and_unscrubbed_rejected_proposals_are_never_admitted(self, store: ProposalStore) -> None:
         raw = make_proposal()
         for state in (raw, raw.reject_invalid(BAD, T0), raw.mark_validated(ValidationReport(), T0)):

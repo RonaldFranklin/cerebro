@@ -43,7 +43,7 @@ class InMemoryProposalStore:
             cutoff = now - timedelta(hours=1)
             admitted = [(pid, at) for pid, (token, at) in self._admissions.items() if token == token_id]
             if (
-                sum(at > cutoff for _, at in admitted) >= limits.per_hour
+                sum(cutoff < at <= now for _, at in admitted) >= limits.per_hour
                 or sum(not self._items[pid].status.is_terminal for pid, _ in admitted) >= limits.pending
             ):
                 raise ProposalLimitReached

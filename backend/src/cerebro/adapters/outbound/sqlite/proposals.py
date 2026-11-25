@@ -201,9 +201,10 @@ class SqliteProposalStore:
         with self._db.write() as conn:
             now = clock.now().astimezone(UTC)
             cutoff = utc_key(now - timedelta(hours=1))
+            admitted = utc_key(now)
             recent = conn.execute(
-                "SELECT count(*) FROM proposals WHERE admission_token_id = ? AND admitted_key > ?",
-                (token_id, cutoff),
+                "SELECT count(*) FROM proposals WHERE admission_token_id = ? AND admitted_key > ? AND admitted_key <= ?",
+                (token_id, cutoff, admitted),
             ).fetchone()[0]
             pending = conn.execute(
                 "SELECT count(*) FROM proposals WHERE admission_token_id = ? AND status NOT IN ('rejected','applied')",
@@ -211,7 +212,7 @@ class SqliteProposalStore:
             ).fetchone()[0]
             if recent >= limits.per_hour or pending >= limits.pending:
                 raise ProposalLimitReached
-            self._insert(conn, proposal, token_id, utc_key(now))
+            self._insert(conn, proposal, token_id, admitted)
 
     def _insert(self, conn: sqlite3.Connection, proposal: Proposal, token_id: str | None, admitted: str | None) -> None:
         if proposal.revision != 0:

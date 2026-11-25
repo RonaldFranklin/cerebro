@@ -247,7 +247,7 @@ def require_admissible(proposal: Proposal) -> None:
             if proposal.decision is None and proposal == scrubbed(proposal):
                 return
         elif (
-            proposal.status in (ProposalStatus.NEEDS_OWNER, ProposalStatus.CURATED)
+            proposal.status is ProposalStatus.NEEDS_OWNER
             and report.ok
             and proposal.curated_by is not None
             and proposal.decision is not None
