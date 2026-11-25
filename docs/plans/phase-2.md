@@ -15,7 +15,7 @@ Status legend: ⬜ not started · 🟦 PR open · ✅ merged
 | # | Branch | Content | Dependency | Status |
 |---|---|---|---|---|
 | 1 | `phase-2/system-adapters` | `UtcClock`, `SystemIdGenerator` (`uuid.uuid7()`, `secrets.token_urlsafe(32)`), stdlib only. Creates `adapters/outbound/` and `tests/integration/`; contract tests parametrized by adapter factory (fake and real) | — | ⬜ |
-| 2 | `phase-2/index-revision` | Port change: `NoteRepository.head()` (content revision) and `SearchIndex`/`GraphIndex` record and expose the revision they were built from; `RebuildIndex` records it; `HealthReport` flags a stale index; fakes and contract tests | — | 🟦 #25 |
+| 2 | `phase-2/index-revision` | Port change: `NoteRepository.head()` (content revision) and `SearchIndex`/`GraphIndex` record and expose the revision they were built from; `RebuildIndex` records it; `HealthReport` flags a stale index; fakes and contract tests | — | 🟦 #26 |
 | 3 | `phase-2/crypto` | `FernetCipher` over `MultiFernet` (key list: the first encrypts, all decrypt); key loading refuses a file or directory more open than 0600/0700; encrypted restricted-note file format (ADR-0008); `DecryptionError` on tampering | `cryptography` | ⬜ |
 | 4 | `phase-2/sqlite-state` | `state.sqlite`: `ProposalStore` (content and decision always encrypted with the `Cipher`; metadata in clear; compare-and-swap on `revision`) and `TokenStore`. Rejected proposals keep findings only, never the raw payload | — | ⬜ |
 | 5 | `phase-2/sqlite-index` | `index.sqlite`: `SearchIndex` (FTS5, tokenizer `porter unicode61`) and `GraphIndex`; stores the revision it was built from; ceiling applied in SQL; user text never reaches `MATCH` unescaped | — | ⬜ |
