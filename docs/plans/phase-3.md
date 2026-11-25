@@ -108,7 +108,11 @@ dependencies exactly and check uv sync --locked. Record exact versions and relea
   headers and revocation between calls. Inspect protocol errors and captured logs for disclosure.
 - Run an SDK test client against a dev instance with sample content, including a restricted note. Authenticate
   with an internal token and call all four tools. Check the visible fixture and the hidden-id result. Exercise
-  connection loss, recovery and dev stdio. Record automated results and versions.
+  connection loss, recovery and dev stdio. With the listener stopped, the stdio bridge maps an upstream
+  connection failure to a bounded MCP error with the fixed message “Cérebro offline”. Assert that message
+  through the SDK client, then restart the listener and assert a successful read. For direct HTTP a stopped
+  server cannot send an error response: assert the bounded client connection failure and supply a project-local
+  instruction for the real agent to report “Cérebro offline” and continue. Record automated results and versions.
 - In docs/agent-integration.md provide exact commands for the owner to repeat the four calls, offline check and
   recovery in real Claude Code and Codex after delivery. The owner verifies each reports “Cérebro offline” and continues when the dev server
   is stopped. Use isolated project or process configuration and synthetic examples.
