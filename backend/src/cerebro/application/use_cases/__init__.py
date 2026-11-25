@@ -1,5 +1,7 @@
 """Use cases: one class per use case, ports injected in ``__init__``, a single ``execute(request, ctx)``."""
 
+from cerebro.application.use_cases.admit_proposal import AdmitProposal
+from cerebro.application.use_cases.amend_proposal import AmendProposal
 from cerebro.application.use_cases.apply_proposal import ApplyProposal
 from cerebro.application.use_cases.authenticate_token import AuthenticateToken
 from cerebro.application.use_cases.curate_proposal import CurateProposal
@@ -20,6 +22,8 @@ from cerebro.application.use_cases.submit_proposal import SubmitProposal
 from cerebro.application.use_cases.validate_proposal import ValidateProposal
 
 __all__ = [
+    "AdmitProposal",
+    "AmendProposal",
     "ApplyProposal",
     "AuthenticateToken",
     "CurateProposal",

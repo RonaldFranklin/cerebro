@@ -18,7 +18,7 @@ from cerebro.application.proposal_support import (
 )
 from cerebro.domain.access import AccessContext
 from cerebro.domain.errors import InvalidTransition
-from cerebro.domain.note import Note
+from cerebro.domain.note import Note, NoteId
 from cerebro.domain.proposal import Proposal, ProposalKind, ProposalStatus
 from cerebro.domain.report import PROPOSAL_POLICY, Finding, ValidationReport, ViolationCode
 from cerebro.domain.vocabulary import Vocabulary
@@ -59,21 +59,27 @@ class ValidateProposal:
         proposal = self._proposals.get(request.proposal_id)
         if proposal is None:
             raise ProposalNotFound(request.proposal_id)
+        result = self.validate(proposal, ctx)
+        result = self._proposals.save(result, expected_revision=proposal.revision)
+        return ProposalOutcome(proposal_id=result.id, status=result.status, validation=result.validation)
+
+    def validate(self, proposal: Proposal, ctx: AccessContext) -> Proposal:
+        require_owner(ctx, "validate proposals")
         if proposal.status is not ProposalStatus.RECEIVED:
             raise InvalidTransition("validate", proposal.status.value)
         now = self._clock.now()
+        report = self.assess(proposal, ctx, now.date())
+        return proposal.mark_validated(report, now) if report.ok else scrubbed(proposal.reject_invalid(report, now))
+
+    def assess(
+        self, proposal: Proposal, ctx: AccessContext, today: date, *, candidate_id: NoteId | None = None
+    ) -> ValidationReport:
+        """Validate submitted or amended content, using the chosen id for an owner's edit."""
+        require_owner(ctx, "validate proposals")
         base = None
         if proposal.kind is not ProposalKind.CREATE and proposal.target is not None:
             base = visible_note(self._notes, proposal.target, ctx, include_history=True)
-        report = self._report(proposal, base, now.date(), ctx)
-        # A rejected payload is never kept: the report (codes, fields, lines) is the audit trail, and the raw
-        # text may hold a secret the scanner did not recognise.
-        result = proposal.mark_validated(report, now) if report.ok else scrubbed(proposal.reject_invalid(report, now))
-        result = self._proposals.save(result, expected_revision=proposal.revision)
-        return ProposalOutcome(proposal_id=result.id, status=result.status, validation=report)
-
-    def _report(self, proposal: Proposal, base: Note | None, today: date, ctx: AccessContext) -> ValidationReport:
-        candidate_id = proposal.target or provisional_note_id(proposal.content.title)
+        candidate_id = candidate_id or proposal.target or provisional_note_id(proposal.content.title)
         candidate, problems = build_candidate(proposal, note_id=candidate_id, base=base, today=today)
         # Free text that is not part of the note (rationale, session, context) is scanned too.
         report = PROPOSAL_POLICY.report((*problems, *secret_findings(proposal)))

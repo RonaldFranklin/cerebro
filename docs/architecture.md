@@ -136,7 +136,7 @@ body (whole or one section) whose target the reader cannot see, or that does not
 `docs/domain-model.md`).
 
 **Write**
-- `SubmitProposal` — store an incoming proposal in the Inbox (agents only have this).
+- `SubmitProposal` — prepare an agent-attributed submission in request-local memory. The composition root exposes AdmitProposal, which runs submission, deterministic validation and NullCurator before atomic quota admission.
 - `ValidateProposal` — deterministic checks: schema, budgets, secret scan, duplicates.
 - `CurateProposal` — ask the `Curator` port for a decision (reject / merge / create / needs-human). The curator
   context is capped at `internal` and a proposal that creates, changes or links a restricted note skips the curator
@@ -227,9 +227,9 @@ not coordinated with other processes using the file: rolling deploys with differ
   a ceiling or clear a revocation. The owner declined a per-row MAC and accepted this risk.
 - **No rollback or replay protection for proposal rows.** The sealed payload binds the proposal id, but not its
   revision: restoring a whole older row (for example from a backup) passes every check.
-- **Raw payloads exist briefly.** `SubmitProposal` stores the submitted payload (sealed with the cipher) before
-  `ValidateProposal` runs. A rejection by validation overwrites it with a scrubbed copy; sealed residue can remain in
-  the WAL and in backups until a checkpoint, and forever if the process dies between the two steps.
+- **Historical proposal payloads.** Backups and WAL snapshots from before Phase 4 may contain sealed submissions
+  rejected after the initial write. New validation rejections reach durable admission already scrubbed. A valid
+  proposal may be backed up while it awaits owner review. A later manual rejection scrubs the current content.
 - **A note raised to `restricted` leaves plaintext history.** The previous public or internal version stays in the
   content repository's git history and in backups; history is never rewritten. `ApplyProposal` and `OwnerEditNote`
   return a warning when this happens ([domain-model](domain-model.md)).

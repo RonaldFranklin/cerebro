@@ -372,9 +372,13 @@ Authorization lives in the use cases, never in the adapters:
   timestamps and the structured findings (codes, fields, detectors, line numbers) are kept; every free text and
   every suggested field (title, body, summary, rationale, area, type, priority, sensitivity, hub, superseded_by,
   session, context) is replaced by a placeholder or dropped (a `link` keeps `related`, which the domain requires).
-  Known property: `SubmitProposal` stores the raw payload **before** validation, sealed at rest in `state.sqlite`;
-  a validation rejection then overwrites it. The store checkpoints the WAL after every write, but sealed (never
-  plaintext) residue may remain in the WAL or in backups until a checkpoint completes. Reports and results never quote proposed content.
+  Admission stages the submission, validation and curation in request-local memory. The first durable row
+  is a scrubbed rejection or a validated proposal awaiting owner review, inserted together with its quota
+  charge. The agent receives only the proposal id and a boolean validation outcome.
+- **Owner amendment.** The full-ceiling owner can replace the body of a reviewable create/update before
+  approval using the preview revision. The candidate is validated before the revision-checked save.
+  A stale or invalid amendment leaves the stored proposal unchanged. Its id, source, decision, curator and
+  base hash survive the edit. Approval and application recheck the edited revision and candidate.
 - **State at rest.** `state.sqlite` seals the whole proposal (content, target, report, decision) with the
   `Cipher`, even for `public` proposals, binding the proposal id into the sealed payload; only id, kind, status,
   revision, source agent, timestamps and the curator/approver names are in clear, for queries and the

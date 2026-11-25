@@ -1,19 +1,18 @@
 """``SubmitProposal``: an agent asks for a change. The only way an agent influences the content repository."""
 
 from cerebro.application.access import require_scope, visible_note
-from cerebro.application.dto import ProposalOutcome, SubmitProposalRequest
+from cerebro.application.dto import SubmitProposalRequest
 from cerebro.application.errors import PermissionDenied
 from cerebro.application.ports.notes import NoteRepository
-from cerebro.application.ports.proposals import ProposalStore
 from cerebro.application.ports.system import Clock, IdGenerator
-from cerebro.application.proposal_support import scrubbed, secret_findings
+from cerebro.application.proposal_support import proposal_references, scrubbed, secret_findings
 from cerebro.domain.access import AccessContext, Agent, Scope
 from cerebro.domain.proposal import Proposal, ProposalKind
 from cerebro.domain.report import PROPOSAL_POLICY
 
 
 class SubmitProposal:
-    """Stores a ``received`` proposal.
+    """Prepares an immutable submission for the admission pipeline.
 
     * Requires scope ``propose`` **and** an ``Agent`` principal: the owner edits through ``OwnerEditNote`` and may not
       submit proposals, so nobody can appear in the audit trail as an agent.
@@ -24,13 +23,13 @@ class SubmitProposal:
       proposal, so a secret never reaches the proposal store.
     """
 
-    def __init__(self, notes: NoteRepository, proposals: ProposalStore, clock: Clock, ids: IdGenerator) -> None:
+    def __init__(self, notes: NoteRepository, clock: Clock, ids: IdGenerator) -> None:
         self._notes = notes
-        self._proposals = proposals
         self._clock = clock
         self._ids = ids
 
-    def execute(self, request: SubmitProposalRequest, ctx: AccessContext) -> ProposalOutcome:
+    def execute(self, request: SubmitProposalRequest, ctx: AccessContext) -> Proposal:
+        """Construct the received or scrubbed rejection in request-local memory."""
         require_scope(ctx, Scope.PROPOSE)
         if not isinstance(ctx.principal, Agent):
             raise PermissionDenied("propose as the owner")
@@ -55,8 +54,10 @@ class SubmitProposal:
         found = secret_findings(proposal)
         if found:
             report = PROPOSAL_POLICY.report(found)
-            proposal = scrubbed(proposal).reject_invalid(report, now)
-            self._proposals.add(proposal)
-            return ProposalOutcome(proposal_id=proposal.id, status=proposal.status, validation=report)
-        self._proposals.add(proposal)
-        return ProposalOutcome(proposal_id=proposal.id, status=proposal.status)
+            return scrubbed(proposal).reject_invalid(report, now)
+        return proposal
+
+    def check_references(self, proposal: Proposal, ctx: AccessContext) -> None:
+        """A reference outside the submitting ceiling has the same outcome as an absent reference."""
+        for ref in proposal_references(proposal):
+            visible_note(self._notes, ref, ctx, include_history=True)

@@ -71,6 +71,7 @@ class TestWiring:
             "get_neighbors",
             "get_graph",
             "submit_proposal",
+            "amend_proposal",
             "validate_proposal",
             "curate_proposal",
             "review_proposal",
@@ -246,9 +247,10 @@ def approved(container: Container, title: str) -> str:
         rationale="needed",
     )
     cases = container.use_cases
-    outcome = cases.submit_proposal.execute(SubmitProposalRequest(kind=ProposalKind.CREATE, content=content), AGENT)
+    outcome = cases.submit_proposal.execute(
+        SubmitProposalRequest(kind=ProposalKind.CREATE, content=content), replace(AGENT, token_id="test-token")
+    )
     pid = outcome.proposal_id
-    cases.validate_proposal.execute(ProposalIdRequest(proposal_id=pid), OWNER)
-    cases.curate_proposal.execute(ProposalIdRequest(proposal_id=pid), OWNER)
+    assert outcome.valid
     cases.review_proposal.execute(ReviewProposalRequest(proposal_id=pid, action=ReviewAction.APPROVE), OWNER)
     return pid

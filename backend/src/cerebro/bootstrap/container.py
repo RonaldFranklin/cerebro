@@ -33,7 +33,10 @@ from cerebro.adapters.outbound.sqlite import (
 )
 from cerebro.adapters.outbound.system import SystemIdGenerator, UtcClock
 from cerebro.application.dto import (
+    AdmissionResult,
     AgentTokenSummary,
+    AmendmentResult,
+    AmendProposalRequest,
     ApplyProposalResult,
     AuthenticateTokenRequest,
     GetGraphRequest,
@@ -79,6 +82,8 @@ from cerebro.application.ports import (
 )
 from cerebro.application.use_case import AnonymousUseCase, ContextUseCase
 from cerebro.application.use_cases import (
+    AdmitProposal,
+    AmendProposal,
     ApplyProposal,
     AuthenticateToken,
     CurateProposal,
@@ -169,7 +174,8 @@ class UseCases:
     read_note: ContextUseCase[ReadNoteRequest, NoteView]
     get_neighbors: ContextUseCase[GetNeighborsRequest, GraphView]
     get_graph: ContextUseCase[GetGraphRequest, GraphView]
-    submit_proposal: ContextUseCase[SubmitProposalRequest, ProposalOutcome]
+    submit_proposal: ContextUseCase[SubmitProposalRequest, AdmissionResult]
+    amend_proposal: ContextUseCase[AmendProposalRequest, AmendmentResult]
     validate_proposal: ContextUseCase[ProposalIdRequest, ProposalOutcome]
     curate_proposal: ContextUseCase[ProposalIdRequest, ProposalOutcome]
     review_proposal: ContextUseCase[ReviewProposalRequest, ProposalOutcome]
@@ -215,15 +221,21 @@ class Container:
         notes, proposals, search, graph = self.notes, self.proposals, self.search, self.graph
         clock, ids, vocabulary, lock = self.clock, self.ids, self.vocabulary, self.writer_lock
         self._rebuild = RebuildIndex(notes, search, graph)
+        validator = ValidateProposal(notes, proposals, search, clock, vocabulary)
+        curate = CurateProposal(notes, proposals, search, self.curator, clock)
+        intake = AdmitProposal(
+            SubmitProposal(notes, clock, ids), validator, curate, proposals, clock, settings.proposal_limits
+        )
         self.use_cases = UseCases(
             get_overview=GetOverview(notes, search),
             search_notes=SearchNotes(search),
             read_note=ReadNote(notes, graph),
             get_neighbors=GetNeighbors(notes, graph),
             get_graph=GetGraph(graph),
-            submit_proposal=SubmitProposal(notes, proposals, clock, ids),
-            validate_proposal=ValidateProposal(notes, proposals, search, clock, vocabulary),
-            curate_proposal=CurateProposal(notes, proposals, search, self.curator, clock),
+            submit_proposal=Serialized(intake, lock),
+            amend_proposal=Serialized(AmendProposal(proposals, validator, clock), lock),
+            validate_proposal=validator,
+            curate_proposal=curate,
             review_proposal=ReviewProposal(notes, proposals, clock),
             apply_proposal=Serialized(ApplyProposal(notes, proposals, search, graph, clock, vocabulary), lock),
             owner_edit_note=Serialized(OwnerEditNote(notes, search, graph, clock, ids, vocabulary), lock),

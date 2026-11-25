@@ -16,6 +16,7 @@ from cerebro.domain.cross_note import cross_note_findings, inbound_link_sensitiv
 from cerebro.domain.decision import DecisionKind
 from cerebro.domain.enums import Priority, Status
 from cerebro.domain.errors import InvalidValueError
+from cerebro.domain.links import loose_link_targets
 from cerebro.domain.note import MAX_NOTE_ID_LENGTH, Note, NoteId
 from cerebro.domain.note_ref import NoteRef
 from cerebro.domain.proposal import Proposal, ProposalKind, ProposalStatus, ProposedContent
@@ -206,6 +207,17 @@ def is_noop(candidate: Note, current: Note) -> bool:
     This is how a retry recognizes that a proposal was already applied (the commit succeeded, recording it failed).
     """
     return replace(candidate, updated=current.updated, created=current.created) == current
+
+
+def proposal_references(proposal: Proposal) -> set[NoteId]:
+    """Every note referenced by proposed metadata and by text passed to a curator."""
+    c = proposal.content
+    refs = set(c.related)
+    refs.update(n for n in (c.hub, c.superseded_by) if n is not None)
+    for text in (c.body, c.title, c.summary, c.rationale, proposal.source_session, proposal.source_context):
+        if text:
+            refs.update(loose_link_targets(text))
+    return refs
 
 
 def secret_findings(proposal: Proposal) -> tuple[Finding, ...]:

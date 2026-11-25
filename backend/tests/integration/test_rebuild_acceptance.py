@@ -296,10 +296,10 @@ class TestWritePath:
             SubmitProposalRequest(kind=ProposalKind.CREATE, content=create_content()), proposer
         )
         pid = submitted.proposal_id
-        validated = cases.validate_proposal.execute(ProposalIdRequest(proposal_id=pid), OWNER)
-        assert validated.status is ProposalStatus.VALIDATED
-        curated = cases.curate_proposal.execute(ProposalIdRequest(proposal_id=pid), OWNER)
-        assert curated.status is ProposalStatus.NEEDS_OWNER  # the null curator always hands over to the owner
+        assert submitted.valid
+        curated = container.proposals.get(pid)
+        assert curated is not None
+        assert curated.status is ProposalStatus.NEEDS_OWNER
         reviewed = cases.review_proposal.execute(
             ReviewProposalRequest(proposal_id=pid, action=ReviewAction.APPROVE), OWNER
         )
@@ -354,9 +354,12 @@ class TestWritePath:
             SubmitProposalRequest(kind=ProposalKind.CREATE, content=create_content(title="Deploy key", body=body)),
             proposer,
         )
-        assert submitted.status is ProposalStatus.REJECTED  # blocked at submission by the secret scanner
-        assert submitted.validation is not None
-        assert not submitted.validation.ok
+        assert not submitted.valid
+        rejected = container.proposals.get(submitted.proposal_id)
+        assert rejected is not None
+        assert rejected.status is ProposalStatus.REJECTED
+        assert rejected.validation
+        assert not rejected.validation.ok
         assert material not in repr(submitted)
         assert container.notes.head() == before
         raw = b"".join(p.read_bytes() for p in sample.state_dir.glob("state.sqlite*"))

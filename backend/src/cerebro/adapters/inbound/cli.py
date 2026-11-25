@@ -2,6 +2,7 @@
 
 import argparse
 import json
+import sys
 from collections.abc import Sequence
 from datetime import datetime
 from pathlib import Path
@@ -11,6 +12,7 @@ from cerebro.adapters.inbound.cli_views import health_view, note_view
 from cerebro.adapters.inbound.input_limits import MAX_FIELD_BYTES, MAX_INPUT_BYTES, MAX_QUERY_BYTES, bounded_text
 from cerebro.adapters.inbound.read_views import search_view
 from cerebro.application.dto import (
+    AmendProposalRequest,
     HealthReportRequest,
     HealthReportResult,
     IssueAgentTokenRequest,
@@ -84,6 +86,9 @@ def parse_arguments(args: Sequence[str]) -> argparse.Namespace:
     verbs = inbox.add_subparsers(dest="inbox_action", required=True)
     listing = verbs.add_parser("list", help="list metadata or preview a reviewable proposal")
     listing.add_argument("--id", type=short_field)
+    amend = verbs.add_parser("amend", help="replace the candidate body with UTF-8 text from stdin")
+    amend.add_argument("id", type=short_field)
+    amend.add_argument("--revision", required=True, type=int)
     approve = verbs.add_parser("approve", help="approve the previewed revision and apply it")
     approve.add_argument("id", type=short_field)
     mode = approve.add_mutually_exclusive_group(required=True)
@@ -114,6 +119,13 @@ def parse_arguments(args: Sequence[str]) -> argparse.Namespace:
                 pid = validate_proposal_id(options.id) if options.id is not None else None
                 if options.inbox_action == "list":
                     options.request = ListProposalsRequest(proposal_id=pid)
+                elif options.inbox_action == "amend":
+                    raw_body = sys.stdin.buffer.read(MAX_INPUT_BYTES + 1)
+                    if len(raw_body) > MAX_INPUT_BYTES:
+                        parser.error("body is too large")
+                    options.request = AmendProposalRequest(
+                        proposal_id=options.id, expected_revision=options.revision, body=raw_body.decode("utf-8")
+                    )
                 elif options.inbox_action == "reject":
                     reason = Decision.reject(options.reason).reason
                     options.request = ReviewProposalRequest(

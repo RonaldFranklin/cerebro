@@ -10,12 +10,11 @@ from cerebro.application.ports.notes import NoteRepository
 from cerebro.application.ports.proposals import ProposalStore
 from cerebro.application.ports.search import SearchIndex
 from cerebro.application.ports.system import Clock
-from cerebro.application.proposal_support import provisional_note_id
+from cerebro.application.proposal_support import proposal_references, provisional_note_id
 from cerebro.domain.access import AccessCeiling, AccessContext
 from cerebro.domain.decision import Decision, DecisionKind
 from cerebro.domain.enums import Sensitivity
 from cerebro.domain.errors import InvalidTransition
-from cerebro.domain.links import loose_link_targets
 from cerebro.domain.note import Note, NoteId
 from cerebro.domain.proposal import Proposal, ProposalKind, ProposalStatus
 
@@ -52,6 +51,12 @@ class CurateProposal:
         proposal = self._proposals.get(request.proposal_id)
         if proposal is None:
             raise ProposalNotFound(request.proposal_id)
+        curated = self.curate(proposal, ctx)
+        curated = self._proposals.save(curated, expected_revision=proposal.revision)
+        return ProposalOutcome(proposal_id=curated.id, status=curated.status, decision=curated.decision)
+
+    def curate(self, proposal: Proposal, ctx: AccessContext) -> Proposal:
+        require_owner(ctx, "curate proposals")
         if proposal.status is not ProposalStatus.VALIDATED:
             raise InvalidTransition("curate", proposal.status.value)
         target_id = proposal.target or provisional_note_id(proposal.content.title)
@@ -65,8 +70,7 @@ class CurateProposal:
         curated = proposal.mark_curated(decision, curator_name, now)
         if decision.kind is DecisionKind.NEEDS_OWNER:
             curated = curated.mark_needs_owner(now)  # the lifecycle only lets the owner approve from there
-        curated = self._proposals.save(curated, expected_revision=proposal.revision)
-        return ProposalOutcome(proposal_id=curated.id, status=curated.status, decision=decision)
+        return curated
 
     def _ask_curator(self, proposal: Proposal, ctx: AccessContext) -> Decision:
         capped = AccessContext(
@@ -108,11 +112,10 @@ class CurateProposal:
         content = proposal.content
         if content.sensitivity is Sensitivity.RESTRICTED:
             return True
-        ids: list[NoteId | None] = [proposal.target, content.hub, content.superseded_by, *content.related]
-        for text in (content.body, content.title, content.summary, content.rationale):
-            if text:
-                ids.extend(loose_link_targets(text))
-        for note_id in dict.fromkeys(i for i in ids if i is not None):
+        ids = proposal_references(proposal)
+        if proposal.target is not None:
+            ids.add(proposal.target)
+        for note_id in ids:
             note = self._notes.get(note_id)
             if note is not None and note.sensitivity is Sensitivity.RESTRICTED:
                 return True

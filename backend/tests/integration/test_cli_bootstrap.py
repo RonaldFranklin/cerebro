@@ -10,10 +10,11 @@ import pytest
 from cerebro.bootstrap.settings import ConfigurationError, load_settings
 
 
-def invoke(*arguments: str) -> subprocess.CompletedProcess[str]:
+def invoke(*arguments: str, stdin: str | None = None) -> subprocess.CompletedProcess[str]:
     env = {k: v for k, v in os.environ.items() if not k.startswith("CEREBRO_")}
     return subprocess.run(
         [str(Path(sys.executable).with_name("cerebro")), *arguments],
+        input=stdin,
         capture_output=True,
         text=True,
         check=False,

@@ -12,8 +12,8 @@ Status legend: ⬜ not started · 🟦 PR open · ✅ merged.
 | # | Branch | Content and verification | Depends on | Status |
 |---|---|---|---|---|
 | 1 | `docs/phase-4-plan` | Record scope, approval, start status and ADR-0018. | SQLite correction #48 | ✅ #49 |
-| 2 | `phase-4/token-quotas` | Carry authenticated token id alongside the audit name. Extend the admission port and fake, migrate existing SQLite state, configure limits and implement atomic admission. Contract-test boundary times, pending transitions, shared names, concurrency and restart. | 1 | 🟦 this PR |
-| 3 | `phase-4/inbox-intake` | Compose submission, validation and NullCurator with transient staging. Persist only the admissible final state. Support owner amendment of create/update candidates, revision-checked review and apply. Test secret and other validation rejections at the first durable write, interrupted intake, provenance, stale edits and validation after edits. | 2 | ⬜ |
+| 2 | `phase-4/token-quotas` | Carry authenticated token id alongside the audit name. Extend the admission port and fake, migrate existing SQLite state, configure limits and implement atomic admission. Contract-test boundary times, pending transitions, shared names, concurrency and restart. | 1 | ✅ #50 |
+| 3 | `phase-4/inbox-intake` | Compose submission, validation and NullCurator with transient staging. Persist only the admissible final state. Support owner amendment of create/update candidates, revision-checked review and apply. Test secret and other validation rejections at the first durable write, interrupted intake, provenance, stale edits and validation after edits. | 2 | 🟦 this PR |
 | 4 | `phase-4/mcp-propose` | Add the fifth ADR-0014 tool to HTTP and dev stdio. Implement strict wire parsing, bounded fields, scope-aware discovery and dispatch, and a safe agent response. Exercise both transports and denial paths. | 3 | ⬜ |
 | 5 | `test/phase-4-acceptance` | Drive the installed server with the official SDK and the owner's installed CLI, inspect the git commit, test a synthetic secret and both quotas. Extend the manual real-client runbook and record the phase report, roadmap and hand-off. | 4 | ⬜ |
 
