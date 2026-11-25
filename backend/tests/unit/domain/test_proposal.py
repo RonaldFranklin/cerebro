@@ -415,3 +415,36 @@ def test_commit_message_without_any_note_id_raises() -> None:
     p = replace(at(S.APPROVED), decision=Decision.needs_owner("sensitive"))
     with pytest.raises(InvalidValueError, match="target"):
         p.commit_message()
+
+
+# -- owner override and the summary / hub suggestions --------------------------------------------------------------
+
+
+@pytest.mark.parametrize("status", list(S))
+def test_override_decision_only_while_the_owner_decides(status: ProposalStatus) -> None:
+    p = at(status)
+    new = Decision.create(NoteId("another-note"))
+    if status in (S.CURATED, S.NEEDS_OWNER):
+        result = p.override_decision(new, T1)
+        assert (result.status, result.decision, result.updated_at) == (status, new, T1)
+        assert p.decision != new
+    else:
+        with pytest.raises(InvalidTransition):
+            p.override_decision(new, T1)
+
+
+def test_override_decision_validates_arguments() -> None:
+    p = at(S.NEEDS_OWNER)
+    with pytest.raises(InvalidValueError, match="decision"):
+        p.override_decision("create", T1)  # type: ignore[arg-type]
+    with pytest.raises(InvalidValueError, match="now"):
+        p.override_decision(Decision.create(NOTE), T0 - timedelta(minutes=1))
+
+
+def test_content_summary_and_hub_suggestions() -> None:
+    c = ProposedContent(summary="s" * 50, hub=NoteId("infrastructure"))
+    assert c.hub == NoteId("infrastructure")
+    with pytest.raises(InvalidValueError, match="summary"):
+        ProposedContent(summary=3)  # type: ignore[arg-type]
+    with pytest.raises(InvalidValueError, match="hub"):
+        ProposedContent(hub="infrastructure")  # type: ignore[arg-type]

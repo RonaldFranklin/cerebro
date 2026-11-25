@@ -30,7 +30,7 @@ Inbox, which are validated, curated and approved before becoming notes.
   links, sections and cross-note rules (PR 3), secret scanner (PR 4), access ceiling, visibility and agent
   tokens (PR 5), proposals, decisions, commit trailers and the content hash (PR 6),
   ports, application errors, in-memory fakes and shared contract tests (PR 7),
-  read use cases and their DTOs (PR 8).
+  read use cases and their DTOs (PR 8), write use cases: submit, validate, curate, review, apply, owner edit (PR 9).
 - Update this section and `docs/roadmap.md` whenever a phase starts or finishes.
 - Phase 1 plan (pull requests, status, design decisions): [`docs/plans/phase-1.md`](docs/plans/phase-1.md).
 

@@ -50,6 +50,8 @@ class ViolationCode(StrEnum):
     SUPERSEDED_BY_CYCLE = "superseded_by_cycle"
     HUB_CHAIN_CYCLE = "hub_chain_cycle"
     HUB_CHAIN_TOO_DEEP = "hub_chain_too_deep"
+    # duplicates (application: similarity search)
+    POSSIBLE_DUPLICATE = "possible_duplicate"
     # budgets
     BODY_OVER_SOFT_LIMIT = "body_over_soft_limit"
     BODY_OVER_HARD_LIMIT = "body_over_hard_limit"
@@ -122,7 +124,9 @@ class SeverityPolicy:
         )
 
 
-_ALWAYS_WARNINGS: Final = frozenset({ViolationCode.BODY_OVER_SOFT_LIMIT, ViolationCode.DUPLICATE_RELATED})
+_ALWAYS_WARNINGS: Final = frozenset(
+    {ViolationCode.BODY_OVER_SOFT_LIMIT, ViolationCode.DUPLICATE_RELATED, ViolationCode.POSSIBLE_DUPLICATE}
+)
 
 PROPOSAL_POLICY: Final = SeverityPolicy(name="proposal", warnings=_ALWAYS_WARNINGS)
 """Agent proposals: strict."""

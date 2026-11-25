@@ -18,8 +18,8 @@ Status legend: ⬜ not started · 🟦 PR open · ✅ merged
 | 5 | `phase-1/access` | `AccessCeiling`, `effective_ceiling(listener, token)` (no defaults), visibility filter, `include_history`, `AgentToken`; `AccessContext(principal, ceiling, scopes)` with `principal = Agent(name) \| Owner` | C | ✅ #9 |
 | 6 | `phase-1/proposals` | `Proposal`, `ProposalKind`, `ProposalStatus` and lifecycle transitions (invalid transition raises), `Decision` (reject, merge_into, create, needs_owner), `CommitMessage` with trailers; note **content hash**, `base_hash` on update proposals; update proposals carry the full body only (patch format: future ADR) | B | ✅ #10 |
 | 7 | `phase-1/ports-and-fakes` | every port as a `Protocol`, in-memory fakes in `tests/fakes`, contract test suites in `tests/contract` parametrized by adapter factory (reused in Phase 2) | — | ✅ #11 |
-| 8 | `phase-1/read-use-cases` | `GetOverview`, `SearchNotes`, `ReadNote`, `GetNeighbors`, `GetGraph`; hub reads build the member list at read time, filtered by ceiling | A, C | 🟦 #12 |
-| 9 | `phase-1/write-use-cases` | `SubmitProposal`, `ValidateProposal`, `CurateProposal` (with `NullCurator` / fake), `ReviewProposal`, `ApplyProposal`, `OwnerEditNote`; optimistic concurrency on apply and owner edit; authorization in the use cases | B, C, D | ⬜ |
+| 8 | `phase-1/read-use-cases` | `GetOverview`, `SearchNotes`, `ReadNote`, `GetNeighbors`, `GetGraph`; hub reads build the member list at read time, filtered by ceiling | A, C | ✅ #12 |
+| 9 | `phase-1/write-use-cases` | `SubmitProposal`, `ValidateProposal`, `CurateProposal` (with `NullCurator` / fake), `ReviewProposal`, `ApplyProposal`, `OwnerEditNote`; optimistic concurrency on apply and owner edit; authorization in the use cases | B, C, D | 🟦 #13 |
 | 10 | `phase-1/maintenance-use-cases` | `RebuildIndex`, `HealthReport`, `IssueAgentToken`, `RevokeAgentToken`; closes the phase (roadmap incl. the added use cases, `AGENTS.md`, coverage check) | C | ⬜ |
 
 Related docs pull request: [ADR-0015](../adr/0015-hub-membership-computed-at-read-time.md) (#2, merged) — hub

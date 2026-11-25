@@ -84,7 +84,7 @@ Structure and rule details enforced by the domain:
 - **Severity depends on the write path.** Rules report findings with a stable code and never stop at the first
   one. A severity policy per write path decides which findings are `error` (block the change) and which are
   `warning` (reported, e.g. by the health report, but not blocking). Proposals and owner edits share the same
-  rules; today both treat only the soft word limit and duplicate `related` ids as warnings; **broken links are
+  rules; today both treat only the soft word limit, duplicate `related` ids and `possible_duplicate` as warnings; **broken links are
   additionally a warning for owner edits** and an error for proposals. Structural frontmatter problems are
   always errors.
 - Enforced outside the domain: `id` equals the file name (filesystem repository adapter, Phase 2); `id` is
@@ -255,6 +255,8 @@ suggested:
   type: ...
   priority: ...
   sensitivity: ...
+  summary: ...                  # 40-300 characters
+  hub: <hub id>
 rationale: why this belongs in Cérebro
 source:
   agent: codex@workstation      # derived from the token, not trusted from payload
@@ -291,10 +293,63 @@ Approved-by: owner
 Proposal-Id: <id>
 ```
 
+### Write use cases (application layer)
+
+Authorization lives in the use cases, never in the adapters:
+
+| Use case | Who | Notes |
+|---|---|---|
+| `SubmitProposal` | an `Agent` with scope `propose` | The owner may **not** submit (no impersonation). `source_agent` is the context's agent name; the request has no such field. |
+| `ValidateProposal`, `CurateProposal`, `ReviewProposal`, `ApplyProposal`, `OwnerEditNote` | `Owner` only | Validate and curate are steps of the owner-controlled pipeline: the composition root runs them with an owner context, a token can never trigger them. |
+
+- **Ceilings on the write path.** An agent cannot probe or change notes above its ceiling: the target of
+  `update` / `link` / `deprecate` must be visible to it (history included), otherwise `NoteNotFound`, identical to
+  a missing note. A suggested `sensitivity` above the agent's ceiling is `PermissionDenied`. A proposal cannot
+  **lower** the sensitivity of an existing note (a validation error), so an agent cannot declassify what it
+  can read. The owner cannot write above the ceiling of the listener it uses (`PermissionDenied`), and sees
+  hidden targets as `NoteNotFound` too.
+- **Secrets never reach the store.** `SubmitProposal` scans every free text of the payload (title, body, summary,
+  rationale, session, context). On a hit it stores a **scrubbed**, already `rejected` proposal (placeholders
+  instead of text) and returns the redacted report. `ValidateProposal` scans again and scrubs a rejected proposal
+  that holds a secret. Reports and results never quote proposed content.
+- **From proposal to note.** The note a proposal would write is built deterministically (`build_candidate`), the
+  same way for validation and for apply. `create` needs `title`, `body`, `type`, `area`, `priority`,
+  `sensitivity` and `summary` from the agent (`hub` where the type requires one; missing ones are
+  `missing_field` errors); the note starts `current`, English, dated today, and its id is the curator's /
+  owner's `create` target (validation uses an id derived from the title). `update` replaces the body and any
+  metadata given; `link` and the `related` of an update only **add** ids; `deprecate` makes the note
+  `superseded` (with `superseded_by`) or `archived`. `superseded_by` is only valid for `deprecate`.
+- **Validation.** Per-note rules and the secret scan over the resulting note, cross-note rules over the snapshot
+  with the proposed note substituted, the combined P0 budget, and, for `create`, duplicate detection through
+  `SearchIndex.find_similar` (`possible_duplicate`, **a warning**: similarity at least 0.5, reported to the owner and
+  curator only).
+- **Curation.** `NullCurator` (default) answers `needs_owner`, suggesting the target (or an id derived from the
+  title for a `create`); a `needs_owner` decision moves the proposal to `needs_owner`. A curator decision that does
+  not fit the proposal (another target, wrong shape for the kind) is replaced by `needs_owner`.
+- **Review.** The owner approves (optionally `override`ing the decision, e.g. to name the id of a note to create) or
+  rejects (reason required). Approval is refused when the decision could not be applied.
+- **Apply.** `decision.target` must equal `proposal.target` for `update` / `link` / `deprecate`; a `create` needs a
+  `create` (or owner-approved `needs_owner`) decision naming the id. Then, before writing anything: `base_hash`
+  against the stored note's content hash (a `create` target must not exist), then validation again with the proposal
+  policy. A mismatch or an error sends the proposal back to `needs_owner` with `conflict` set (`conflict` /
+  `invalid` outcomes) and **writes nothing**. Then one commit, `applied`, and the derived indexes are updated.
+  **Retries:** `ProposalStore.save` has no concurrency control, so an `approved` proposal may already be committed
+  (crash after the commit, or two simultaneous calls). Applying finds the target changed but recognizes that writing
+  the proposal would change nothing but the `updated` date: it marks the proposal `applied` without a second commit
+  (`already_applied`). Concurrent writers are serialized by `NoteRepository.apply`'s compare-and-swap. Resolving a
+  conflict is currently done by rejecting and re-proposing; a `rebase` use case comes later (the domain method exists).
+- **Owner edits.** `OwnerEditNote` takes the full new note and the hash the owner loaded (`None` to create);
+  `ContentConflict` if the note changed, `id` immutable, `created` kept, `updated` today. It uses
+  `OWNER_EDIT_POLICY` (broken links warn) and the same secret scan; errors are returned and nothing is written. The
+  commit carries `Proposed-by: owner`, `Curated-by: owner`, `Approved-by: owner` and `Proposal-Id: owner-edit-<id>`
+  (`owner` is only accepted as `Proposed-by` when the owner is also curator and approver).
+- The `Vocabulary` (`schema/*.yaml`) is passed to the use cases that validate, loaded once by the composition root;
+  it is a value, not a port.
+
 ### Rules in the domain
 
 - `Proposal` is immutable; each transition (`mark_validated`, `reject_invalid`, `mark_curated`, `mark_needs_owner`,
-  `approve`, `reject`, `rebase`, `mark_applied`) returns a new instance, or raises `InvalidTransition`
+  `approve`, `reject`, `rebase`, `override_decision`, `mark_applied`) returns a new instance, or raises `InvalidTransition`
   (a `DomainError` in `domain.errors`; this is the "typed `InvalidTransition`" the use cases let propagate).
   `applied` and `rejected` are terminal. `received → rejected` is added to the diagram: validation errors reject
   directly (`mark_validated` requires a report without errors).
