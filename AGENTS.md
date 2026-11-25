@@ -1,0 +1,104 @@
+# AGENTS.md — Cérebro (application repository)
+
+Instructions for coding agents (Claude Code, Codex, and others) working on **this repository**.
+Claude Code reads this file automatically when no `CLAUDE.md` exists; keep it that way so one file serves every agent.
+
+> This repo holds the **application** code. The knowledge itself (the notes) lives in a separate, private
+> **content repository**. Never add real notes, personal data or infrastructure details here: this repo is public.
+
+## 1. What Cérebro is
+
+A self-hosted, single-user knowledge base that gives every AI agent (Claude Code, Codex, ChatGPT, …) the same
+curated, prioritized context through MCP, plus a web UI where the owner browses notes and sees the knowledge graph.
+Agents **read** freely (within their sensitivity ceiling) but **never write directly**: they submit proposals to an
+Inbox, which are validated, curated and approved before becoming notes.
+
+## 2. Read before working (in this order)
+
+1. `docs/vision.md` — goals, non-goals, success criteria.
+2. `docs/architecture.md` — hexagonal layout, layers, ports, runtime topology.
+3. `docs/domain-model.md` — note schema, priorities, sensitivity, statuses, proposals.
+4. `docs/roadmap.md` — phases and acceptance criteria. **Work only on the current phase.**
+5. `docs/adr/` — accepted decisions. Do not contradict an ADR; propose a new ADR that supersedes it instead.
+
+## 3. Current status
+
+- Phase 0 (bootstrap) has **not started**. There is no code yet.
+- Update this section and `docs/roadmap.md` whenever a phase starts or finishes.
+
+## 4. Non-negotiable rules
+
+**Architecture**
+- Dependencies point inward: `adapters → application → domain`. Never the other way around.
+- `cerebro.domain` uses **only the Python standard library**. No PyYAML, no Pydantic, no FastAPI, nothing.
+- `cerebro.application` depends only on `cerebro.domain` and defines ports as `typing.Protocol`.
+- Third-party libraries are imported **only** inside `cerebro.adapters.*` and `cerebro.bootstrap`.
+- These rules are enforced by `import-linter` in CI. A failing contract is a failing build.
+
+**Write path**
+- No inbound adapter may write notes directly. Every change goes through the `SubmitProposal` →
+  `ValidateProposal` → `CurateProposal` → `ApplyProposal` use cases, or through `OwnerEditNote` for the owner.
+- Every applied change is a git commit in the content repository with `Proposed-by:`, `Curated-by:`,
+  `Approved-by:` trailers.
+
+**Security**
+- Never commit secrets, tokens, keys, `.env` files or real personal data. Use `.env.example` with placeholders.
+- No hostnames, IPs, domains or tailnet names of any real deployment in this repo. Everything is configuration.
+- The effective sensitivity ceiling of a request is `min(listener_ceiling, token_ceiling)`. Never derive the
+  listener from request headers.
+
+**Language**
+- Code, identifiers, comments, docs, commit messages and UI text: **English**.
+- The maintainer usually chats in Brazilian Portuguese: answer him in pt-BR in conversation, but keep every
+  artifact in English.
+
+## 5. How to work
+
+- Small, verifiable steps. One phase at a time; within a phase, one use case or adapter at a time.
+- Domain and application code is written test-first with in-memory fakes. Adapters get integration tests and
+  shared **contract tests** that both the fake and the real adapter must pass.
+- Before declaring a task done: tests pass, `ruff` clean, `mypy --strict` clean, `import-linter` clean,
+  docs/roadmap updated if behaviour or status changed.
+- Significant decisions (new dependency, new port, change of a rule) need an ADR in `docs/adr/`
+  (copy `0000-template.md`).
+- Pin dependencies exactly (lockfiles committed). Prefer the standard library; add a dependency only when it
+  removes real complexity, and record why in an ADR or in the dependency table in `docs/architecture.md`.
+- Differentiate in reports: **planned**, **implemented**, **tested**.
+
+## 6. Commands
+
+To be filled during Phase 0. Expected shape:
+
+```bash
+# backend (from backend/)
+uv sync
+uv run pytest
+uv run ruff check . && uv run ruff format --check .
+uv run mypy
+uv run lint-imports
+
+# web (from web/)
+pnpm install
+pnpm dev
+pnpm test
+pnpm build
+```
+
+## 7. Repository map (target)
+
+```
+cerebro/
+├── AGENTS.md
+├── README.md
+├── LICENSE                  # Apache-2.0
+├── backend/                 # Python: domain, application, adapters, bootstrap
+├── web/                     # React + TypeScript + Vite UI
+├── deploy/                  # Dockerfiles, compose files, examples (no real values)
+└── docs/
+    ├── vision.md
+    ├── architecture.md
+    ├── domain-model.md
+    ├── roadmap.md
+    ├── agent-integration.md
+    └── adr/
+```
