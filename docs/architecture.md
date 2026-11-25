@@ -190,7 +190,8 @@ Full policy in [ADR-0013](adr/0013-stack-and-dependency-policy.md). Summary:
 | Web | Node Active LTS (exact version chosen in Phase 5), pnpm, React, TypeScript, Vite, TanStack Query, Sigma.js, graphology, CodeMirror 6 | |
 
 All versions are pinned exactly in lockfiles. Exact versions are the newest stable releases published at least
-7 days earlier ([ADR-0013](adr/0013-stack-and-dependency-policy.md)), and recorded here once the lockfile is generated, so this table matches the lock.
+7 days earlier ([ADR-0013](adr/0013-stack-and-dependency-policy.md)), and recorded here once the lockfile is
+generated, so this table matches the lock.
 
 ### Pinned backend versions (Phase 0)
 
