@@ -7,6 +7,11 @@ in clear: id, kind, status, revision, source agent, timestamps (as sortable UTC 
 names. Those clear columns are copies: on every read they are compared with the sealed payload and a mismatch is
 reported as corruption. The id inside the sealed payload must equal the row id, so a ciphertext moved to another
 row is refused (``DecryptionError``).
+
+Known properties: ``SubmitProposal`` stores the raw payload before validation (sealed at rest; a validation
+rejection then overwrites it with the scrubbed form, and the WAL is checkpointed best-effort after every write, so
+only sealed residue can linger in the WAL or in backups). There is no rollback or replay protection: restoring the
+whole file or a single row from an older backup is accepted, because every row is individually authentic.
 """
 
 import json
@@ -17,7 +22,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from cerebro.adapters.outbound.sqlite._state_db import StateCorruptionError, StateDatabase
+from cerebro.adapters.outbound.sqlite._state_db import StateCorruptionError, StateDatabase, is_unique_violation
 from cerebro.application.errors import AlreadyExists, DecryptionError, ProposalConflict, ProposalNotFound
 from cerebro.application.ports.system import Cipher
 from cerebro.domain.decision import Decision, DecisionKind
@@ -184,7 +189,9 @@ class SqliteProposalStore:
         try:
             with self._db.write() as conn:
                 conn.execute(f"INSERT INTO proposals ({_COLUMNS}) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", row)
-        except sqlite3.IntegrityError:
+        except sqlite3.IntegrityError as error:
+            if not is_unique_violation(error):
+                raise
             raise AlreadyExists("proposal", proposal.id) from None
 
     def get(self, proposal_id: str) -> Proposal | None:

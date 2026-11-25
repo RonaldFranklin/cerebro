@@ -1444,7 +1444,7 @@ class TestRejectedPayloadsAreNotKept:
         stored = kit.stored(pid)
         assert "zq" not in repr(stored)
         assert (stored.content.title, stored.content.body, stored.content.rationale) == ("[redacted]", "", "")
-        assert stored.content.summary is None
+        assert stored.content == ProposedContent(title="[redacted]", body="")  # no metadata suggestions either
         assert (stored.source_session, stored.source_context) == (None, None)
         assert stored.validation is not None
         assert ViolationCode.UNKNOWN_AREA in stored.validation.codes

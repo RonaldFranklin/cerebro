@@ -2,7 +2,9 @@
 
 The SHA-256 hash is kept as hex text in a unique-indexed column and looked up by exact equality (it is the digest
 of a 256-bit random secret, not guessable), then compared again in constant time (``TokenHash.__eq__``) after the
-fetch. Hashes are never logged or put in an error message or ``repr``.
+fetch. Token rows are plain, unauthenticated columns, protected only by the ``0600`` file mode: anyone who can
+write the file can forge or edit a row (a MAC over the rows is an open question for the owner).
+Hashes are never logged or put in an error message or ``repr``.
 """
 
 import json
@@ -11,7 +13,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from cerebro.adapters.outbound.sqlite._state_db import StateCorruptionError, StateDatabase
+from cerebro.adapters.outbound.sqlite._state_db import StateCorruptionError, StateDatabase, is_unique_violation
 from cerebro.application.errors import AlreadyExists, TokenNotFound
 from cerebro.domain.access import AccessCeiling, Scope
 from cerebro.domain.agent_token import AgentToken
@@ -43,7 +45,9 @@ class SqliteTokenStore:
                 raise AlreadyExists("token", token.id)
             try:
                 conn.execute(f"INSERT INTO tokens ({_COLUMNS}) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)", self._row(token))
-            except sqlite3.IntegrityError:
+            except sqlite3.IntegrityError as error:
+                if not is_unique_violation(error):
+                    raise
                 raise AlreadyExists("token hash", token.id) from None
 
     def get(self, token_id: str) -> AgentToken | None:
@@ -72,7 +76,9 @@ class SqliteTokenStore:
                 )
                 if cursor.rowcount == 0:
                     raise TokenNotFound(token.id)
-        except sqlite3.IntegrityError:
+        except sqlite3.IntegrityError as error:
+            if not is_unique_violation(error):
+                raise
             raise AlreadyExists("token hash", token.id) from None
 
     def all(self) -> tuple[AgentToken, ...]:

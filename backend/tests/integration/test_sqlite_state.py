@@ -1,6 +1,7 @@
 """Integration tests of ``state.sqlite``: ``SqliteProposalStore`` (sealed payloads) and ``SqliteTokenStore``."""
 
 import hashlib
+import json
 import sqlite3
 import stat
 from collections.abc import Callable
@@ -20,6 +21,8 @@ from cerebro.adapters.outbound.sqlite import (
     StateFileError,
     StateSchemaError,
 )
+from cerebro.adapters.outbound.sqlite._state_db import is_unique_violation
+from cerebro.adapters.outbound.sqlite.proposals import seal_payload
 from cerebro.application.dto import SubmitProposalRequest
 from cerebro.application.errors import DecryptionError, ProposalConflict
 from cerebro.application.ports import ProposalStore, TokenStore
@@ -430,3 +433,102 @@ def test_submit_and_validate_work_end_to_end_on_sqlite(state_path: Path, cipher:
     outcome = kit.submit(SubmitProposalRequest(kind=ProposalKind.CREATE, content=new_content()))
     assert kit.validate(outcome.proposal_id).status is S.VALIDATED
     assert kit.stored(outcome.proposal_id).revision == 1
+
+
+# -- review hardening ----------------------------------------------------------------------------------------------
+
+
+def test_every_fresh_connection_has_the_safety_pragmas(state_path: Path, cipher: FernetCipher) -> None:
+    store = SqliteProposalStore(state_path, cipher)
+    with store._db.read() as conn:
+        assert conn.execute("PRAGMA secure_delete").fetchone()[0] == 1
+        assert conn.execute("PRAGMA foreign_keys").fetchone()[0] == 1
+        assert conn.execute("PRAGMA journal_mode").fetchone()[0] == "wal"
+
+
+def test_the_wal_is_truncated_after_a_write_and_residue_is_only_sealed(state_path: Path, cipher: FernetCipher) -> None:
+    store = SqliteProposalStore(state_path, cipher)
+    wal = Path(f"{state_path}-wal")
+    store.add(build_proposal(content=ProposedContent(title=f"t {MARKER}", body=f"b {MARKER}")))
+    assert not wal.exists() or wal.stat().st_size == 0  # no reader: the checkpoint emptied the WAL
+    reader = sqlite3.connect(state_path, isolation_level=None)
+    try:
+        reader.execute("BEGIN")
+        reader.execute("SELECT count(*) FROM proposals").fetchone()  # holds a snapshot open
+        loaded = store.get("prop-1")
+        assert loaded is not None
+        store.save(loaded.mark_validated(OK, T0), expected_revision=0)  # the checkpoint cannot finish
+        assert MARKER.encode() not in raw_bytes(state_path)  # whatever stays in the WAL is ciphertext
+    finally:
+        reader.close()
+    loaded = store.get("prop-1")
+    assert loaded is not None
+    store.save(replace(loaded, updated_at=T0 + timedelta(minutes=1)), expected_revision=1)
+    assert not wal.exists() or wal.stat().st_size == 0  # reader gone: the next write truncates it
+
+
+def test_an_existing_parent_directory_is_never_chmoded(tmp_path: Path, cipher: FernetCipher) -> None:
+    parent = tmp_path / "shared"
+    parent.mkdir(mode=0o755)
+    parent.chmod(0o755)
+    with pytest.raises(StateFileError):
+        SqliteProposalStore(parent / "state.sqlite", cipher)
+    assert stat.S_IMODE(parent.stat().st_mode) == 0o755
+    assert not (parent / "state.sqlite").exists()
+
+
+def test_a_file_replaced_by_a_symlink_is_refused_on_the_next_operation(
+    state_path: Path, cipher: FernetCipher, tmp_path: Path
+) -> None:
+    store = SqliteProposalStore(state_path, cipher)
+    store.add(make_proposal())
+    other = tmp_path / "other.sqlite"
+    other.touch(mode=0o600)
+    state_path.rename(tmp_path / "moved.sqlite")
+    state_path.symlink_to(other)
+    with pytest.raises(StateFileError):
+        store.get("proposal-0001")
+
+
+def test_a_file_swapped_for_another_regular_file_is_refused(state_path: Path, cipher: FernetCipher) -> None:
+    store = SqliteProposalStore(state_path, cipher)
+    state_path.rename(state_path.with_name("moved.sqlite"))
+    state_path.touch(mode=0o600)
+    with pytest.raises(StateFileError):
+        store.get("proposal-0001")
+
+
+def test_only_unique_violations_mean_already_exists() -> None:
+    conn = sqlite3.connect(":memory:")
+    conn.execute("CREATE TABLE t (a TEXT NOT NULL, b TEXT UNIQUE)")
+    with pytest.raises(sqlite3.IntegrityError) as not_null:
+        conn.execute("INSERT INTO t (a) VALUES (NULL)")
+    assert not is_unique_violation(not_null.value)
+    conn.execute("INSERT INTO t VALUES ('x', 'y')")
+    with pytest.raises(sqlite3.IntegrityError) as unique:
+        conn.execute("INSERT INTO t VALUES ('x', 'y')")
+    assert is_unique_violation(unique.value)
+    conn.close()
+
+
+def test_an_unknown_payload_version_is_corruption(state_path: Path, cipher: FernetCipher) -> None:
+    store = SqliteProposalStore(state_path, cipher)
+    store.add(make_proposal())
+    document = json.loads(seal_payload(make_proposal()))
+    document["v"] = 99
+    forged = cipher.encrypt(json.dumps(document).encode())
+    _sql(state_path, "UPDATE proposals SET payload = ?", forged)
+    with pytest.raises(StateCorruptionError):
+        store.get("proposal-0001")
+
+
+def test_token_digest_roundtrips_and_a_damaged_row_fails_the_hash_lookup(state_path: Path) -> None:
+    store = SqliteTokenStore(state_path)
+    token = make_token()
+    store.add(token)
+    found = store.find_by_hash(token.token_hash)
+    assert found is not None
+    assert found.token_hash.hexdigest == token.token_hash.hexdigest
+    _sql(state_path, "UPDATE tokens SET scopes = 'not json'")
+    with pytest.raises(StateCorruptionError):
+        store.find_by_hash(token.token_hash)

@@ -222,22 +222,17 @@ def secret_findings(proposal: Proposal) -> tuple[Finding, ...]:
 
 
 def scrubbed(proposal: Proposal) -> Proposal:
-    """The proposal without any free text, so that the raw payload of a rejected proposal is never stored.
+    """The proposal reduced to what the audit needs, so the raw payload of a rejected proposal is never stored.
 
-    Required fields keep a harmless placeholder; ids, kind, target, base hash and agent are kept for the audit trail.
+    Kept: id, kind, target, base hash, agent, timestamps, status and the validation report (structured findings).
+    Dropped: every free text and every suggested field (title, body, summary, rationale, area, type, priority,
+    sensitivity, hub, superseded_by, session, context). Required fields keep a harmless placeholder; a ``link``
+    keeps ``related`` because the domain requires it to be non-empty.
     """
     c = proposal.content
     content = ProposedContent(
         title=REDACTED_TITLE if c.title is not None else None,
         body="" if c.body is not None else None,
-        area=c.area,
-        type=c.type,
-        priority=c.priority,
-        sensitivity=c.sensitivity,
-        rationale="",
-        related=c.related,
-        superseded_by=c.superseded_by,
-        summary=None,
-        hub=c.hub,
+        related=c.related if proposal.kind is ProposalKind.LINK else (),
     )
     return replace(proposal, content=content, source_session=None, source_context=None)
