@@ -29,6 +29,7 @@ Inbox, which are validated, curated and approved before becoming notes.
   (`phase-1/*` branches). Done so far: value objects (`NoteId`, `Priority`, `Sensitivity`, `Status`, `Area`,
   `NoteType`, `Vocabulary`, `Note`).
 - Update this section and `docs/roadmap.md` whenever a phase starts or finishes.
+- Phase 1 plan (pull requests, status, design decisions): [`docs/plans/phase-1.md`](docs/plans/phase-1.md).
 
 ## 4. Non-negotiable rules
 

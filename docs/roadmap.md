@@ -30,6 +30,8 @@ import-linter fail.
 
 Everything in `docs/domain-model.md` implemented in pure Python, plus the use cases with in-memory fakes.
 
+Delivery plan, pull request status and design decisions: [plans/phase-1.md](plans/phase-1.md).
+
 - Value objects and enums: `NoteId`, `Priority`, `Sensitivity`, `Status`, `NoteType`, `Note`, `Proposal`,
   `Decision`, `AccessCeiling`.
 - Rules: field validation, budgets, link extraction, secret scanner, visibility by ceiling,
