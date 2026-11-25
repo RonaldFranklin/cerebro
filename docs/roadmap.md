@@ -26,7 +26,7 @@ import-linter fail.
 `backend/tests/architecture/test_import_contracts.py`. Built-in import-linter contracts cannot express
 "standard library only", so a small custom contract type lives in `backend/devtools/import_contracts.py`.
 
-## ⬜ Phase 1 — Domain and application core
+## 🟨 Phase 1 — Domain and application core
 
 Everything in `docs/domain-model.md` implemented in pure Python, plus the use cases with in-memory fakes.
 

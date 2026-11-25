@@ -50,7 +50,9 @@ backend/
 │   ├── domain/
 │   │   ├── note.py            # Note, NoteId, Frontmatter value objects
 │   │   ├── links.py           # wikilink extraction [[id]] / [[id#Section]]
-│   │   ├── enums.py           # Priority, Sensitivity, Status, NoteType
+│   │   ├── enums.py           # Priority, Sensitivity, Status
+│   │   ├── vocabulary.py      # Area, NoteType, Vocabulary (controlled lists from schema/*.yaml)
+│   │   ├── slug.py            # kebab-case rule shared by ids, areas and types
 │   │   ├── access.py          # AccessCeiling, visibility rules
 │   │   ├── budgets.py         # size/word/summary limits
 │   │   ├── proposal.py        # Proposal, ProposalKind, lifecycle, Decision
@@ -200,6 +202,7 @@ Source of truth: `backend/uv.lock`. Update this table in the same commit as any 
 | uv | ≥ 0.13.10 (`tool.uv.required-version`) | env, lockfile, runner |
 | uv_build | 0.13.10 | build backend |
 | pytest | 9.2.0 | tests |
+| pytest-cov | 7.1.0 (pulls coverage 7.17.5) | coverage; `fail_under = 90` on `cerebro.domain` + `cerebro.application` |
 | ruff | 0.17.6 | lint + format |
 | mypy | 2.4.1 | type checking (`strict`) |
 | import-linter | 2.17 | import contracts (pulls grimp 3.20) |
