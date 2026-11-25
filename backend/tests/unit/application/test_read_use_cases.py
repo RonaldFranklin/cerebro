@@ -6,6 +6,7 @@ from cerebro.application.dto import (
     GetGraphRequest,
     GetNeighborsRequest,
     GetOverviewRequest,
+    NoteView,
     ReadNoteRequest,
     SearchNotesRequest,
 )
@@ -14,7 +15,7 @@ from cerebro.application.use_cases import GetGraph, GetNeighbors, GetOverview, R
 from cerebro.domain.access import Scope
 from cerebro.domain.enums import Priority, Sensitivity, Status
 from cerebro.domain.errors import InvalidValueError
-from cerebro.domain.links import LinkKind
+from cerebro.domain.links import REDACTED_LINK, LinkKind
 from cerebro.domain.vocabulary import CORE, HUB, Area
 from tests.unit.application.world import NID, World, ctx, standard_world
 
@@ -434,6 +435,115 @@ class TestNoLeakAcrossUseCases:
             ]
 
         assert snapshot(world) == snapshot(without)
+
+
+def linking_world() -> World:
+    """Notes whose bodies link to a restricted note, a visible note and a missing one (legacy data)."""
+    w = standard_world()
+    w.add(
+        id=NID("daily-notes"),
+        title="Daily notes",
+        hub=NID("infrastructure"),
+        sensitivity=INTERNAL,
+        body=(
+            "# Intro\n\nSee [[vault-layout]], [[core-rules]] and [[ghost-note]].\n\n"
+            "# Details\n\nAlso [[vault-layout#Secrets]] and [[ vault-layout | the vault ]].\n"
+        ),
+    )
+    return w
+
+
+class TestWikilinkRedaction:
+    @staticmethod
+    def read(w: World, level: Sensitivity, section: str | None = None, **kw: object) -> NoteView:
+        request = ReadNoteRequest(note_id=NID("daily-notes"), section=section, **kw)  # type: ignore[arg-type]
+        return ReadNote(w.notes, w.graph).execute(request, ctx(level))
+
+    def test_links_above_the_ceiling_or_missing_become_the_marker(self) -> None:
+        view = self.read(linking_world(), INTERNAL)
+        assert view.body.count(REDACTED_LINK) == 4  # three vault-layout forms and the missing ghost-note
+        assert "[[core-rules]]" in view.body
+        assert "vault-layout" not in repr(view)
+        assert "ghost-note" not in repr(view)
+
+    def test_sections_get_the_same_treatment(self) -> None:
+        view = self.read(linking_world(), INTERNAL, section="Details")
+        assert view.body == f"# Details\n\nAlso {REDACTED_LINK} and {REDACTED_LINK}.\n"
+        assert "vault-layout" not in repr(view)
+
+    def test_a_link_to_a_visible_note_is_untouched(self) -> None:
+        view = self.read(linking_world(), INTERNAL, section="Intro")
+        assert "[[core-rules]]" in view.body
+
+    def test_a_reader_whose_ceiling_covers_the_target_sees_it(self) -> None:
+        view = self.read(linking_world(), RESTRICTED)
+        assert view.body.count(REDACTED_LINK) == 1  # only the missing ghost-note
+        assert "[[vault-layout]]" in view.body
+        assert "[[vault-layout#Secrets]]" in view.body
+
+    def test_the_owner_with_a_restricted_ceiling_sees_it(self) -> None:
+        request = ReadNoteRequest(note_id=NID("daily-notes"))
+        view = ReadNote(linking_world().notes, linking_world().graph).execute(request, ctx(RESTRICTED, owner=True))
+        assert "[[vault-layout]]" in view.body
+
+    def test_the_owner_with_a_lower_ceiling_is_redacted_too(self) -> None:
+        request = ReadNoteRequest(note_id=NID("daily-notes"))
+        w = linking_world()
+        view = ReadNote(w.notes, w.graph).execute(request, ctx(INTERNAL, owner=True))
+        assert "vault-layout" not in repr(view)
+
+    def test_history_targets_are_redacted_unless_history_is_requested(self) -> None:
+        w = standard_world()
+        w.add(id=NID("pointer"), hub=NID("infrastructure"), body="Was [[old-proxy]].\n")
+        read = ReadNote(w.notes, w.graph)
+        plain = read.execute(ReadNoteRequest(note_id=NID("pointer")), ctx(INTERNAL))
+        assert plain.body == f"Was {REDACTED_LINK}.\n"
+        with_history = read.execute(ReadNoteRequest(note_id=NID("pointer"), include_history=True), ctx(INTERNAL))
+        assert with_history.body == "Was [[old-proxy]].\n"
+
+    def test_non_ids_and_ordinary_text_are_left_alone(self) -> None:
+        w = standard_world()
+        w.add(id=NID("plain"), hub=NID("infrastructure"), body="Text [[Not A Slug]] and [x](y) and [[a]\n")
+        view = ReadNote(w.notes, w.graph).execute(ReadNoteRequest(note_id=NID("plain")), ctx(INTERNAL))
+        assert view.body == "Text [[Not A Slug]] and [x](y) and [[a]\n"
+
+    def test_hub_and_superseded_by_references_above_the_ceiling_are_dropped(self) -> None:
+        w = standard_world()
+        w.add(id=NID("secret-hub"), type=HUB, priority=Priority.P1, sensitivity=RESTRICTED, hub=None)
+        w.add(
+            id=NID("leaky"),
+            hub=NID("secret-hub"),
+            sensitivity=INTERNAL,
+            status=Status.SUPERSEDED,
+            priority=Priority.P3,
+            superseded_by=NID("vault-layout"),
+            related=(NID("vault-layout"), NID("core-rules")),
+        )
+        view = ReadNote(w.notes, w.graph).execute(
+            ReadNoteRequest(note_id=NID("leaky"), include_history=True), ctx(INTERNAL)
+        )
+        assert (view.hub, view.superseded_by, view.related) == (None, None, (NID("core-rules"),))
+        assert "vault-layout" not in repr(view)
+        assert "secret-hub" not in repr(view)
+
+    def test_hub_members_never_include_notes_above_the_ceiling(self) -> None:
+        w = standard_world()
+        view = ReadNote(w.notes, w.graph).execute(ReadNoteRequest(note_id=NID("infrastructure")), ctx(INTERNAL))
+        assert NID("vault-layout") not in [m.id for m in view.members or ()]
+        assert "vault-layout" not in repr(view)
+
+    def test_the_overview_redacts_core_bodies_too(self) -> None:
+        w = standard_world()  # core-rules (public) links the internal server-ssh-access
+        public = GetOverview(w.notes, w.search).execute(GetOverviewRequest(), ctx(PUBLIC))
+        assert public.core[0].body == f"Always be kind. See {REDACTED_LINK}.\n"
+        assert "server-ssh-access" not in repr(public)
+        internal = GetOverview(w.notes, w.search).execute(GetOverviewRequest(), ctx(INTERNAL))
+        assert "[[server-ssh-access]]" in internal.core[0].body
+
+    def test_the_marker_is_not_a_valid_note_id(self) -> None:
+        from cerebro.domain.links import extract_wikilinks
+
+        assert extract_wikilinks(REDACTED_LINK) == ()
 
 
 class TestEchoedReferencesAndFaultyIndexes:

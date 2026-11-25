@@ -43,6 +43,14 @@ def note_findings(note: Note, vocabulary: Vocabulary) -> tuple[Finding, ...]:
     if "\n" in note.title or "\r" in note.title:
         add(ViolationCode.TITLE_MULTILINE, "title", "title must be a single line")
 
+    for field_name, text in (("title", note.title), ("summary", note.summary)):
+        if "[[" in text:
+            add(
+                ViolationCode.WIKILINK_IN_METADATA,
+                field_name,
+                f"{field_name} may not contain '[[' (it is served without link redaction)",
+            )
+
     if not note.lang.strip():
         add(ViolationCode.LANG_BLANK, "lang", "lang is blank")
 

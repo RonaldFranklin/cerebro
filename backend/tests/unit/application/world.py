@@ -51,15 +51,20 @@ class World:
         return note
 
 
-def standard_world() -> World:
-    """A hub with members of every sensitivity and a superseded one, a core note, links between them."""
+def standard_world(*, leaky_links: bool = True) -> World:
+    """A hub with members of every sensitivity and a superseded one, a core note, links between them.
+
+    With ``leaky_links`` (the default) some notes link to notes of higher sensitivity: data that predates the
+    ``link_to_higher_sensitivity`` rule or was edited outside Cérebro, which the read path must still serve safely.
+    Pass ``leaky_links=False`` for a base that obeys the rule, as the write and maintenance paths expect.
+    """
     w = World()
     w.add(
         id=NID("core-rules"),
         type=CORE,
         priority=Priority.P0,
         title="Core rules",
-        body="Always be kind. See [[server-ssh-access]].\n",
+        body="Always be kind. See [[server-ssh-access]].\n" if leaky_links else "Always be kind.\n",
     )
     w.add(id=NID("infrastructure"), type=HUB, priority=Priority.P1, title="Infrastructure", body="Intro.\n")
     w.add(
@@ -68,7 +73,7 @@ def standard_world() -> World:
         hub=NID("infrastructure"),
         sensitivity=Sensitivity.INTERNAL,
         body="# SSH\n\nUse the key.\n\n## Verify\n\nCheck the host.\n\n# Other\n\nMore.\n",
-        related=(NID("vault-layout"),),
+        related=(NID("vault-layout"),) if leaky_links else (),
     )
     w.add(
         id=NID("vault-layout"),
@@ -84,6 +89,7 @@ def standard_world() -> World:
         hub=NID("infrastructure"),
         status=Status.SUPERSEDED,
         superseded_by=NID("server-ssh-access"),
+        sensitivity=Sensitivity.PUBLIC if leaky_links else Sensitivity.INTERNAL,
         priority=Priority.P3,
     )
     return w

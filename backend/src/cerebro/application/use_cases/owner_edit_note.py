@@ -14,6 +14,7 @@ from cerebro.domain.access import AccessContext, is_visible
 from cerebro.domain.commit_message import CommitMessage
 from cerebro.domain.content_hash import content_hash, ensure_unchanged
 from cerebro.domain.errors import ContentConflict
+from cerebro.domain.note import Note
 from cerebro.domain.note_ref import NoteRef
 from cerebro.domain.report import OWNER_EDIT_POLICY
 from cerebro.domain.vocabulary import Vocabulary
@@ -55,6 +56,7 @@ class OwnerEditNote:
         require_owner(ctx, "edit notes")
         note = request.note
         today = self._clock.now().date()
+        base: Note | None = None
         if request.expected_hash is None:
             existing = self._notes.get(note.id)
             if existing is not None:
@@ -66,11 +68,19 @@ class OwnerEditNote:
         else:
             current = visible_note(self._notes, note.id, ctx, include_history=True)
             ensure_unchanged(request.expected_hash, current)
+            base = current
             candidate = replace(note, created=current.created, updated=today)
             verb = "Update"
         if not ctx.ceiling.allows(candidate.sensitivity):
             raise PermissionDenied("write above the access ceiling")
-        report = validate_candidate(candidate, notes=self._notes, vocabulary=self._vocabulary, policy=OWNER_EDIT_POLICY)
+        report = validate_candidate(
+            candidate,
+            notes=self._notes,
+            vocabulary=self._vocabulary,
+            policy=OWNER_EDIT_POLICY,
+            base=base,
+            forbid_lowering=False,  # the owner may declassify
+        )
         if not report.ok:
             return OwnerEditNoteResult(note_id=note.id, validation=report)
         message = CommitMessage.for_owner_edit(

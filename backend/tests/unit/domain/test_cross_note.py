@@ -2,8 +2,13 @@ from collections.abc import Iterable
 
 import pytest
 
-from cerebro.domain.cross_note import MAX_HUB_CHAIN_DEPTH, Snapshot, cross_note_findings
-from cerebro.domain.enums import Priority, Status
+from cerebro.domain.cross_note import (
+    MAX_HUB_CHAIN_DEPTH,
+    Snapshot,
+    cross_note_findings,
+    inbound_link_sensitivity_findings,
+)
+from cerebro.domain.enums import Priority, Sensitivity, Status
 from cerebro.domain.links import WikiLink
 from cerebro.domain.note import NoteId
 from cerebro.domain.note_ref import NoteRef
@@ -24,6 +29,7 @@ def ref(
     related: Iterable[str] = (),
     superseded_by: str | None = None,
     body_links: Iterable[str] = (),
+    sensitivity: Sensitivity = Sensitivity.RESTRICTED,
 ) -> NoteRef:
     note = make_note(
         id=nid(id_),
@@ -33,6 +39,7 @@ def ref(
         related=tuple(nid(r) for r in related),
         superseded_by=nid(superseded_by) if superseded_by else None,
         status=Status.SUPERSEDED if superseded_by else Status.VERIFIED,
+        sensitivity=sensitivity,
         body=" ".join(f"[[{b}]]" for b in body_links),
     )
     return NoteRef.from_note(note)
@@ -204,3 +211,111 @@ def test_chain_and_cycle_rules_are_errors_on_every_path(policy: SeverityPolicy) 
     for target in (h1, a):
         report = policy.report(cross_note_findings(target, snapshot))
         assert report.errors
+
+
+# -- links to a note of higher sensitivity ------------------------------------------------------------------------
+
+PUB, INT, RES = Sensitivity.PUBLIC, Sensitivity.INTERNAL, Sensitivity.RESTRICTED
+
+
+def leak_fields(target: NoteRef, snapshot: Snapshot) -> list[tuple[ViolationCode, str | None]]:
+    return [(f.code, f.field) for f in cross_note_findings(target, snapshot)]
+
+
+@pytest.mark.parametrize(
+    ("kind", "field"),
+    [("body", "body"), ("related", "related"), ("superseded_by", "superseded_by"), ("hub", "hub")],
+)
+def test_each_link_kind_to_a_higher_sensitivity_is_reported(kind: str, field: str) -> None:
+    secret = ref("secret", is_hub=kind == "hub", sensitivity=RES)
+    args: dict[str, object] = {
+        "body": {"body_links": ["secret"]},
+        "related": {"related": ["secret"]},
+        "superseded_by": {"superseded_by": "secret"},
+        "hub": {"hub": "secret"},
+    }[kind]  # type: ignore[assignment]
+    me = ref("me", sensitivity=INT, **args)  # type: ignore[arg-type]
+    assert (ViolationCode.LINK_TO_HIGHER_SENSITIVITY, field) in leak_fields(me, snap(secret, me))
+
+
+@pytest.mark.parametrize(
+    ("mine", "theirs", "leaks"),
+    [
+        (PUB, PUB, False),
+        (INT, INT, False),
+        (RES, RES, False),
+        (INT, PUB, False),
+        (RES, INT, False),
+        (RES, PUB, False),
+        (PUB, INT, True),
+        (INT, RES, True),
+        (PUB, RES, True),
+    ],
+)
+def test_only_links_to_a_strictly_higher_sensitivity_are_reported(
+    mine: Sensitivity, theirs: Sensitivity, leaks: bool
+) -> None:
+    other = ref("other", sensitivity=theirs)
+    me = ref("me", sensitivity=mine, related=["other"], body_links=["other"])
+    found = [c for c, _ in leak_fields(me, snap(other, me)) if c is ViolationCode.LINK_TO_HIGHER_SENSITIVITY]
+    assert bool(found) is leaks
+
+
+def test_the_rule_is_an_error_on_every_policy_and_never_a_warning() -> None:
+    secret = ref("secret", sensitivity=RES)
+    me = ref("me", sensitivity=PUB, body_links=["secret"])
+    findings = [
+        f for f in cross_note_findings(me, snap(secret, me)) if f.code is ViolationCode.LINK_TO_HIGHER_SENSITIVITY
+    ]
+    assert findings
+    for policy in (PROPOSAL_POLICY, OWNER_EDIT_POLICY):
+        assert ViolationCode.LINK_TO_HIGHER_SENSITIVITY not in policy.warnings
+        assert [v.severity for v in policy.report(findings).violations] == [Severity.ERROR]
+
+
+def test_a_missing_target_is_a_broken_link_not_a_sensitivity_finding() -> None:
+    me = ref("me", sensitivity=PUB, body_links=["gone"])
+    assert [c for c, _ in leak_fields(me, snap(me))] == [ViolationCode.BROKEN_LINK]
+
+
+def test_repeated_links_to_the_same_target_are_reported_once_per_kind() -> None:
+    secret = ref("secret", sensitivity=RES)
+    me = ref("me", sensitivity=PUB, body_links=["secret", "secret"], related=["secret"])
+    found = [(c, f) for c, f in leak_fields(me, snap(secret, me)) if c is ViolationCode.LINK_TO_HIGHER_SENSITIVITY]
+    assert found == [
+        (ViolationCode.LINK_TO_HIGHER_SENSITIVITY, "body"),
+        (ViolationCode.LINK_TO_HIGHER_SENSITIVITY, "related"),
+    ]
+
+
+def test_the_message_names_only_the_target_id() -> None:
+    secret = NoteRef.from_note(
+        make_note(id=nid("secret"), title="Vault master passphrase", sensitivity=RES, hub=None, related=())
+    )
+    me = ref("me", sensitivity=PUB, body_links=["secret"])
+    (finding,) = [
+        f for f in cross_note_findings(me, snap(secret, me)) if f.code is ViolationCode.LINK_TO_HIGHER_SENSITIVITY
+    ]
+    assert "secret" in finding.message
+    for revealing in ("Vault", "passphrase", "restricted", "internal", "higher", "sensitivity"):
+        assert revealing not in finding.message
+
+
+@pytest.mark.parametrize(
+    "body", ["`[[secret]]`", "```\n[[secret]]\n```", "[[secret|alias]]", "[[ secret # Part | x ]]"]
+)
+def test_code_span_and_alias_links_are_covered_by_the_rule(body: str) -> None:
+    secret = ref("secret", sensitivity=RES)
+    me = NoteRef.from_note(make_note(id=nid("me"), sensitivity=PUB, hub=None, related=(), body=body))
+    assert (ViolationCode.LINK_TO_HIGHER_SENSITIVITY, "body") in leak_fields(me, snap(secret, me))
+
+
+def test_inbound_findings_name_lower_sensitivity_linkers_only() -> None:
+    target = ref("target", sensitivity=RES)
+    low = ref("low", sensitivity=PUB, related=["target"])
+    equal = ref("equal", sensitivity=RES, related=["target"])
+    unrelated = ref("unrelated", sensitivity=PUB)
+    findings = inbound_link_sensitivity_findings(target, snap(target, low, equal, unrelated))
+    assert [(f.code, f.message) for f in findings] == [
+        (ViolationCode.LINK_TO_HIGHER_SENSITIVITY, "low links to this note")
+    ]

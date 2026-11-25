@@ -3,7 +3,7 @@
 from dataclasses import dataclass
 
 from cerebro.domain.enums import Priority, Sensitivity, Status
-from cerebro.domain.links import Link, WikiLink, extract_wikilinks, links_from_references
+from cerebro.domain.links import Link, WikiLink, extract_wikilinks, links_from_references, loose_link_targets
 from cerebro.domain.note import Note, NoteId
 from cerebro.domain.vocabulary import HUB, NoteType
 
@@ -25,6 +25,8 @@ class NoteRef:
     related: tuple[NoteId, ...]
     superseded_by: NoteId | None
     body_links: tuple[WikiLink, ...]
+    loose_body_targets: tuple[NoteId, ...]
+    """Every id in a ``[[...]]`` of the body, including code and alias forms (what read-time redaction covers)."""
 
     @classmethod
     def from_note(cls, note: Note) -> NoteRef:
@@ -39,6 +41,7 @@ class NoteRef:
             related=note.related,
             superseded_by=note.superseded_by,
             body_links=extract_wikilinks(note.body),
+            loose_body_targets=loose_link_targets(note.body),
         )
 
     @property

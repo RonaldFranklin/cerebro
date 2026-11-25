@@ -1,6 +1,7 @@
 """Link extraction: wikilinks in the body plus the ``hub``, ``related`` and ``superseded_by`` references."""
 
 import re
+from collections.abc import Callable
 from dataclasses import dataclass
 from enum import StrEnum
 
@@ -10,6 +11,14 @@ from cerebro.domain.slug import is_slug
 
 # [[note-id]] or [[note-id#Section heading]]; no nesting, no line breaks inside the brackets.
 _WIKILINK = re.compile(r"\[\[([^\[\]#|\n]*)(?:#([^\[\]|\n]*))?\]\]")
+# Any ``[[...]]``, broader than ``_WIKILINK`` so that unsupported forms such as ``[[id|alias]]`` are seen by redaction.
+_ANY_BRACKETS = re.compile(r"\[\[([^\[\]\n]*)\]\]")
+
+REDACTED_LINK = "[[redacted link]]"
+"""What ``redact_wikilinks`` puts in place of a link the reader may not follow.
+
+The text between the brackets is deliberately not a valid note id (it has a space), so the marker can never be
+mistaken for a link to a note."""
 
 
 class LinkKind(StrEnum):
@@ -81,3 +90,37 @@ def note_links(note: Note) -> tuple[Link, ...]:
         related=note.related,
         superseded_by=note.superseded_by,
     )
+
+
+def _bracket_target(inner: str) -> NoteId | None:
+    target = re.split(r"[#|]", inner, maxsplit=1)[0].strip()
+    return NoteId(target) if is_slug(target) else None
+
+
+def loose_link_targets(body: str) -> tuple[NoteId, ...]:
+    """Every note id that ``redact_wikilinks`` would treat as a link target: any ``[[...]]`` with a valid id, in code
+    blocks and spans too and in the ``[[id|alias]]`` form. A superset of ``extract_wikilinks`` targets: the
+    sensitivity rule uses it so that it covers everything redaction covers."""
+    found: dict[NoteId, None] = {}
+    for match in _ANY_BRACKETS.finditer(body):
+        target = _bracket_target(match.group(1))
+        if target is not None:
+            found[target] = None
+    return tuple(found)
+
+
+def redact_wikilinks(body: str, may_see: Callable[[NoteId], bool]) -> str:
+    """``body`` with every ``[[...]]`` whose target is a note id that ``may_see`` rejects replaced by ``REDACTED_LINK``.
+
+    The whole link goes, section anchor and alias included. Unlike link extraction this also looks inside code
+    blocks (an id there leaks just the same) and at the ``[[id|alias]]`` form. Brackets whose target is not a valid
+    note id are not links and are left alone.
+    """
+
+    def replace(match: re.Match[str]) -> str:
+        target = _bracket_target(match.group(1))
+        if target is not None and not may_see(target):
+            return REDACTED_LINK
+        return match.group(0)
+
+    return _ANY_BRACKETS.sub(replace, body)

@@ -65,7 +65,7 @@ def new_content(**overrides: Any) -> ProposedContent:
 
 @dataclass
 class Kit:
-    world: World = field(default_factory=standard_world)
+    world: World = field(default_factory=lambda: standard_world(leaky_links=False))
     proposals: Any = field(default_factory=InMemoryProposalStore)
     clock: FixedClock = field(default_factory=FixedClock)
     ids: SequentialIdGenerator = field(default_factory=SequentialIdGenerator)

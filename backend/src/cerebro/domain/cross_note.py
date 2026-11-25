@@ -26,6 +26,7 @@ def cross_note_findings(ref: NoteRef, snapshot: Snapshot) -> tuple[Finding, ...]
     """
     return (
         *broken_link_findings(ref, snapshot),
+        *link_sensitivity_findings(ref, snapshot),
         *hub_findings(ref, snapshot),
         *superseded_by_cycle_findings(ref, snapshot),
         *hub_chain_findings(ref, snapshot),
@@ -48,6 +49,60 @@ def broken_link_findings(ref: NoteRef, snapshot: Snapshot) -> tuple[Finding, ...
                 message=f"links to {link.target}, which does not exist",
             )
         )
+    return tuple(found)
+
+
+def _link_targets(ref: NoteRef) -> tuple[tuple[str, NoteId], ...]:
+    """``(field, target)`` of every outgoing reference, without duplicates, including the loose body forms."""
+    found: dict[tuple[str, NoteId], None] = {}
+    for link in ref.links:
+        found[("body" if link.kind is LinkKind.BODY else link.kind.value, link.target)] = None
+    for target in ref.loose_body_targets:
+        found[("body", target)] = None
+    return tuple(found)
+
+
+def link_sensitivity_findings(ref: NoteRef, snapshot: Snapshot) -> tuple[Finding, ...]:
+    """A note may not link (body, ``hub``, ``related``, ``superseded_by``) to a note of higher sensitivity.
+
+    Bodies are served as written, so such a link would leak the existence and id of the target to readers whose
+    ceiling covers ``ref`` but not the target. The body check covers every ``[[...]]`` that read-time redaction
+    treats as a link (code spans and the alias form included). Missing targets are ``broken_link``s, not reported
+    here. The message carries only the target id as the author wrote it, never its title or sensitivity.
+    """
+    found: list[Finding] = []
+    for field, link_target in _link_targets(ref):
+        target = snapshot.get(link_target)
+        if link_target == ref.id or target is None or target.sensitivity <= ref.sensitivity:
+            continue
+        found.append(
+            Finding(
+                code=ViolationCode.LINK_TO_HIGHER_SENSITIVITY,
+                field=field,
+                message=f"{link_target} may not be linked from this note",
+            )
+        )
+    return tuple(found)
+
+
+def inbound_link_sensitivity_findings(ref: NoteRef, snapshot: Snapshot) -> tuple[Finding, ...]:
+    """Stored notes of lower sensitivity than ``ref`` that already link to it.
+
+    Meant for a note that is created or whose sensitivity rises: the links of those notes would now point to a
+    higher sensitivity. The message names only the linking note.
+    """
+    found: list[Finding] = []
+    for other in snapshot.values():
+        if other.id == ref.id or other.sensitivity >= ref.sensitivity:
+            continue
+        if any(target == ref.id for _, target in _link_targets(other)):
+            found.append(
+                Finding(
+                    code=ViolationCode.LINK_TO_HIGHER_SENSITIVITY,
+                    field="sensitivity",
+                    message=f"{other.id} links to this note",
+                )
+            )
     return tuple(found)
 
 

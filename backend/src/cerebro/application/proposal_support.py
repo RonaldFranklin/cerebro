@@ -12,7 +12,7 @@ from datetime import date
 from cerebro.application.errors import ProposalNotApplicable
 from cerebro.application.ports.notes import NoteRepository
 from cerebro.domain.budgets import core_budget_findings, word_count
-from cerebro.domain.cross_note import cross_note_findings
+from cerebro.domain.cross_note import cross_note_findings, inbound_link_sensitivity_findings
 from cerebro.domain.decision import DecisionKind
 from cerebro.domain.enums import Priority, Status
 from cerebro.domain.note import MAX_NOTE_ID_LENGTH, Note, NoteId
@@ -171,11 +171,13 @@ def validate_candidate(
     vocabulary: Vocabulary,
     policy: SeverityPolicy,
     base: Note | None = None,
+    forbid_lowering: bool = True,
 ) -> ValidationReport:
     """Every rule of the write path for ``note``, all at once: per-note rules and the secret scan, cross-note
     rules over a snapshot where ``note`` replaces (or joins) the stored notes, and the combined P0 budget.
 
-    ``base`` is the stored version of an existing note: a change may not lower its sensitivity.
+    ``base`` is the stored version of an existing note (``None`` for a new one): inbound links are checked when a note
+    is new or its sensitivity rises over ``base``, and a change may not lower it unless ``forbid_lowering`` is off.
     """
     snapshot = {ref.id: ref for ref in notes.list_refs()}
     snapshot[note.id] = NoteRef.from_note(note)
@@ -184,7 +186,9 @@ def validate_candidate(
         words = {n.id: word_count(n.body) for n in notes.list_notes() if n.priority is Priority.P0 and n.is_current}
         words[note.id] = word_count(note.body)
         findings.extend(core_budget_findings(words))
-    if base is not None and note.sensitivity < base.sensitivity:
+    if base is None or note.sensitivity > base.sensitivity:
+        findings.extend(inbound_link_sensitivity_findings(snapshot[note.id], snapshot))
+    if forbid_lowering and base is not None and note.sensitivity < base.sensitivity:
         findings.append(
             Finding(
                 code=ViolationCode.INVALID_FIELD,

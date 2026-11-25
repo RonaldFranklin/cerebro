@@ -209,6 +209,67 @@ class TestValidateProposal:
         assert outcome.validation is not None
         assert ViolationCode.BROKEN_LINK in outcome.validation.codes
 
+    @pytest.mark.parametrize("kind", ["body", "related", "hub"])
+    def test_links_to_a_higher_sensitivity_are_errors_for_proposals(self, kit: Kit, kind: str) -> None:
+        # a public new note linking to the restricted "vault-layout" (a hub is linked as ``hub``)
+        options: dict[str, dict[str, Any]] = {
+            "body": {"body": "See [[vault-layout]].\n"},
+            "related": {"related": (NID("vault-layout"),)},
+            "hub": {"hub": NID("vault-layout")},
+        }
+        outcome = kit.validate(kit.submit_create(**options[kind]))
+        assert outcome.status is S.REJECTED
+        assert outcome.validation is not None
+        assert ViolationCode.LINK_TO_HIGHER_SENSITIVITY in {v.code for v in outcome.validation.errors}
+        for violation in outcome.validation.violations:
+            if violation.code is ViolationCode.LINK_TO_HIGHER_SENSITIVITY:
+                assert violation.message == "vault-layout may not be linked from this note"
+                assert "Vault layout" not in violation.message
+
+    @pytest.mark.parametrize("body", ["`[[vault-layout]]`", "[[vault-layout|the vault]]", "```\n[[vault-layout]]\n```"])
+    def test_alias_and_code_span_links_are_caught_for_proposals(self, kit: Kit, body: str) -> None:
+        outcome = kit.validate(kit.submit_create(body=body + "\n"))
+        assert outcome.validation is not None
+        assert ViolationCode.LINK_TO_HIGHER_SENSITIVITY in {v.code for v in outcome.validation.errors}
+
+    def test_superseded_by_a_higher_sensitivity_is_caught_for_deprecations(self, kit: Kit) -> None:
+        deprecate = SubmitProposalRequest(
+            kind=ProposalKind.DEPRECATE,
+            target=SSH,
+            base_hash=note_hash(kit),
+            content=ProposedContent(superseded_by=NID("vault-layout")),
+        )
+        outcome = kit.validate(kit.submit(deprecate).proposal_id)
+        assert outcome.validation is not None
+        assert ViolationCode.LINK_TO_HIGHER_SENSITIVITY in {v.code for v in outcome.validation.errors}
+
+    def test_a_new_note_that_stored_lower_notes_already_link_to_is_rejected(self, kit: Kit) -> None:
+        # "writer" (public) links to the id; an internal note created under that id would be leaked
+        kit.world.add(id=NID("writer"), hub=NID("infrastructure"), body="Plan: [[future-secret]].\n")
+        outcome = kit.validate(kit.submit_create(title="Future secret", sensitivity=INTERNAL))
+        assert outcome.validation is not None
+        messages = [v.message for v in outcome.validation.errors if v.code is ViolationCode.LINK_TO_HIGHER_SENSITIVITY]
+        assert messages == ["writer links to this note"]
+
+    @pytest.mark.parametrize("field", ["title", "summary"])
+    def test_wikilinks_in_title_or_summary_are_errors_for_proposals(self, kit: Kit, field: str) -> None:
+        value = "A title about [[vault-layout]]" if field == "title" else VALID_SUMMARY + " [[vault-layout]]"
+        outcome = kit.validate(kit.submit_create(**{field: value}))
+        assert outcome.validation is not None
+        assert ViolationCode.WIKILINK_IN_METADATA in {v.code for v in outcome.validation.errors}
+
+    def test_links_to_equal_or_lower_sensitivity_are_fine_for_proposals(self, kit: Kit) -> None:
+        # internal note -> internal and public targets
+        pid = kit.submit_create(sensitivity=INTERNAL, body="See [[server-ssh-access]] and [[core-rules]].\n")
+        outcome = kit.validate(pid)
+        assert outcome.status is S.VALIDATED, outcome.validation
+
+    def test_an_update_that_adds_a_leaking_link_is_rejected(self, kit: Kit) -> None:
+        outcome = kit.validate(kit.submit_update(body="# SSH\n\nSee [[vault-layout]].\n"))
+        assert outcome.status is S.REJECTED
+        assert outcome.validation is not None
+        assert ViolationCode.LINK_TO_HIGHER_SENSITIVITY in outcome.validation.codes
+
     def test_core_budget_applies_with_the_proposed_note_substituted(self, kit: Kit) -> None:
         pid = kit.submit_create(type=CORE, priority=Priority.P0, hub=None, body=words(1600))
         outcome = kit.validate(pid)
@@ -823,6 +884,93 @@ class TestOwnerEditNote:
         result = self.edit(kit, replace(current, body="See [[not-written-yet]].\n"), note_hash(kit))
         assert result.revision is not None
         assert ViolationCode.BROKEN_LINK in {v.code for v in result.validation.warnings}
+
+    @pytest.mark.parametrize("kind", ["body", "related", "superseded_by", "hub"])
+    def test_links_to_a_higher_sensitivity_are_errors_for_the_owner_too(self, kit: Kit, kind: str) -> None:
+        current = kit.world.notes.get(SSH)  # internal; vault-layout is restricted
+        assert current is not None
+        options: dict[str, dict[str, Any]] = {
+            "body": {"body": "See [[vault-layout]].\n"},
+            "related": {"related": (NID("vault-layout"),)},
+            "superseded_by": {
+                "superseded_by": NID("vault-layout"),
+                "status": Status.SUPERSEDED,
+                "priority": Priority.P3,
+            },
+            "hub": {"hub": NID("vault-layout")},
+        }
+        commits = kit.commits
+        result = self.edit(kit, replace(current, **options[kind]), note_hash(kit))
+        assert result.revision is None
+        assert ViolationCode.LINK_TO_HIGHER_SENSITIVITY in {v.code for v in result.validation.errors}
+        assert ViolationCode.LINK_TO_HIGHER_SENSITIVITY not in {v.code for v in result.validation.warnings}
+        assert kit.commits == commits
+        messages = [
+            v.message for v in result.validation.violations if v.code is ViolationCode.LINK_TO_HIGHER_SENSITIVITY
+        ]
+        assert messages == ["vault-layout may not be linked from this note"]
+
+    @pytest.mark.parametrize("body", ["`[[vault-layout]]`", "[[vault-layout|the vault]]"])
+    def test_alias_and_code_span_links_are_errors_for_the_owner(self, kit: Kit, body: str) -> None:
+        current = kit.world.notes.get(SSH)
+        assert current is not None
+        result = self.edit(kit, replace(current, body=body + "\n"), note_hash(kit))
+        assert result.revision is None
+        assert ViolationCode.LINK_TO_HIGHER_SENSITIVITY in {v.code for v in result.validation.errors}
+
+    def test_raising_sensitivity_is_refused_while_lower_notes_link_to_the_note(self, kit: Kit) -> None:
+        # the write kit's data obeys the rule, so add a public note that links to the internal one
+        kit.world.add(id=NID("linker"), hub=NID("infrastructure"), body="See [[server-ssh-access]].\n")
+        current = kit.world.notes.get(SSH)  # internal
+        assert current is not None
+        commits = kit.commits
+        result = self.edit(kit, replace(current, sensitivity=RESTRICTED), note_hash(kit))
+        assert result.revision is None
+        assert "linker links to this note" in [v.message for v in result.validation.errors]
+        assert kit.commits == commits
+
+    def test_an_edit_that_does_not_raise_sensitivity_is_not_blocked_by_legacy_inbound_links(self, kit: Kit) -> None:
+        kit.world.add(id=NID("linker"), hub=NID("infrastructure"), body="See [[server-ssh-access]].\n")
+        current = kit.world.notes.get(SSH)  # internal, linked from the public "linker"
+        assert current is not None
+        unrelated = self.edit(kit, replace(current, body="# SSH\n\nEdited.\n"), note_hash(kit))
+        assert unrelated.revision is not None
+        again = kit.world.notes.get(SSH)
+        assert again is not None
+        # equal sensitivity and lowering are fine too
+        assert self.edit(kit, replace(again, sensitivity=PUBLIC), note_hash(kit)).revision is not None
+
+    def test_creating_a_note_that_lower_notes_link_to_is_refused_for_the_owner(self, kit: Kit) -> None:
+        kit.world.add(id=NID("linker"), hub=NID("infrastructure"), body="See [[not-yet]].\n")
+        current = kit.world.notes.get(SSH)
+        assert current is not None
+        new = replace(current, id=NID("not-yet"), related=(), sensitivity=INTERNAL)
+        result = self.edit(kit, new, None)
+        assert result.revision is None
+        assert [v.message for v in result.validation.errors] == ["linker links to this note"]
+
+    def test_raising_a_hubs_sensitivity_is_refused_while_members_point_at_it(self, kit: Kit) -> None:
+        hub = kit.world.notes.get(NID("infrastructure"))  # public hub with public/internal members
+        assert hub is not None
+        result = self.edit(kit, replace(hub, sensitivity=RESTRICTED), note_hash(kit, NID("infrastructure")))
+        assert result.revision is None
+        assert ViolationCode.LINK_TO_HIGHER_SENSITIVITY in {v.code for v in result.validation.errors}
+
+    @pytest.mark.parametrize("field", ["title", "summary"])
+    def test_wikilinks_in_title_or_summary_are_errors_for_the_owner(self, kit: Kit, field: str) -> None:
+        current = kit.world.notes.get(SSH)
+        assert current is not None
+        value = "About [[core-rules]]" if field == "title" else VALID_SUMMARY + " [[core-rules]]"
+        changes: dict[str, Any] = {field: value}
+        result = self.edit(kit, replace(current, **changes), note_hash(kit))
+        assert result.revision is None
+        assert ViolationCode.WIKILINK_IN_METADATA in {v.code for v in result.validation.errors}
+
+    def test_the_owner_may_link_to_equal_or_lower_sensitivity(self, kit: Kit) -> None:
+        current = kit.world.notes.get(SSH)
+        assert current is not None
+        result = self.edit(kit, replace(current, body="See [[core-rules]] and [[infrastructure]].\n"), note_hash(kit))
+        assert result.revision is not None
 
     def test_invalid_notes_are_not_written(self, kit: Kit) -> None:
         current = kit.world.notes.get(SSH)
