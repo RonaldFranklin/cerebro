@@ -4,6 +4,7 @@ import random
 import string
 import time
 from collections.abc import Callable
+from dataclasses import asdict
 
 import pytest
 
@@ -18,7 +19,7 @@ from cerebro.domain.report import (
     ValidationReport,
     ViolationCode,
 )
-from cerebro.domain.secrets import MAX_FINDINGS_PER_FIELD, scan_note, scan_text, shannon_entropy
+from cerebro.domain.secrets import MAX_FINDINGS_PER_FIELD, scan_note, scan_text, secret_message, shannon_entropy
 from cerebro.domain.validation import validate_note
 from tests.unit.domain.builders import VOCABULARY, make_note
 
@@ -214,11 +215,34 @@ def test_findings_never_contain_the_secret(secret: str) -> None:
     assert secret[4:] not in repr(report)
 
 
-def test_preview_is_at_most_a_few_characters_and_only_for_long_secrets() -> None:
-    (long_finding,) = scan_text(TOKENS["github classic"], field="body")
-    assert "starts with 'gh'" in long_finding.message
-    (short_finding,) = scan_text("password=" + "Ab1" + "defgh", field="body")
-    assert "starts with" not in short_finding.message
+def test_no_part_of_the_value_is_in_a_finding() -> None:
+    token = TOKENS["github classic"]
+    (finding,) = scan_text(token, field="body")
+    assert not hasattr(finding, "preview")
+    assert "starts with" not in finding.message
+    assert set(asdict(finding)) == {"code", "field", "message", "detector", "line"}
+
+
+def test_findings_carry_structured_detector_and_line_and_a_message_without_the_preview() -> None:
+    (finding,) = scan_text("ok\n" + TOKENS["github classic"], field="body")
+    assert finding.line == 2
+    assert finding.detector is not None
+    assert finding.message == secret_message(finding.detector, 2)
+
+
+def test_the_truncation_finding_has_a_line_but_no_detector() -> None:
+    text = "\n".join(TOKENS["github classic"] for _ in range(MAX_FINDINGS_PER_FIELD + 3))
+    last = scan_text(text, field="body")[-1]
+    assert last.detector is None
+    assert last.line == MAX_FINDINGS_PER_FIELD
+    assert last.message == secret_message(None, MAX_FINDINGS_PER_FIELD)
+
+
+def test_the_policy_keeps_detector_and_line_but_drops_the_preview() -> None:
+    (violation,) = PROPOSAL_POLICY.report(scan_text(TOKENS["github classic"], field="body")).violations
+    assert violation.detector is not None
+    assert violation.line == 1
+    assert not hasattr(violation, "preview")
 
 
 @pytest.mark.parametrize("policy", [PROPOSAL_POLICY, OWNER_EDIT_POLICY])

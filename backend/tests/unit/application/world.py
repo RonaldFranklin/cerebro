@@ -19,7 +19,7 @@ MESSAGE = CommitMessage(
     subject="Seed",
     proposal_id="proposal-0001",
     proposed_by="claude-code",
-    curated_by="null-curator",
+    curated_by="curator/null",
     approved_by="owner",
 )
 

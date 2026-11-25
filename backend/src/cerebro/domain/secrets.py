@@ -2,8 +2,8 @@
 
 Notes may say where a secret lives, never its value. ``scan_note`` looks at every text field of a note
 (title, summary, ids, ... and the body, fenced code blocks included) and returns one ``Finding`` per hit with the
-code ``SECRET_DETECTED``. Findings never contain the secret: only the kind of detector, the field, the line and
-a tiny redacted preview (see ``PREVIEW_CHARS``). The scanner is a heuristic, not a guarantee: see
+code ``SECRET_DETECTED``. Findings never contain any part of the secret: only the detector, the field and the line.
+The scanner is a heuristic, not a guarantee: see
 ``docs/domain-model.md`` section 6 for its known limits.
 """
 
@@ -30,9 +30,6 @@ ASSIGNMENT_MIN_LENGTH: Final = 8
 MAX_FINDINGS_PER_FIELD: Final = 20
 """Findings listed per field; past this one summary finding is added (keeps reports and scan time bounded)."""
 
-PREVIEW_MIN_LENGTH: Final = 16
-PREVIEW_CHARS: Final = 2
-"""A preview (first ``PREVIEW_CHARS`` characters) is shown only for secrets of at least ``PREVIEW_MIN_LENGTH``."""
 
 # (kind, pattern): the whole match is the secret.
 _TOKEN_DETECTORS: Final[tuple[tuple[str, re.Pattern[str]], ...]] = (
@@ -137,7 +134,8 @@ def scan_text(text: str, *, field: str) -> tuple[Finding, ...]:
                     Finding(
                         code=ViolationCode.SECRET_DETECTED,
                         field=field,
-                        message=f"more possible secrets after line {number - 1} were not listed",
+                        message=secret_message(None, number - 1),
+                        line=number - 1,
                     )
                 )
                 return tuple(findings)
@@ -145,7 +143,9 @@ def scan_text(text: str, *, field: str) -> tuple[Finding, ...]:
                 Finding(
                     code=ViolationCode.SECRET_DETECTED,
                     field=field,
-                    message=_message(hit.kind, number, line[hit.start : hit.end]),
+                    message=secret_message(hit.kind, number),
+                    detector=hit.kind,
+                    line=number,
                 )
             )
     return tuple(findings)
@@ -156,9 +156,16 @@ def normalize(text: str) -> str:
     return "".join(c for c in unicodedata.normalize("NFKC", text) if unicodedata.category(c) != "Cf")
 
 
-def _message(kind: str, line_number: int, secret: str) -> str:
-    preview = f", starts with {secret[:PREVIEW_CHARS]!r}" if len(secret) >= PREVIEW_MIN_LENGTH else ""
-    return f"possible {kind} on line {line_number}{preview}; notes must say where a secret lives, never its value"
+def secret_message(detector: str | None, line: int | None) -> str:
+    """The human message of a ``SECRET_DETECTED`` finding, built from structured fields only (never a value).
+
+    ``detector=None`` is the "list truncated" finding: more secrets exist after ``line``.
+    """
+    if detector is None:
+        after = "" if line is None else f" after line {line}"
+        return f"more possible secrets{after} were not listed"
+    where = "" if line is None else f" on line {line}"
+    return f"possible {detector}{where}; notes must say where a secret lives, never its value"
 
 
 def _scan_line(line: str) -> Iterator[_Hit]:

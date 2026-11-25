@@ -348,7 +348,7 @@ class TestCurateProposal:
         assert outcome.decision.kind is DecisionKind.NEEDS_OWNER
         assert outcome.decision.target == NEW_ID  # suggested id, derived from the title
         stored = kit.stored(pid)
-        assert (stored.curated_by, stored.decision) == ("null-curator", outcome.decision)
+        assert (stored.curated_by, stored.decision) == ("curator/null", outcome.decision)
 
     def test_null_curator_suggests_the_proposal_target_for_updates(self, kit: Kit) -> None:
         pid = kit.submit_update()
@@ -356,7 +356,7 @@ class TestCurateProposal:
         assert kit.curate(pid).decision == Decision.needs_owner(
             "no curator is configured: the owner decides", target=SSH
         )
-        assert NullCurator().name == "null-curator"
+        assert NullCurator().name == "curator/null"
 
     def test_a_scripted_curator_decision_is_stored(self, kit: Kit) -> None:
         kit.curator = FakeCurator(Decision.create(NEW_ID, "new topic"), name="curator/test")
@@ -365,6 +365,15 @@ class TestCurateProposal:
         kit.curate(pid)
         assert kit.stored(pid).decision == Decision.create(NEW_ID, "new topic")
         assert kit.stored(pid).curated_by == "curator/test"
+
+    @pytest.mark.parametrize("name", ["owner", "claude-code@workstation", "null-curator"])
+    def test_a_curator_name_without_the_prefix_is_refused(self, kit: Kit, name: str) -> None:
+        kit.curator = FakeCurator(Decision.create(NEW_ID, "new topic"), name=name)
+        pid = kit.submit_create()
+        kit.validate(pid)
+        with pytest.raises(InvalidValueError):
+            kit.curate(pid)
+        assert kit.stored(pid).curated_by is None
 
     def test_the_curator_sees_the_target_and_similar_notes_within_the_ceiling(self, kit: Kit) -> None:
         curator = FakeCurator()
@@ -468,7 +477,7 @@ class TestReviewProposal:
         outcome = kit.review(pid)
         assert outcome.status is S.APPROVED
         stored = kit.stored(pid)
-        assert (stored.approved_by, stored.curated_by) == ("owner", "null-curator")
+        assert (stored.approved_by, stored.curated_by) == ("owner", "curator/null")
 
     def test_a_create_needs_the_decision_to_name_the_note(self, kit: Kit) -> None:
         pid = self.curated(kit, kit.submit_create())
@@ -579,7 +588,7 @@ class TestApplyProposal:
         assert (revision, ids) == (result.revision, (NEW_ID,))
         assert message.render() == (
             "Add note: docker-conventions\n\n"
-            "Proposed-by: claude-code\nCurated-by: null-curator\nApproved-by: owner\n"
+            "Proposed-by: claude-code\nCurated-by: curator/null\nApproved-by: owner\n"
             f"Proposal-Id: {pid}"
         )
         assert kit.stored(pid).status is S.APPLIED

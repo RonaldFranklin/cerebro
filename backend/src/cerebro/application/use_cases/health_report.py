@@ -18,6 +18,7 @@ from cerebro.domain.enums import Priority, Sensitivity
 from cerebro.domain.note import Note, NoteId
 from cerebro.domain.note_ref import NoteRef
 from cerebro.domain.report import OWNER_EDIT_POLICY, Finding, Severity, ViolationCode
+from cerebro.domain.secrets import secret_message
 from cerebro.domain.validation import validate_note
 from cerebro.domain.vocabulary import Vocabulary
 
@@ -37,8 +38,9 @@ class HealthReport:
     orphaned proposals, and compares both indexes with the repository (a stale index is an error: run
     ``RebuildIndex``).
 
-    Secrets in existing notes are reported as ``secret_detected`` with the field and line only: the detector's
-    short preview is removed, so the report never carries any part of a secret.
+    Secrets in existing notes are reported as ``secret_detected`` with the field, detector and line only,
+    described from the findings' structured fields (the scanner's message text is never used), so the
+    report never carries any part of a secret.
     """
 
     def __init__(
@@ -108,7 +110,7 @@ class HealthReport:
                     code=v.code,
                     severity=v.severity,
                     field=v.field,
-                    message=_safe_message(v.code, v.message),
+                    message=_message(v.code, v.message, v.detector, v.line),
                 )
                 for v in report.violations
             )
@@ -178,12 +180,13 @@ def _finding_issue(subject: str, finding: Finding) -> HealthIssue:
         code=finding.code,
         severity=severity,
         field=finding.field,
-        message=_safe_message(finding.code, finding.message),
+        message=_message(finding.code, finding.message, finding.detector, finding.line),
     )
 
 
-def _safe_message(code: ViolationCode, message: str) -> str:
-    """Secret findings lose the scanner's preview (its first characters of the value)."""
+def _message(code: ViolationCode, message: str, detector: str | None, line: int | None) -> str:
+    """Secret findings are described from their structured fields (detector, line), never from the scanner's
+    ``message``: whatever that text says, no part of a value can reach the report."""
     if code is ViolationCode.SECRET_DETECTED:
-        return message.partition(", starts with ")[0].partition("; notes must")[0]
+        return secret_message(detector, line)
     return message

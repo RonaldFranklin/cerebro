@@ -7,7 +7,7 @@ from typing import Any, cast
 import pytest
 
 from cerebro.domain.access import AccessCeiling, Agent, Scope
-from cerebro.domain.agent_token import AgentToken, TokenNotValidError
+from cerebro.domain.agent_token import CLOCK_SKEW_TOLERANCE, AgentToken, TokenNotValidError
 from cerebro.domain.enums import Sensitivity
 from cerebro.domain.errors import DomainError, InvalidValueError
 from cerebro.domain.token_hash import TokenHash
@@ -238,3 +238,20 @@ class TestContextFromToken:
     def test_listener_is_required(self) -> None:
         with pytest.raises(TypeError):
             make_token().to_context(now=T0)  # type: ignore[call-arg]
+
+
+class TestCreatedInTheFuture:
+    def test_clock_skew_tolerance_is_five_minutes(self) -> None:
+        assert timedelta(minutes=5) == CLOCK_SKEW_TOLERANCE
+
+    def test_boundary(self) -> None:
+        token = make_token(created_at=T0 + CLOCK_SKEW_TOLERANCE)
+        assert token.is_valid(T0) is True  # exactly +5 min ahead of the verifier
+        late = make_token(created_at=T0 + CLOCK_SKEW_TOLERANCE + timedelta(seconds=1))
+        assert late.is_valid(T0) is False
+        assert late.is_valid(T0 + timedelta(seconds=1)) is True
+
+    def test_to_context_refuses_it(self) -> None:
+        token = make_token(created_at=T0 + timedelta(hours=1))
+        with pytest.raises(TokenNotValidError):
+            token.to_context(AccessCeiling(INT), T0)

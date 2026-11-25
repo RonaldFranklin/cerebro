@@ -457,3 +457,17 @@ def test_content_summary_and_hub_suggestions() -> None:
 def test_transitions_never_bump_the_revision() -> None:
     p = replace(at(S.RECEIVED), revision=7)
     assert p.mark_validated(ValidationReport(), T1).revision == 7
+
+
+@pytest.mark.parametrize("curated_by", ["owner", "null-curator", "codex@workstation", "curator/"])
+def test_a_proposal_built_directly_rejects_a_non_curator_curated_by(curated_by: str) -> None:
+    with pytest.raises(InvalidValueError, match="curated_by"):
+        make_proposal(curated_by=curated_by)
+
+
+@pytest.mark.parametrize("approved_by", ["curator/x", "someone", "owner@host"])
+def test_only_the_owner_can_be_the_approver(approved_by: str) -> None:
+    with pytest.raises(InvalidValueError, match="approved_by"):
+        make_proposal(approved_by=approved_by)
+    with pytest.raises(InvalidValueError, match="approved_by"):
+        at(S.CURATED).approve(approved_by, T1)
