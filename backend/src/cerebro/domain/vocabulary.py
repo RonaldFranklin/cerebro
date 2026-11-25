@@ -22,7 +22,7 @@ class Area:
 
 @dataclass(frozen=True, slots=True, order=True)
 class NoteType:
-    """A note type, e.g. ``runbook``. Allowed values are listed in ``schema/types.yaml``."""
+    """A note type, e.g. ``runbook``. Allowed values are the built-in types plus those in ``schema/types.yaml``."""
 
     value: str
 

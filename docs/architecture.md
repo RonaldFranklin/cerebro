@@ -189,8 +189,8 @@ Full policy in [ADR-0013](adr/0013-stack-and-dependency-policy.md). Summary:
 | Quality | pytest, ruff, mypy (strict), import-linter | custom `stdlib_only` contract type in `backend/devtools/` |
 | Web | Node Active LTS (exact version chosen in Phase 5), pnpm, React, TypeScript, Vite, TanStack Query, Sigma.js, graphology, CodeMirror 6 | |
 
-All versions are pinned exactly in lockfiles. Exact versions are chosen after checking the latest stable
-releases and recorded here once the lockfile is generated, so this table matches the lock.
+All versions are pinned exactly in lockfiles. Exact versions are the newest stable releases published at least
+7 days earlier ([ADR-0013](adr/0013-stack-and-dependency-policy.md)), and recorded here once the lockfile is generated, so this table matches the lock.
 
 ### Pinned backend versions (Phase 0)
 

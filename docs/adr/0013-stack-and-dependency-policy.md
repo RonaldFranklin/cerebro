@@ -2,6 +2,7 @@
 
 - **Status:** accepted
 - **Date:** 2026-11-24
+- **Amended:** 2026-11-25 (release-age rule)
 
 ## Context
 

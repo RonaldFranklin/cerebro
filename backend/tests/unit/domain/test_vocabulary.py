@@ -71,3 +71,12 @@ def test_area_and_type_sort_by_value() -> None:
 
 def test_empty_vocabulary_of_areas_has_no_area() -> None:
     assert not Vocabulary(areas=frozenset(), types=INITIAL_USER_NOTE_TYPES).has_area(Area("infrastructure"))
+
+
+def test_vocabularies_differing_only_in_declared_builtins_are_equal() -> None:
+    areas = frozenset({Area("infrastructure")})
+    implicit = Vocabulary(areas=areas, types=frozenset({NoteType("runbook")}))
+    explicit = Vocabulary(areas=areas, types=frozenset({NoteType("runbook")}) | BUILTIN_NOTE_TYPES)
+
+    assert implicit == explicit
+    assert hash(implicit) == hash(explicit)
