@@ -24,7 +24,7 @@ Inbox, which are validated, curated and approved before becoming notes.
 ## 3. Current status
 
 - Phase 0 (bootstrap) is **done**: `backend/` skeleton with uv (Python 3.14), pytest, ruff, mypy `--strict`,
-  import-linter (layers + custom `stdlib_only` contract with canary tests) and GitHub Actions CI.
+  import-linter (layers + custom `stdlib_only` contract type, with canary tests) and GitHub Actions CI.
 - Next: Phase 1 (domain and application core). There is no domain code yet.
 - Update this section and `docs/roadmap.md` whenever a phase starts or finishes.
 
