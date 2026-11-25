@@ -37,7 +37,7 @@ class ValidateProposal:
 
     Requires the owner principal: validation is a step of the owner-controlled pipeline (the composition root runs
     it right after a submission), never something a token can trigger. Reports are for the owner and the curator;
-    they never quote proposed content, and a rejected proposal that held a secret is stored scrubbed.
+    they never quote proposed content, and a proposal rejected by validation is always stored scrubbed.
     """
 
     def __init__(
@@ -66,12 +66,9 @@ class ValidateProposal:
         if proposal.kind is not ProposalKind.CREATE and proposal.target is not None:
             base = visible_note(self._notes, proposal.target, ctx, include_history=True)
         report = self._report(proposal, base, now.date(), ctx)
-        if report.ok:
-            result = proposal.mark_validated(report, now)
-        else:
-            rejected = proposal.reject_invalid(report, now)
-            has_secret = any(v.code is ViolationCode.SECRET_DETECTED for v in report.violations)
-            result = scrubbed(rejected) if has_secret else rejected
+        # A rejected payload is never kept: the report (codes, fields, lines) is the audit trail, and the raw
+        # text may hold a secret the scanner did not recognise.
+        result = proposal.mark_validated(report, now) if report.ok else scrubbed(proposal.reject_invalid(report, now))
         result = self._proposals.save(result, expected_revision=proposal.revision)
         return ProposalOutcome(proposal_id=result.id, status=result.status, validation=report)
 

@@ -70,6 +70,12 @@ class SearchIndexContract:
         index.upsert(note("z-note", priority=Priority.P0))
         assert ids(index.search(SearchQuery(ceiling=RESTRICTED))) == ["z-note", "a-note", "b-note"]
 
+    def test_text_without_searchable_words_matches_nothing_and_blank_text_lists(self, index: SearchIndex) -> None:
+        index.upsert(note("a-note", title="Plain"))
+        assert index.search(SearchQuery(ceiling=RESTRICTED, text="!!! ???")) == ()
+        assert index.search(SearchQuery(ceiling=RESTRICTED, text='"')) == ()
+        assert ids(index.search(SearchQuery(ceiling=RESTRICTED, text="   "))) == ["a-note"]
+
     def test_limit_applies_after_ordering(self, index: SearchIndex) -> None:
         for name in ("a-note", "b-note", "c-note"):
             index.upsert(note(name))
@@ -235,6 +241,12 @@ class GraphIndexContract:
         assert edge_set(two.edges) == {("b-note", "c-note", "related")}
         far = graph.neighbors(NoteId("c-note"), hops=3, ceiling=RESTRICTED)
         assert [n.id.value for n in far.nodes] == ["a-note", "b-note", "c-note", "hub-note"]
+
+    def test_neighbors_follows_long_chains_without_a_hop_cap(self, graph: GraphIndex) -> None:
+        graph.rebuild([ref(f"n{i:03d}-note", body=f"[[n{i + 1:03d}-note]]\n") for i in range(40)] + [ref("n040-note")])
+        reach = graph.neighbors(NoteId("n000-note"), hops=1000, ceiling=RESTRICTED)
+        assert len(reach.nodes) == 41
+        assert len(graph.neighbors(NoteId("n000-note"), hops=33, ceiling=RESTRICTED).nodes) == 34
 
     def test_neighbors_of_unknown_note_is_empty_and_hops_are_validated(self, graph: GraphIndex) -> None:
         self.seed(graph)
