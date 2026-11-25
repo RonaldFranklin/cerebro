@@ -1,6 +1,6 @@
 """Explicit settings of one Cérebro process. Parsing them from the environment or a file is Phase 3."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 
@@ -16,8 +16,9 @@ class Settings:
     """Fernet key file (``0600``, in a ``0700`` directory), see ADR-0008."""
     git_name: str
     git_email: str
-    git_remote: str | None = None
-    """Backup remote for ``VersionControl.push``; ``None`` disables publishing."""
+    git_remote: str | None = field(default=None, repr=False)
+    """Backup remote for ``VersionControl.push``; ``None`` disables publishing. Hidden from ``repr``: a remote
+    URL may carry credentials."""
     git_branch: str = "main"
     writer_lock_timeout: float = 30.0
     """Seconds a writer waits for the process-wide and cross-process writer lock."""

@@ -9,6 +9,7 @@ from pathlib import Path
 
 import pytest
 
+from cerebro.adapters.outbound.filesystem import WriterBusyError
 from cerebro.application.dto import (
     ApplyOutcome,
     ProposalIdRequest,
@@ -19,7 +20,7 @@ from cerebro.application.dto import (
 )
 from cerebro.application.index_state import index_is_stale
 from cerebro.application.ports import NoteChange, SearchQuery
-from cerebro.bootstrap.container import Container, Serialized, WriterLock, build_container
+from cerebro.bootstrap.container import Container, Serialized, StateDirectoryError, WriterLock, build_container
 from cerebro.domain.access import AccessCeiling, AccessContext, Agent, Scope
 from cerebro.domain.commit_message import CommitMessage
 from cerebro.domain.enums import Priority, Sensitivity
@@ -81,6 +82,19 @@ class TestWiring:
             "authenticate_token",
         ]:
             assert hasattr(getattr(use_cases, name), "execute")
+
+
+class TestStateDirectory:
+    def test_an_existing_directory_open_to_others_is_refused_and_not_chmoded(self, sample: SampleRepo) -> None:
+        sample.state_dir.mkdir()
+        sample.state_dir.chmod(0o755)
+        with pytest.raises(StateDirectoryError):
+            build_container(sample.settings)
+        assert mode(sample.state_dir) == 0o755
+
+    def test_the_remote_is_not_shown_in_the_settings_repr(self, sample: SampleRepo) -> None:
+        settings = replace(sample.settings, git_remote="https://user:pw@example.invalid/x.git")
+        assert "pw@" not in repr(settings)
 
 
 class TestStartupReindex:
@@ -166,6 +180,11 @@ class TestWriterLock:
             thread.join()
         assert peak == 1
 
+    def test_a_busy_thread_lock_times_out_with_the_busy_error(self, tmp_path: Path) -> None:
+        lock = WriterLock(tmp_path / "w.lock", timeout=0.1)
+        with lock.held(), pytest.raises(WriterBusyError), lock.held():
+            pass
+
     def test_a_failed_index_update_is_never_hidden_by_a_concurrent_apply(self, sample: SampleRepo) -> None:
         container = build_container(sample.settings)
         container.start()
@@ -188,6 +207,7 @@ class TestWriterLock:
         failing = approved(container, "Note that fails")
         healthy = approved(container, "Healthy note")
         errors: list[BaseException] = []
+        unexpected: list[BaseException] = []
 
         def run(proposal_id: str) -> None:
             try:
@@ -195,6 +215,8 @@ class TestWriterLock:
                 assert result.outcome is ApplyOutcome.APPLIED
             except RuntimeError as error:
                 errors.append(error)
+            except BaseException as error:
+                unexpected.append(error)
 
         threads = [threading.Thread(target=run, args=(failing,)), threading.Thread(target=run, args=(healthy,))]
         threads[0].start()
@@ -202,6 +224,7 @@ class TestWriterLock:
         threads[1].start()
         for thread in threads:
             thread.join()
+        assert unexpected == []
         assert len(errors) == 1
         assert index_is_stale(container.notes, container.search, container.graph)
         container.search.upsert = real_upsert  # type: ignore[method-assign]

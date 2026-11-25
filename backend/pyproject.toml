@@ -96,3 +96,9 @@ type = "forbidden"
 source_modules = ["cerebro.adapters.inbound"]
 forbidden_modules = ["cerebro.application.ports", "cerebro.adapters.outbound"]
 allow_indirect_imports = true
+
+[[tool.importlinter.contracts]]
+name = "Inbound adapters never import the composition root"
+type = "forbidden"
+source_modules = ["cerebro.adapters.inbound"]
+forbidden_modules = ["cerebro.bootstrap"]

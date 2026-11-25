@@ -1,7 +1,9 @@
 """Composition root: wires the outbound adapters into the use cases.
 
-Only this package may import adapters and use cases together. Inbound adapters receive ``Container.use_cases``
-(use cases and DTOs only) and nothing else.
+Only this package may import adapters and use cases together. Inbound adapters never receive the ``Container``:
+the entry point hands them individual use cases from ``Container.use_cases`` (use cases and DTOs only). The adapter
+attributes of ``Container`` (``notes``, ``search``, ...) exist for tests and operations. The container does not
+enforce a clean content working tree; the filesystem adapter refuses writes on a dirty one.
 
 **Writer lock (ADR-0002).** Reading ``head()``, ``apply`` and advancing the index revision must be serialised,
 otherwise a concurrent commit between them could make an index look fresh and hide a failed index update (see
@@ -11,15 +13,16 @@ process and one ``flock`` file in the state directory for other processes. The f
 lock inside ``.git/`` for the commit itself; the two never share a file, so they cannot deadlock.
 """
 
+import os
+import stat
 import threading
 from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Protocol
 
 from cerebro.adapters.outbound.crypto import FernetCipher, load_keys
-from cerebro.adapters.outbound.filesystem import FilesystemNoteRepository, load_vocabulary
+from cerebro.adapters.outbound.filesystem import FilesystemNoteRepository, WriterBusyError, load_vocabulary
 from cerebro.adapters.outbound.filesystem.lock import file_lock
 from cerebro.adapters.outbound.git import GitIdentity, GitRepo, GitVersionControl
 from cerebro.adapters.outbound.sqlite import (
@@ -70,6 +73,7 @@ from cerebro.application.ports import (
     TokenStore,
     VersionControl,
 )
+from cerebro.application.use_case import AnonymousUseCase, ContextUseCase
 from cerebro.application.use_cases import (
     ApplyProposal,
     AuthenticateToken,
@@ -98,12 +102,25 @@ STATE_FILE = "state.sqlite"
 WRITER_LOCK_FILE = "writer.lock"
 
 
-class ContextUseCase[Request, Result](Protocol):
-    def execute(self, request: Request, ctx: AccessContext) -> Result: ...
+def _prepare_state_dir(directory: Path) -> None:
+    """Create the state directory 0700; an existing one must be ours and closed to others (never chmod-ed)."""
+    try:
+        if not directory.exists():
+            directory.parent.mkdir(parents=True, exist_ok=True)
+            directory.mkdir(mode=0o700)
+        info = directory.stat()
+    except OSError as error:
+        raise StateDirectoryError(f"cannot prepare the state directory: {error.strerror}") from None
+    if not stat.S_ISDIR(info.st_mode):
+        raise StateDirectoryError("the state directory is not a directory")
+    if info.st_uid != os.geteuid():
+        raise StateDirectoryError("the state directory is not owned by the current user")
+    if stat.S_IMODE(info.st_mode) & 0o077:
+        raise StateDirectoryError("the state directory is more open than 0700 (it is never chmod-ed automatically)")
 
 
-class AnonymousUseCase[Request, Result](Protocol):
-    def execute(self, request: Request) -> Result: ...
+class StateDirectoryError(Exception):
+    """The state directory exists but is not safe to use."""
 
 
 class WriterLock:
@@ -116,8 +133,13 @@ class WriterLock:
 
     @contextmanager
     def held(self) -> Iterator[None]:
-        with self._thread_lock, file_lock(self._path, exclusive=True, timeout=self._timeout):
-            yield
+        if not self._thread_lock.acquire(timeout=self._timeout):
+            raise WriterBusyError("the writer lock is held by another writer")
+        try:
+            with file_lock(self._path, exclusive=True, timeout=self._timeout, label="writer lock"):
+                yield
+        finally:
+            self._thread_lock.release()
 
 
 class Serialized[Request, Result]:
@@ -164,7 +186,7 @@ class Container:
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
         state_dir = settings.state_dir
-        state_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
+        _prepare_state_dir(state_dir)
         self.writer_lock = WriterLock(state_dir / WRITER_LOCK_FILE, timeout=settings.writer_lock_timeout)
 
         self.clock: Clock = UtcClock()
