@@ -608,3 +608,12 @@ class TestIndexRevision:
         kit.world.search.set_revision("rev-other")
         RebuildIndex(kit.world.notes, kit.world.search, kit.world.graph).execute(RebuildIndexRequest(), owner())
         assert kit.run().ok
+
+
+def test_health_report_lists_the_revision_issue_and_the_per_note_differences_together() -> None:
+    kit = HealthKit()
+    kit.world.notes.apply([NoteChange(note=_unindexed())], MESSAGE)  # committed, never indexed
+    found = {(i.code, i.subject) for i in kit.run().issues}
+    assert (HealthCode.INDEX_STALE, "index") in found
+    assert (HealthCode.SEARCH_INDEX_STALE, "fresh") in found
+    assert (HealthCode.GRAPH_INDEX_STALE, "fresh") in found

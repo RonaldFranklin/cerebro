@@ -21,7 +21,7 @@ Status legend: ⬜ not started · 🟦 PR open · ✅ merged
 | 5 | `phase-2/sqlite-index` | `index.sqlite`: `SearchIndex` (FTS5, tokenizer `porter unicode61`) and `GraphIndex`; stores the revision it was built from; ceiling applied in SQL; user text never reaches `MATCH` unescaped | — | ⬜ |
 | 6 | `phase-2/git` | `VersionControl.push` and the git subprocess helper (no shell, fixed environment, hooks off, `--` before paths, message from stdin with trailers, timeouts) | — | ⬜ |
 | 7 | `phase-2/filesystem-repo` | `NoteRepository` over files: PyYAML with a restricted loader, `id` equals file name, atomic writes, all-or-nothing `apply` with one commit and trailers, single-writer lock, encrypted restricted notes, `head()`. Contract test reads the commit back | `PyYAML` | ⬜ |
-| 8 | `phase-2/rebuild-acceptance` | Minimal `bootstrap/container.py`; at start-up it compares the index revision with the repository `HEAD` and reindexes when they differ; fixture content repo with an encrypted note; end-to-end `RebuildIndex` test (acceptance) | — | ⬜ |
+| 8 | `phase-2/rebuild-acceptance` | Minimal `bootstrap/container.py`, which holds ONE writer lock around read-head/`apply`/advance-revision (serialized writers, required by the index revision protocol of PR 2); at start-up it compares the index revision with the repository `HEAD` and reindexes when they differ; fixture content repo with an encrypted note; end-to-end `RebuildIndex` test (acceptance) | — | ⬜ |
 | 9 | `docs/phase-2-close` | Roadmap, `AGENTS.md` section 3, this file, `docs/architecture.md` dependency table | — | ⬜ |
 
 Order: 1 and 2 first; 3 before 4 and 7; 5 and 6 are independent; 7 needs 3 and 6; 8 needs everything.

@@ -31,7 +31,9 @@ class GraphIndex(Protocol):
 
     def rebuild(self, refs: Iterable[NoteRef], *, revision: str | None = None) -> None:
         """Replace the whole graph atomically and record ``revision`` (the content revision the refs were read
-        at; ``None`` if unknown) as the one the graph was built from."""
+        at; ``None`` if unknown) as the one the graph was built from.
+        The revision is stored atomically with the rows: a reader never sees new rows with the old revision or
+        the reverse."""
         ...
 
     def built_from(self) -> str | None:

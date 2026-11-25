@@ -67,7 +67,9 @@ class SearchIndex(Protocol):
 
     def rebuild(self, notes: Iterable[Note], *, revision: str | None = None) -> None:
         """Replace the whole index with ``notes`` atomically and record ``revision`` (the content revision the
-        notes were read at; ``None`` if unknown) as the one the index was built from."""
+        notes were read at; ``None`` if unknown) as the one the index was built from.
+        The revision is stored atomically with the rows: a reader never sees new rows with the old revision or
+        the reverse."""
         ...
 
     def built_from(self) -> str | None:

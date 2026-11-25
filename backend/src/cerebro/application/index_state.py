@@ -16,7 +16,12 @@ def index_is_stale(notes: NoteRepository, search: SearchIndex, graph: GraphIndex
 def advance_revision(search: SearchIndex, graph: GraphIndex, *, previous: str | None, current: str) -> None:
     """After an incremental update that followed the commit ``current``, record it on each index that was fresh
     at ``previous`` (the head read just before the commit). An index that was already stale stays stale, so
-    one failed update is never hidden by a later successful one."""
+    one failed update is never hidden by a later successful one.
+
+    Requires a single writer: reading ``previous`` (``NoteRepository.head()``), ``apply`` and this call must run
+    under ONE writer lock held by the composition root (ADR-0002). Without it, a concurrent commit between them
+    can make an index look fresh at ``previous`` and be advanced past a commit it never reflected, hiding a
+    failed update."""
     if search.built_from() == previous:
         search.set_revision(current)
     if graph.built_from() == previous:
