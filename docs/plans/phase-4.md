@@ -13,8 +13,8 @@ Status legend: ⬜ not started · 🟦 PR open · ✅ merged.
 |---|---|---|---|---|
 | 1 | `docs/phase-4-plan` | Record scope, approval, start status and ADR-0018. | SQLite correction #48 | ✅ #49 |
 | 2 | `phase-4/token-quotas` | Carry authenticated token id alongside the audit name. Extend the admission port and fake, migrate existing SQLite state, configure limits and implement atomic admission. Contract-test boundary times, pending transitions, shared names, concurrency and restart. | 1 | ✅ #50 |
-| 3 | `phase-4/inbox-intake` | Compose submission, validation and NullCurator with transient staging. Persist only the admissible final state. Support owner amendment of create/update candidates, revision-checked review and apply. Test secret and other validation rejections at the first durable write, interrupted intake, provenance, stale edits and validation after edits. | 2 | 🟦 this PR |
-| 4 | `phase-4/mcp-propose` | Add the fifth ADR-0014 tool to HTTP and dev stdio. Implement strict wire parsing, bounded fields, scope-aware discovery and dispatch, and a safe agent response. Exercise both transports and denial paths. | 3 | ⬜ |
+| 3 | `phase-4/inbox-intake` | Compose submission, validation and NullCurator with transient staging. Persist only the admissible final state. Support owner amendment of create/update candidates, revision-checked review and apply. Test secret and other validation rejections at the first durable write, interrupted intake, provenance, stale edits and validation after edits. | 2 | ✅ #51 |
+| 4 | `phase-4/mcp-propose` | Add the fifth ADR-0014 tool to HTTP and dev stdio. Implement strict wire parsing, bounded fields, scope-aware discovery and dispatch, and a safe agent response. Exercise both transports and denial paths. | 3 | 🟦 this PR |
 | 5 | `test/phase-4-acceptance` | Drive the installed server with the official SDK and the owner's installed CLI, inspect the git commit, test a synthetic secret and both quotas. Extend the manual real-client runbook and record the phase report, roadmap and hand-off. | 4 | ⬜ |
 
 ## 2. Owner requirements and design decisions
@@ -67,3 +67,27 @@ enforcement. Record review decisions in its PR description.
   approve through the CLI. The owner runs the real clients. Keep all test content synthetic.
 - Update this plan, the roadmap and AGENTS.md with merged PRs, tested outcomes, coverage, decisions and the
   security checkpoint. Record acceptance measurements after the tests run.
+
+
+### MCP proposal fields (PR 4)
+
+Pass the proposal itself as the tool arguments. The closed top-level object accepts `kind`, `title`, `body`,
+`target`, `base_hash`, `suggested`, `rationale` and `source`. The kind selects the required fields per domain
+model §7. Under `suggested`, accept `area`, `type`, `priority`, `sensitivity`, `summary`, `hub`, `related`
+and `superseded_by`. Under `source`, accept only `session` and `context`. Optional fields may be omitted.
+Both transports validate the following UTF-8 budgets before authentication or admission.
+
+| Field | Limit |
+|---|---|
+| MCP envelope / proposal body | 64 KiB / 48 KiB |
+| Title / suggested summary | 480 / 1,200 bytes, allowing four bytes per domain character |
+| Rationale / session / context | 4,096 / 2,000 / 2,000 bytes |
+| Target, hub, superseded_by, each related id | 80 ASCII kebab-case bytes |
+| Related list / area and type slugs | 32 entries / 256 ASCII bytes each |
+| Base hash / kind, priority, sensitivity | 64 lowercase hexadecimal bytes / closed domain enums |
+
+The response exposes `proposal_id` and `valid`. Either quota returns the same fixed error, `Proposal limit reached.`
+For a token with both scopes, a full `cerebro_read` includes the canonical `base_hash` of exactly the visible
+body and editable fields. Hidden or missing references that yield the same projection produce the same hash.
+Apply compares the supplied digest to the actual stored note, so a filtered view can conflict at owner review
+or apply. Section reads and read-only credentials keep the Phase 3 projection.

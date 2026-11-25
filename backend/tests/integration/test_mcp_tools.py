@@ -10,7 +10,7 @@ import pytest
 from mcp import MCPError, types
 from mcp.client import Client
 
-from cerebro.adapters.inbound.mcp_tools import ReadTools, parse_tool
+from cerebro.adapters.inbound.mcp_tools import MCPTools, parse_tool
 from cerebro.application.dto import GetNeighborsRequest, SearchNotesRequest
 from cerebro.application.errors import AuthenticationFailed
 from cerebro.bootstrap.container import Container, build_container
@@ -30,19 +30,20 @@ def container(tmp_path: Path) -> Container:
     return app
 
 
-def tools_for(app: Container) -> ReadTools:
+def tools_for(app: Container) -> MCPTools:
     cases = app.use_cases
-    return ReadTools(
+    return MCPTools(
         get_overview=cases.get_overview,
         search_notes=cases.search_notes,
         read_note=cases.read_note,
         get_neighbors=cases.get_neighbors,
+        submit_proposal=cases.submit_proposal,
     )
 
 
 def test_discovery_and_projections(container: Container) -> None:
     tools = tools_for(container)
-    assert {t.name for t in tools.list_tools().tools} == {
+    assert {t.name for t in tools.list_tools(AGENT).tools} == {
         "cerebro_overview",
         "cerebro_search",
         "cerebro_read",
