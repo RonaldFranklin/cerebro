@@ -247,5 +247,6 @@ have been published at least 7 days earlier ([ADR-0013](adr/0013-stack-and-depen
 | ruff | 0.17.5 | lint + format |
 | mypy | 2.4.1 | type checking (`strict`) |
 | import-linter | 2.16 | import contracts (pulls grimp 3.20) |
+| cryptography | 50.0.2 (runtime, `==` pinned; pulls cffi 2.1.1, pycparser 3.12) | Fernet / `MultiFernet` behind the `Cipher` port; adapter only (`cerebro.adapters.outbound.crypto`) |
 
-Runtime dependencies: none yet. Frontend versions (Node, pnpm, packages) are added in Phase 5.
+Runtime dependencies: `cryptography` (Phase 2). Frontend versions (Node, pnpm, packages) are added in Phase 5.
