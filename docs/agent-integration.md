@@ -35,6 +35,15 @@ umask 077
 for key in ${!CEREBRO_@}; do unset "$key"; done
 bin="$(pwd)/.venv/bin"
 session="$(mktemp -d)"
+server_pid=""
+stop_server() {
+  if [[ -n "$server_pid" ]]; then
+    kill "$server_pid" 2>/dev/null || true
+    wait "$server_pid" 2>/dev/null || true
+    server_pid=""
+  fi
+}
+trap 'stop_server; cd /; rm -rf -- "$session"' EXIT
 mkdir "$session/client"
 config="$("$bin/python" -m devtools.mcp_sample "$session/instance")"
 claude_secret="$("$bin/cerebro" --config "$config" token issue claude-manual --ceiling internal)"
@@ -48,15 +57,6 @@ with socket.socket() as s:
     print(s.getsockname()[1])')"
 export CEREBRO_DEV_URL="http://127.0.0.1:$port/mcp"
 export NO_PROXY="127.0.0.1,localhost" no_proxy="127.0.0.1,localhost"
-server_pid=""
-stop_server() {
-  if [[ -n "$server_pid" ]]; then
-    kill "$server_pid" 2>/dev/null || true
-    wait "$server_pid" 2>/dev/null || true
-    server_pid=""
-  fi
-}
-trap 'stop_server' EXIT
 start_server() {
   "$bin/cerebro-mcp" --config "$config" --private-port "$port" &
   server_pid=$!
@@ -115,14 +115,14 @@ In each client, confirm four distinct read tools were called. Expect `core-rules
 ```bash
 stop_server
 offline='Call cerebro_overview. If unavailable, report “Cérebro offline” and continue by replying “Ready for another task.” Do not use other tools.'
-run_claude "$offline"
-run_codex "$offline"
+for client in run_claude run_codex; do
+  status=0
+  "$client" "$offline" || status=$?
+  printf '%s offline exit status: %s\n' "$client" "$status"
+done
 start_server
 run_claude "$check"
 run_codex "$check"
-stop_server
-cd /
-rm -rf -- "$session"
 exit
 ```
 
