@@ -24,6 +24,9 @@ AGENT_NAME_MAX_LENGTH: Final = 64
 # The owner is recorded as ``owner`` in commit trailers (``Approved-by: owner``); an agent must never be able to
 # appear under that name in the audit trail, with or without a host part.
 _RESERVED_AGENT_NAMES: Final = frozenset({"owner"})
+CURATOR_PREFIX: Final = "curator/"
+"""Every ``Curated-by`` identity starts with this prefix. Agent names cannot contain ``/``, so an agent can never
+appear in the audit trail as a curator (and ``owner`` is reserved), whatever name its token carries."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -100,6 +103,15 @@ def validate_agent_name(name: object) -> str:
         )
     if name.partition("@")[0] in _RESERVED_AGENT_NAMES:
         raise InvalidValueError("agent", "this name is reserved for the owner")
+    return name
+
+
+def validate_curator_name(name: object) -> str:
+    """Return ``name`` if it is a valid curator identity (``curator/null``), else raise."""
+    if not isinstance(name, str):
+        raise InvalidValueError("curated_by", f"expected a string, got {type(name).__name__}")
+    if not name.startswith(CURATOR_PREFIX) or len(name) == len(CURATOR_PREFIX):
+        raise InvalidValueError("curated_by", f"a curator name must start with '{CURATOR_PREFIX}'")
     return name
 
 

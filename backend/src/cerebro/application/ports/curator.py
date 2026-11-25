@@ -23,7 +23,9 @@ class CurationRequest:
 class Curator(Protocol):
     @property
     def name(self) -> str:
-        """Identity recorded as ``Curated-by`` (letters, digits and ``. _ / @ + -``, e.g. ``null-curator``)."""
+        """Identity recorded as ``Curated-by`` (letters, digits and ``. _ / @ + -``) and **must start
+        with ``curator/``** (e.g. ``curator/null``, ``curator/anthropic-triage``): agent names cannot contain ``/``, so
+        an agent can never appear as a curator in the audit trail."""
         ...
 
     def curate(self, request: CurationRequest) -> Decision:

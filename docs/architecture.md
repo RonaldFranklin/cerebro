@@ -101,7 +101,7 @@ backend/
 | `ProposalStore` | `add`, `get`, `save(proposal, expected_revision)` (compare-and-swap on `revision`, else `ProposalConflict`), `find(status, source_agent)`: proposals and decisions (audit) | SQLite |
 | `VersionControl` | `push` to the backup remote. Commits are made by `NoteRepository.apply`, so a write and its commit cannot diverge | git CLI |
 | `Cipher` | encrypt/decrypt restricted note payloads (used by the filesystem adapter only); `DecryptionError` on tampering | Fernet |
-| `Curator` | `name` (recorded as `Curated-by`) and `curate(CurationRequest) -> Decision` for a validated proposal | Anthropic, OpenAI, `NullCurator` |
+| `Curator` | `name` (recorded as `Curated-by`, must start with `curator/`, e.g. `curator/null`) and `curate(CurationRequest) -> Decision` for a validated proposal | Anthropic, OpenAI, `NullCurator` |
 | `TokenStore` | `add`, `get`, `find_by_hash` (also returns revoked tokens), `save`, `all`; tokens are stored hashed | SQLite |
 | `Clock`, `IdGenerator` | `now()`; proposal ids, token ids and token secrets, for deterministic tests | system / fixed fakes |
 

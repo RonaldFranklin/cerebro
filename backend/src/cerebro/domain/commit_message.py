@@ -9,7 +9,7 @@ import unicodedata
 from dataclasses import dataclass
 from typing import Final
 
-from cerebro.domain.access import validate_agent_name
+from cerebro.domain.access import validate_agent_name, validate_curator_name
 from cerebro.domain.errors import InvalidValueError
 
 MAX_SUBJECT_LENGTH = 100
@@ -46,13 +46,19 @@ class CommitMessage:
         _attribution(self.curated_by, "curated_by")
         _attribution(self.approved_by, "approved_by")
         if self.proposed_by == OWNER_APPROVER and self.curated_by == self.approved_by == OWNER_APPROVER:
-            return  # an owner edit: the only commit that may carry ``Proposed-by: owner``
+            return  # an owner edit: the only commit that may carry ``Proposed-by: owner`` / ``Curated-by: owner``
+        validate_curator_name(self.curated_by)  # ``curator/...`` only: no agent or owner look-alike
         validate_agent_name(self.proposed_by)  # keeps "owner" out of Proposed-by for every agent proposal
 
     @staticmethod
     def check_attribution(value: object, field: str) -> str:
-        """Validate a `curated_by` / `approved_by` value before it is stored anywhere."""
+        """Validate an `approved_by` value (or any attribution) before it is stored anywhere."""
         return _attribution(value, field)
+
+    @staticmethod
+    def check_curator(value: object) -> str:
+        """Validate a `curated_by` value of a proposal: a well-formed attribution that starts with ``curator/``."""
+        return validate_curator_name(_attribution(value, "curated_by"))
 
     @classmethod
     def for_owner_edit(cls, *, subject: str, edit_id: str) -> CommitMessage:

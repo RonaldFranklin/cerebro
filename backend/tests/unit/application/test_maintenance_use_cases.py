@@ -33,7 +33,8 @@ from cerebro.application.use_cases import (
 from cerebro.domain.access import AccessCeiling, Scope
 from cerebro.domain.enums import Priority, Sensitivity, Status
 from cerebro.domain.errors import InvalidValueError
-from cerebro.domain.report import Severity, ViolationCode
+from cerebro.domain.report import Finding, Severity, ViolationCode
+from cerebro.domain.secrets import secret_message
 from cerebro.domain.vocabulary import CORE, HUB
 from tests.fakes.stores import InMemoryProposalStore, InMemoryTokenStore
 from tests.fakes.system import FixedClock, SequentialIdGenerator
@@ -284,6 +285,17 @@ class TestAuthenticateToken:
             assert str(error.value) == "authentication failed"
             assert error.value.__cause__ is None
 
+    def test_a_token_created_in_the_future_fails_like_an_unknown_one(self, tk: TokenKit) -> None:
+        issued = tk.issue()
+        issued_at = tk.clock.now()
+        tk.clock.set(issued_at - timedelta(minutes=5))  # verifier's clock is 5 min behind: tolerated
+        assert tk.authenticate(issued.secret).principal.name == "claude-code@workstation"
+        tk.clock.set(issued_at - timedelta(minutes=5, seconds=1))
+        with pytest.raises(AuthenticationFailed) as error:
+            tk.authenticate(issued.secret)
+        assert str(error.value) == "authentication failed"
+        assert error.value.__cause__ is None
+
     def test_the_secret_is_never_in_the_request_repr_or_the_error(self, tk: TokenKit) -> None:
         issued = tk.issue()
         request = AuthenticateTokenRequest(secret=issued.secret, listener=AccessCeiling(RES))
@@ -405,6 +417,27 @@ class TestHealthReport:
         assert SECRET[:2] not in " ".join(i.message for i in leaks)
         assert "starts with" not in text
         assert {i.field for i in leaks} >= {"body", "title"}
+
+    def test_the_report_ignores_the_message_text_and_preview_of_secret_findings(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        junk = Finding(
+            code=ViolationCode.SECRET_DETECTED,
+            field="body",
+            message=f"starts with {SECRET[:6]!r} whatever; notes must? {SECRET}",
+            detector="bearer token",
+            line=3,
+            preview=SECRET[:6],
+        )
+        monkeypatch.setattr("cerebro.domain.validation.scan_note", lambda note: (junk,))
+        kit = HealthKit()
+        kit.world.add(id=NID("any"), hub=NID("infrastructure"))
+        leaks = [i for i in kit.run().issues if i.code is ViolationCode.SECRET_DETECTED]
+        assert leaks
+        assert {(i.message, i.field) for i in leaks} == {(secret_message("bearer token", 3), "body")}
+        text = repr(kit.run())
+        assert SECRET[:6] not in text
+        assert "starts with" not in text
 
     def test_orphan_notes_and_overdue_reviews(self) -> None:
         kit = HealthKit()

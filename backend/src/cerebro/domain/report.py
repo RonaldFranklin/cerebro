@@ -6,6 +6,7 @@ Rules never raise and never decide severity: they return ``Finding``s (code, fie
 rule can therefore be an error for agent proposals and a warning for owner edits (e.g. broken links).
 """
 
+import dataclasses
 from collections.abc import Iterable
 from dataclasses import dataclass
 from enum import StrEnum
@@ -63,11 +64,20 @@ class ViolationCode(StrEnum):
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class Finding:
-    """A rule that does not hold, before a severity is assigned."""
+    """A rule that does not hold, before a severity is assigned.
+
+    ``message`` is for humans and may change freely: consumers that need facts read the structured fields. The
+    secret scanner fills ``detector`` (which detector matched, e.g. ``"bearer token"``) and ``line`` (1-based);
+    ``preview`` (the first characters of a long secret) is kept apart from ``message`` and is dropped by
+    ``SeverityPolicy.report``, so it never reaches a ``Violation``, a health report or an agent.
+    """
 
     code: ViolationCode
     field: str | None
     message: str
+    detector: str | None = None
+    line: int | None = None
+    preview: str | None = dataclasses.field(default=None, repr=False)
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -76,6 +86,8 @@ class Violation:
     field: str | None
     message: str
     severity: Severity
+    detector: str | None = None
+    line: int | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -120,7 +132,14 @@ class SeverityPolicy:
     def report(self, findings: Iterable[Finding]) -> ValidationReport:
         return ValidationReport(
             tuple(
-                Violation(code=f.code, field=f.field, message=f.message, severity=self.severity(f.code))
+                Violation(
+                    code=f.code,
+                    field=f.field,
+                    message=f.message,
+                    severity=self.severity(f.code),
+                    detector=f.detector,
+                    line=f.line,
+                )
                 for f in findings
             )
         )

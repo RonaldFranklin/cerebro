@@ -73,7 +73,7 @@ class InMemoryTokenStore:
 class FakeCurator:
     """Returns the scripted decision; by default it sends everything to the owner (what ``NullCurator`` will do)."""
 
-    def __init__(self, decision: Decision | None = None, name: str = "fake-curator") -> None:
+    def __init__(self, decision: Decision | None = None, name: str = "curator/fake") -> None:
         self._decision = decision or Decision.needs_owner("no curator configured")
         self._name = name
         self.requests: list[CurationRequest] = []

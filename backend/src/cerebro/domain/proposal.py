@@ -172,9 +172,10 @@ class Proposal:
             raise InvalidValueError("validation", "expected a ValidationReport")
         if self.decision is not None and not isinstance(self.decision, Decision):
             raise InvalidValueError("decision", "expected a Decision")
-        for name, value in (("curated_by", self.curated_by), ("approved_by", self.approved_by)):
-            if value is not None:
-                CommitMessage.check_attribution(value, name)
+        if self.curated_by is not None:
+            CommitMessage.check_curator(self.curated_by)
+        if self.approved_by is not None:
+            CommitMessage.check_attribution(self.approved_by, "approved_by")
         if not isinstance(self.revision, int) or isinstance(self.revision, bool) or self.revision < 0:
             raise InvalidValueError("revision", "expected a non-negative integer")
         if not isinstance(self.conflict, bool):
@@ -242,7 +243,7 @@ class Proposal:
         """validated -> curated, recording the curator's decision."""
         if not isinstance(decision, Decision):
             raise InvalidValueError("decision", "expected a Decision")
-        CommitMessage.check_attribution(curated_by, "curated_by")
+        CommitMessage.check_curator(curated_by)
         return self._move("curate", S.CURATED, now, decision=decision, curated_by=curated_by)
 
     def mark_needs_owner(self, now: datetime, *, conflict: bool = False) -> Self:

@@ -4,7 +4,7 @@ from cerebro.application.ports.curator import CurationRequest
 from cerebro.application.proposal_support import provisional_note_id
 from cerebro.domain.decision import Decision
 
-NULL_CURATOR_NAME = "null-curator"
+NULL_CURATOR_NAME = "curator/null"
 REASON = "no curator is configured: the owner decides"
 
 
