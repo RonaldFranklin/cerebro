@@ -410,7 +410,7 @@ class TestGetGraph:
 
     def test_nodes_carry_display_attributes_only(self, world: World) -> None:
         node = GetGraph(world.graph).execute(GetGraphRequest(), ctx()).nodes[0]
-        assert {f.name for f in fields(node)} == {"id", "title", "type", "priority", "status"}
+        assert {f.name for f in fields(node)} == {"id", "title", "summary", "type", "priority", "status"}
 
 
 class TestNoLeakAcrossUseCases:
