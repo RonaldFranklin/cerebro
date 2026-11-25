@@ -170,14 +170,16 @@ def _delete_files(path: Path) -> None:
         Path(f"{path}{suffix}").unlink(missing_ok=True)
 
 
-def _open(path: Path) -> sqlite3.Connection:
+@contextmanager
+def connect(path: Path) -> Iterator[sqlite3.Connection]:
     # Autocommit: transactions are explicit (see ``transaction``). One connection per operation, so the default
     # same-thread check is right. ``secure_delete`` zeroes freed pages so removed text does not linger in the file.
-    connection = sqlite3.connect(path, isolation_level=None, timeout=_BUSY_TIMEOUT_MS / 1000)
-    connection.execute(f"PRAGMA busy_timeout = {_BUSY_TIMEOUT_MS}")
-    connection.execute("PRAGMA secure_delete = ON")
-    connection.execute("PRAGMA synchronous = NORMAL")
-    return connection
+    with contextlib.closing(sqlite3.connect(path, isolation_level=None, timeout=_BUSY_TIMEOUT_MS / 1000)) as connection:
+        connection.execute(f"PRAGMA busy_timeout = {_BUSY_TIMEOUT_MS}")
+        connection.execute("PRAGMA secure_delete = ON")
+        connection.execute("PRAGMA synchronous = NORMAL")
+        yield connection
+
 
 
 def _enable_wal(connection: sqlite3.Connection) -> None:
@@ -201,8 +203,7 @@ def _has_content(connection: sqlite3.Connection) -> bool:
 
 
 def _initialise(path: Path) -> None:
-    connection = _open(path)
-    try:
+    with connect(path) as connection:
         # Claim an empty database first (in rollback-journal mode, so the marker is in the main file's header).
         with transaction(connection):
             claimed = connection.execute("PRAGMA application_id").fetchone()[0]
@@ -223,8 +224,6 @@ def _initialise(path: Path) -> None:
                 raise _NeedsRecreation
         if connection.execute("PRAGMA quick_check").fetchone()[0] != "ok":
             raise _NeedsRecreation
-    finally:
-        connection.close()
 
 
 def prepare(path: Path) -> None:
@@ -253,15 +252,6 @@ def recreate(path: Path) -> None:
     _delete_files(path)
     _create_private_file(path)
     _initialise(path)
-
-
-@contextmanager
-def connect(path: Path) -> Iterator[sqlite3.Connection]:
-    connection = _open(path)
-    try:
-        yield connection
-    finally:
-        connection.close()
 
 
 @contextmanager

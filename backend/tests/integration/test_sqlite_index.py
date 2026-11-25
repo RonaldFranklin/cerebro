@@ -3,6 +3,7 @@
 import sqlite3
 import stat
 from collections.abc import Iterator
+from contextlib import closing
 from pathlib import Path
 
 import pytest
@@ -52,7 +53,7 @@ def test_a_loose_existing_file_is_repaired(path: Path) -> None:
 
 def test_uses_wal(path: Path) -> None:
     SqliteSearchIndex(path)
-    with sqlite3.connect(path) as connection:
+    with closing(sqlite3.connect(path)) as connection:
         assert connection.execute("PRAGMA journal_mode").fetchone()[0] == "wal"
 
 
@@ -120,11 +121,25 @@ def test_graph_round_trips_the_note_ref(path: Path) -> None:
 
 def test_a_different_schema_version_is_recreated_empty(path: Path) -> None:
     SqliteSearchIndex(path).rebuild([note("a-note")], revision="rev-1")
-    with sqlite3.connect(path) as connection:
+    with closing(sqlite3.connect(path)) as connection:
         connection.execute(f"PRAGMA user_version = {_db.SCHEMA_VERSION + 1}")
     index = SqliteSearchIndex(path)
     assert index.built_from() is None
     assert index.search(SearchQuery(ceiling=RESTRICTED)) == ()
+
+
+def test_failed_connection_setup_closes_the_database(path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    path.parent.mkdir()
+    path.write_bytes(b"not a SQLite file")
+    connection = sqlite3.connect(path)
+    monkeypatch.setattr(sqlite3, "connect", lambda *args, **kwargs: connection)
+    try:
+        with pytest.raises(sqlite3.DatabaseError, match="not a database"), _db.connect(path):
+            pytest.fail("invalid database configured successfully")
+        with pytest.raises(sqlite3.ProgrammingError, match="closed database"):
+            connection.execute("SELECT 1")
+    finally:
+        connection.close()
 
 
 def test_missing_fts5_fails_clearly(path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

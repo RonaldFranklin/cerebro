@@ -499,16 +499,15 @@ def test_a_file_swapped_for_another_regular_file_is_refused(state_path: Path, ci
 
 
 def test_only_unique_violations_mean_already_exists() -> None:
-    conn = sqlite3.connect(":memory:")
-    conn.execute("CREATE TABLE t (a TEXT NOT NULL, b TEXT UNIQUE)")
-    with pytest.raises(sqlite3.IntegrityError) as not_null:
-        conn.execute("INSERT INTO t (a) VALUES (NULL)")
-    assert not is_unique_violation(not_null.value)
-    conn.execute("INSERT INTO t VALUES ('x', 'y')")
-    with pytest.raises(sqlite3.IntegrityError) as unique:
+    with closing(sqlite3.connect(":memory:")) as conn:
+        conn.execute("CREATE TABLE t (a TEXT NOT NULL, b TEXT UNIQUE)")
+        with pytest.raises(sqlite3.IntegrityError) as not_null:
+            conn.execute("INSERT INTO t (a) VALUES (NULL)")
+        assert not is_unique_violation(not_null.value)
         conn.execute("INSERT INTO t VALUES ('x', 'y')")
-    assert is_unique_violation(unique.value)
-    conn.close()
+        with pytest.raises(sqlite3.IntegrityError) as unique:
+            conn.execute("INSERT INTO t VALUES ('x', 'y')")
+        assert is_unique_violation(unique.value)
 
 
 def test_an_unknown_payload_version_is_corruption(state_path: Path, cipher: FernetCipher) -> None:

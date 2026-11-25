@@ -4,6 +4,7 @@ import os
 import sqlite3
 import stat
 import threading
+from contextlib import closing
 from pathlib import Path
 
 import pytest
@@ -131,7 +132,7 @@ def test_removed_text_does_not_linger_in_the_file(path: Path) -> None:
     index.upsert(note("gone-note", title=f"Title {secret}", summary=f"Sum {secret}", body=f"Body {secret}\n"))
     index.upsert(note("stay-note"))
     index.remove(NoteId("gone-note"))
-    with sqlite3.connect(path) as connection:
+    with closing(sqlite3.connect(path)) as connection:
         connection.execute("PRAGMA wal_checkpoint(TRUNCATE)")
     for candidate in (path, Path(f"{path}-wal")):
         if candidate.exists():
@@ -179,11 +180,10 @@ def test_a_non_sqlite_file_is_refused_and_left_untouched(path: Path) -> None:
 @pytest.mark.parametrize("user_version", [0, 3])
 def test_a_foreign_sqlite_database_is_refused_and_left_untouched(path: Path, user_version: int) -> None:
     path.parent.mkdir(parents=True)
-    with sqlite3.connect(path) as connection:
+    with closing(sqlite3.connect(path)) as connection, connection:
         connection.execute("CREATE TABLE precious (x TEXT)")
         connection.execute("INSERT INTO precious VALUES ('keep me')")
         connection.execute(f"PRAGMA user_version = {user_version}")
-    connection.close()
     path.chmod(0o644)
     before = path.read_bytes()
     with pytest.raises(IndexUnavailableError):
