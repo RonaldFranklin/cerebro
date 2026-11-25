@@ -6,16 +6,20 @@ note is read on purpose: they are never the ``Note`` entity, so a field added to
 
 from dataclasses import dataclass
 from datetime import date
+from enum import StrEnum
 from typing import Final
 
 from cerebro.application.ports.graph import GraphSlice
 from cerebro.application.ports.search import MAX_LIMIT, SearchHit
 from cerebro.domain.access import AccessCeiling, is_visible
 from cerebro.domain.content_hash import content_hash
+from cerebro.domain.decision import Decision
 from cerebro.domain.enums import Priority, Sensitivity, Status
 from cerebro.domain.errors import InvalidValueError
 from cerebro.domain.links import LinkKind
 from cerebro.domain.note import Note, NoteId
+from cerebro.domain.proposal import MAX_TEXT_LENGTH, ProposalKind, ProposalStatus, ProposedContent
+from cerebro.domain.report import ValidationReport
 from cerebro.domain.vocabulary import Area, NoteType
 
 MAX_HOPS: Final = 5
@@ -304,3 +308,141 @@ class GetGraphRequest:
 
     def __post_init__(self) -> None:
         _require_bool(self.include_history, "include_history")
+
+
+# --- write path: proposals ------------------------------------------------------------------------------------
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class SubmitProposalRequest:
+    """What an agent sends. There is deliberately **no agent / source field**: ``source.agent`` is the name of the
+    token, taken from the access context, so a payload cannot claim to come from someone else.
+    """
+
+    kind: ProposalKind
+    content: ProposedContent
+    target: NoteId | None = None
+    base_hash: str | None = None
+    source_session: str | None = None
+    source_context: str | None = None
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.kind, ProposalKind):
+            raise InvalidValueError("kind", "expected a ProposalKind")
+        if not isinstance(self.content, ProposedContent):
+            raise InvalidValueError("content", "expected ProposedContent")
+        if self.target is not None and not isinstance(self.target, NoteId):
+            raise InvalidValueError("target", "expected a NoteId")
+        for name, value in (
+            ("base_hash", self.base_hash),
+            ("source_session", self.source_session),
+            ("source_context", self.source_context),
+        ):
+            if value is not None and not isinstance(value, str):
+                raise InvalidValueError(name, "expected a string")
+        for name, value in (("source_session", self.source_session), ("source_context", self.source_context)):
+            if value is not None and len(value) > MAX_TEXT_LENGTH:
+                raise InvalidValueError(name, f"longer than {MAX_TEXT_LENGTH} characters")
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class ProposalOutcome:
+    """Where a proposal stands after a step of the write path. Never carries the proposed content."""
+
+    proposal_id: str
+    status: ProposalStatus
+    validation: ValidationReport | None = None
+    decision: Decision | None = None
+    conflict: bool = False
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class ProposalIdRequest:
+    """Request of the steps that act on a stored proposal: validate, curate and apply."""
+
+    proposal_id: str
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.proposal_id, str) or not self.proposal_id:
+            raise InvalidValueError("proposal_id", "expected a non-empty string")
+
+
+class ReviewAction(StrEnum):
+    APPROVE = "approve"
+    REJECT = "reject"
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class ReviewProposalRequest:
+    """The owner's verdict. ``override`` replaces the curator's decision first (e.g. to name the id of a note to
+    create when the curator was the ``NullCurator``). ``reason`` is required to reject.
+    """
+
+    proposal_id: str
+    action: ReviewAction
+    reason: str | None = None
+    override: Decision | None = None
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.proposal_id, str) or not self.proposal_id:
+            raise InvalidValueError("proposal_id", "expected a non-empty string")
+        if not isinstance(self.action, ReviewAction):
+            raise InvalidValueError("action", "expected a ReviewAction")
+        if self.reason is not None and not isinstance(self.reason, str):
+            raise InvalidValueError("reason", "expected a string")
+        if self.override is not None and not isinstance(self.override, Decision):
+            raise InvalidValueError("override", "expected a Decision")
+        if self.action is ReviewAction.REJECT and (self.reason is None or not self.reason.strip()):
+            raise InvalidValueError("reason", "required to reject")
+        if self.action is ReviewAction.REJECT and self.override is not None:
+            raise InvalidValueError("override", "not allowed when rejecting")
+
+
+class ApplyOutcome(StrEnum):
+    APPLIED = "applied"
+    ALREADY_APPLIED = "already_applied"
+    """A retry found the change already in the content repository; nothing was written."""
+    CONFLICT = "conflict"
+    """The target changed since ``base_hash``; the proposal went back to the owner, nothing was written."""
+    INVALID = "invalid"
+    """Re-validation right before writing found errors; the proposal went back to the owner, nothing was written."""
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class ApplyProposalResult:
+    proposal_id: str
+    status: ProposalStatus
+    outcome: ApplyOutcome
+    note_id: NoteId | None = None
+    revision: str | None = None
+    validation: ValidationReport | None = None
+
+
+# --- write path: owner edits ----------------------------------------------------------------------------------
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class OwnerEditNoteRequest:
+    """The new version of a note, in full. ``expected_hash`` is the content hash the owner loaded (see ``NoteView``);
+    ``None`` creates a note that must not exist yet. ``created`` and ``updated`` are ignored: the use case keeps the
+    stored ``created`` and sets ``updated`` to today.
+    """
+
+    note: Note
+    expected_hash: str | None = None
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.note, Note):
+            raise InvalidValueError("note", "expected a Note")
+        if self.expected_hash is not None and not isinstance(self.expected_hash, str):
+            raise InvalidValueError("expected_hash", "expected a string or None")
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class OwnerEditNoteResult:
+    """``revision`` is ``None`` when validation found errors: nothing was written and ``validation`` says why."""
+
+    note_id: NoteId
+    validation: ValidationReport
+    revision: str | None = None
+    content_hash: str | None = None

@@ -18,3 +18,9 @@ def visible_note(notes: NoteRepository, note_id: NoteId, ctx: AccessContext, *, 
     if note is None or not is_visible(note.sensitivity, note.status, ctx.ceiling, include_history=include_history):
         raise NoteNotFound(note_id)
     return note
+
+
+def require_owner(ctx: AccessContext, action: str) -> None:
+    """Raise ``PermissionDenied`` unless the principal is the owner (review, edit and the steps that follow it)."""
+    if not ctx.is_owner:
+        raise PermissionDenied(action)

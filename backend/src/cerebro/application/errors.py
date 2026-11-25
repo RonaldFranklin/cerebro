@@ -51,6 +51,17 @@ class PermissionDenied(ApplicationError):  # noqa: N818
         self.action = action
 
 
+class ProposalNotApplicable(ApplicationError):  # noqa: N818
+    """The proposal and its decision cannot be turned into a change (e.g. the decision targets another note).
+
+    The reason is one of a few fixed texts: it never quotes proposal content.
+    """
+
+    def __init__(self, reason: str) -> None:
+        super().__init__(f"proposal cannot be applied: {reason}")
+        self.reason = reason
+
+
 class DecryptionError(ApplicationError):
     """A payload could not be decrypted (wrong key or tampered data)."""
 
