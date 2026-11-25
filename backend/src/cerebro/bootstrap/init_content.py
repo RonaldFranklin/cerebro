@@ -51,6 +51,8 @@ def initialize_content(settings: Settings) -> None:
     try:
         if root.parent.resolve() != root.parent or root.is_symlink():
             raise InitializationError("content path must not traverse symlinks")
+        if root.is_relative_to(settings.key_file.resolve()):
+            raise InitializationError("the key file cannot be a content directory")
         if any(path.resolve().is_relative_to(root) for path in (settings.key_file, settings.state_dir)):
             raise InitializationError("keep secrets and state outside the content repository")
         if root.exists():

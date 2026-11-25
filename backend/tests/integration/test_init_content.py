@@ -135,3 +135,11 @@ def test_committed_schema_must_be_a_regular_file(tmp_path: Path) -> None:
     types.write_bytes(content)
     assert invoke("--config", str(config), "init-content").returncode != 0
     assert types.read_bytes() == content
+
+
+def test_key_path_cannot_be_created_as_content_parent(tmp_path: Path) -> None:
+    config = tmp_path / "settings.toml"
+    config.write_text(SAMPLE.replace('"content"', '"keys/fernet.key/content"'))
+    result = invoke("--config", str(config), "init-content")
+    assert result.returncode != 0
+    assert not (tmp_path / "keys").exists()
