@@ -282,8 +282,28 @@ def test_curated_with_non_approvable_decision(decision: Decision) -> None:
 
 
 def test_owner_approves_needs_owner_with_any_decision() -> None:
-    p = at(S.VALIDATED).mark_curated(Decision.needs_owner("sensitive"), "curator/m", T0).mark_needs_owner(T0)
+    p = at(S.VALIDATED).mark_curated(Decision.needs_owner("sensitive", NOTE), "curator/m", T0).mark_needs_owner(T0)
     assert p.approve("owner", T1).status is S.APPROVED
+
+
+def test_approve_needs_a_note_id_to_commit() -> None:
+    p = at(S.VALIDATED).mark_curated(Decision.needs_owner("sensitive"), "curator/m", T0).mark_needs_owner(T0)
+    with pytest.raises(InvalidTransition, match="no note id"):
+        p.approve("owner", T1)
+
+
+def test_agents_cannot_curate_or_approve_their_own_proposal() -> None:
+    with pytest.raises(InvalidValueError, match="curated_by"):
+        at(S.VALIDATED).mark_curated(Decision.create(NOTE), "codex@workstation", T0)
+    with pytest.raises(InvalidValueError, match="approved_by"):
+        at(S.CURATED).approve("codex@workstation", T1)
+
+
+def test_approved_status_needs_attribution_and_going_back_voids_approval() -> None:
+    with pytest.raises(InvalidValueError, match="status"):
+        make_proposal(status=S.APPROVED)
+    back = at(S.APPROVED).mark_needs_owner(T1, conflict=True)
+    assert back.approved_by is None
 
 
 def test_approve_validates_approver() -> None:
@@ -385,15 +405,13 @@ def test_commit_message_cannot_be_forged_through_content() -> None:
     assert rendered.count("Proposed-by:") == 1
 
 
-def test_commit_message_needs_a_note_id() -> None:
-    p = (
-        make_proposal()
-        .mark_validated(OK, T0)
-        .mark_curated(Decision.needs_owner("sensitive"), "curator/m", T0)
-        .mark_needs_owner(T0)
-        .approve("owner", T0)
-    )
+def test_commit_message_uses_the_decision_target_or_the_proposal_target() -> None:
+    p = at(S.APPROVED)
+    assert p.commit_message().subject == "Add note: server-ssh-access"
+    assert replace(p, decision=Decision.needs_owner("sensitive", NOTE)).commit_message().subject.endswith(NOTE.value)
+
+
+def test_commit_message_without_any_note_id_raises() -> None:
+    p = replace(at(S.APPROVED), decision=Decision.needs_owner("sensitive"))
     with pytest.raises(InvalidValueError, match="target"):
         p.commit_message()
-    suggested = replace(p, decision=Decision.needs_owner("sensitive", NOTE))
-    assert suggested.commit_message().subject == "Add note: server-ssh-access"

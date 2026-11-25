@@ -170,6 +170,14 @@ class Proposal:
                 CommitMessage.check_attribution(value, name)
         if not isinstance(self.conflict, bool):
             raise InvalidValueError("conflict", "expected a bool")
+        if self.curated_by is not None and self.curated_by == self.source_agent:
+            raise InvalidValueError("curated_by", "an agent cannot curate its own proposal")
+        if self.approved_by is not None and self.approved_by == self.source_agent:
+            raise InvalidValueError("approved_by", "an agent cannot approve its own proposal")
+        if self.status in (ProposalStatus.APPROVED, ProposalStatus.APPLIED) and (
+            self.curated_by is None or self.approved_by is None or self.decision is None
+        ):
+            raise InvalidValueError("status", f"{self.status.value} needs a decision, curated_by and approved_by")
         self._check_kind_rules()
 
     def _check_kind_rules(self) -> None:
@@ -232,7 +240,8 @@ class Proposal:
         """curated -> needs_owner, or approved -> needs_owner (``conflict=True``: the target changed on apply)."""
         if self.status is S.APPROVED and not conflict:
             raise InvalidTransition("send to the owner", self.status.value)
-        return self._move("send to the owner", S.NEEDS_OWNER, now, conflict=conflict or self.conflict)
+        # An approval is void once the proposal goes back to the owner.
+        return self._move("send to the owner", S.NEEDS_OWNER, now, conflict=conflict or self.conflict, approved_by=None)
 
     def approve(self, approved_by: str, now: datetime) -> Self:
         """curated | needs_owner -> approved.
@@ -248,6 +257,8 @@ class Proposal:
             raise InvalidTransition("approve", f"{self.status.value} without an approvable decision")
         if self.conflict:
             raise InvalidTransition("approve", "conflicted (rebase it first)")
+        if self.status in (S.CURATED, S.NEEDS_OWNER) and self._commit_target() is None:
+            raise InvalidTransition("approve", "no note id to commit (the decision names no target)")
         return self._move("approve", S.APPROVED, now, approved_by=approved_by)
 
     def rebase(self, new_base_hash: str, now: datetime) -> Self:
@@ -271,13 +282,18 @@ class Proposal:
         """approved -> applied."""
         return self._move("apply", S.APPLIED, now)
 
+    def _commit_target(self) -> NoteId | None:
+        if self.decision is not None and self.decision.target is not None:
+            return self.decision.target
+        return self.target
+
     # -- commit ------------------------------------------------------------------------------------------------
 
     def commit_message(self) -> CommitMessage:
         """The commit message for an approved proposal (subject built from the note id, never from free text)."""
         if self.status is not S.APPROVED or self.curated_by is None or self.approved_by is None:
             raise InvalidTransition("commit", self.status.value)
-        note_id = self.decision.target if self.decision is not None and self.decision.target else self.target
+        note_id = self._commit_target()
         if note_id is None:
             raise InvalidValueError("target", "no note id to name the commit after")
         verb = {

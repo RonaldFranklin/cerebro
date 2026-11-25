@@ -7,6 +7,7 @@
 serialized with ``json.dumps(..., ensure_ascii=False, separators=(",", ":"))`` and **no** key sorting: key order
 is the canonical order of ``note_to_raw`` (stable by construction). Dates are written as ISO ``YYYY-MM-DD``.
 Empty optional fields are omitted (as ``note_to_raw`` does), so ``hub=None`` and an absent hub hash the same.
+Lone surrogates are encoded as-is (``surrogatepass``) so hashing never raises.
 The body is hashed byte for byte (no newline or whitespace normalization): any change to any frontmatter field
 or to the body changes the hash. Changing this format invalidates every stored ``base_hash``.
 """
@@ -37,7 +38,7 @@ def _json_default(value: object) -> str:
 def content_hash(note: Note) -> str:
     document = {"frontmatter": note_to_raw(note), "body": note.body}
     text = json.dumps(document, ensure_ascii=False, separators=(",", ":"), default=_json_default)
-    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+    return hashlib.sha256(text.encode("utf-8", errors="surrogatepass")).hexdigest()
 
 
 def ensure_unchanged(expected_hash: str, current: Note) -> None:

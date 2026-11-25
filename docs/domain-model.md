@@ -304,10 +304,12 @@ Proposal-Id: <id>
   sensitivity) are suggestions.
 - `Decision` variants: `reject` (reason required), `merge_into` (target required), `create` (target = id of the
   note to create, required), `needs_owner` (reason required, suggested target optional). A `curated` proposal can
-  only be approved when its decision is `merge_into` or `create`; the owner can approve any `needs_owner` one.
+  only be approved when its decision is `merge_into` or `create`; the owner can approve any `needs_owner` one that names a note id to commit. An agent can never curate or
+  approve its own proposal, an `approved`/`applied` proposal always carries a decision, curator and approver, and
+  sending an approved proposal back to the owner (conflict) voids the approval.
 - **Content hash.** `content_hash(note)` = SHA-256 hex of the UTF-8 JSON `{"frontmatter": note_to_raw(note),
   "body": body}` (`ensure_ascii=False`, compact separators, canonical key order, ISO dates, empty optionals
-  omitted, body byte for byte). Optimistic concurrency: `ensure_unchanged(expected_hash, current_note)` raises
+  omitted, body byte for byte, lone surrogates encoded as-is). Optimistic concurrency: `ensure_unchanged(expected_hash, current_note)` raises
   `ContentConflict`. `ApplyProposal` on conflict calls `mark_needs_owner(conflict=True)`; the owner then
   `rebase`s (new `base_hash`) before approving again. `OwnerEditNote` uses the same check.
 - **Commit trailers** are validated, never rewritten: the subject is built from the note id (never from titles or

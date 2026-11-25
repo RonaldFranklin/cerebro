@@ -66,3 +66,7 @@ def test_ensure_unchanged() -> None:
         ensure_unchanged(content_hash(note), make_note(body="edited"))
     assert exc.value.expected == content_hash(note)
     assert exc.value.actual == content_hash(make_note(body="edited"))
+
+
+def test_lone_surrogates_hash_without_raising() -> None:
+    assert is_content_hash(content_hash(make_note(body="a\ud800")))
