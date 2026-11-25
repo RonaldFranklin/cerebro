@@ -1,6 +1,6 @@
 # Phase 3 plan — CLI and read-only MCP
 
-Approved by the owner on 2026-11-25 with the adjustments below. Delivered on 2026-11-25. The owner security checkpoint is pending.
+Approved by the owner on 2026-11-25 with the adjustments below. Delivered on 2026-11-25. The owner approved the phase. Its security checkpoint awaits only the owner's real-client tests.
 [Roadmap and acceptance criteria](../roadmap.md#-phase-3--cli-and-read-only-mcp)
 
 ## 1. Pull requests

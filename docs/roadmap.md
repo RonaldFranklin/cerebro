@@ -101,16 +101,19 @@ permitted fixtures. The owner runs the real-client checks and reviews the securi
 *Delivered 2026-11-25.* The SDK acceptance passed with both transports, a restart, a two-hop neighborhood
 and an internal token reading a sample repository with an encrypted restricted note. Delivery and decisions
 are in the [phase report](plans/phase-3.md#6-final-report). The [real-client checks](agent-integration.md)
-and the Phase 3 security checkpoint are with the owner.
+are the only remaining item in the approved Phase 3 security checkpoint.
 
-## ⬜ Phase 4 — Inbox
+## 🟨 Phase 4 — Inbox
 
-- `cerebro_propose` MCP tool.
+Authorized on 2026-11-25. [Delivery plan](plans/phase-4.md) · [Inbox admission](adr/0018-inbox-admission.md)
+
+- `cerebro_propose` MCP tool, authenticated identity and per-token hourly and pending limits.
 - Full deterministic validation pipeline (schema, budgets, secrets, duplicates).
 - Manual approval through CLI using `NullCurator` (owner writes/edits the final note).
 
 **Acceptance:** an agent proposal flows received → validated → approved → applied → git commit with trailers;
-a proposal containing a fake private key is blocked.
+a proposal containing a fake private key is blocked before durable payload storage, and each quota refuses excess
+submissions without writing. Exercise the installed service with an SDK client and document the two real-client checks.
 
 ## ⬜ Phase 5 — HTTP API and web UI
 
