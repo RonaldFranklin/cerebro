@@ -78,6 +78,7 @@ Inbox, which are validated, curated and approved before becoming notes.
   - adds a new dependency (runtime or dev);
   - has a review finding that was not resolved.
   In that case, leave the pull request open with CI green and report what the owner should review.
+- **Never merge while CI is pending or failing**: wait for `gh pr checks <n> --watch` to finish green first.
 - Do not start a step that depends on an unmerged pull request; branch from an up-to-date `main`.
 - Domain and application code is written test-first with in-memory fakes. Adapters get integration tests and
   shared **contract tests** that both the fake and the real adapter must pass.
