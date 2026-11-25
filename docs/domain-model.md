@@ -10,7 +10,7 @@ Folders are shallow on purpose: structure lives in metadata and hubs, not in the
 ```
 <content-repo>/
 ├── core/        # P0 notes — always loaded by agents, strict word budget
-├── hubs/        # P1 hub notes (maps of content), one per area or sub-area
+├── hubs/        # P1 hub notes: introduction only, one per area or sub-area (members computed, ADR-0015)
 ├── notes/       # all other notes (P2/P3), flat, file name = note id
 └── schema/
     ├── areas.yaml   # controlled list of areas (only the owner adds areas)
@@ -60,7 +60,7 @@ review_by: 2027-05-24            # optional; health report flags overdue notes
 | `sensitivity` | yes | public / internal / restricted |
 | `status` | yes | see section 5 |
 | `summary` | yes | 40–300 chars; must describe what the note answers |
-| `hub` | yes except for P0 and hubs | must reference an existing hub |
+| `hub` | yes except for P0 and hubs (optional for a hub: its parent hub) | must reference an existing hub |
 | `related` | no | existing ids |
 | `superseded_by` | iff `status: superseded` | existing id, not itself, no cycles |
 | `lang` | no | default `en` |
@@ -73,6 +73,17 @@ review_by: 2027-05-24            # optional; health report flags overdue notes
 - The domain extracts links from the body plus `hub`, `related` and `superseded_by` to build the graph.
 - A link to a missing id is a **broken link** (validation warning for owner edits, error for proposals).
 
+### Hubs
+
+See [ADR-0015](adr/0015-hub-membership-computed-at-read-time.md).
+
+- A hub note (`type: hub`, `priority: P1`, in `hubs/`) stores only its **introduction**; the 800-word budget
+  applies to it.
+- Members are the notes whose `hub` field points to the hub. The list is never stored in the file: it is built
+  at read time from the index, filtered by the effective ceiling, without `superseded`/`archived` notes unless
+  `include_history` is set, and ordered by priority, then title.
+- Member entries carry `id`, `title`, `type`, `priority`, `status`, `summary` — never the body.
+
 ### Initial note types (`schema/types.yaml`)
 
 `core`, `hub`, `concept`, `guide`, `runbook`, `reference`, `config`, `decision`, `project`.
@@ -84,7 +95,7 @@ See [ADR-0004](adr/0004-priority-levels-and-context-budget.md).
 | Level | Meaning | Served | Budget |
 |---|---|---|---|
 | P0 | Core: global rules and facts every agent must know | always, by `GetOverview` | **all P0 together ≤ 1,500 words** |
-| P1 | Hubs: area maps listing notes with one-line summaries | when an area is relevant | ≤ 800 words each |
+| P1 | Hubs: area introduction; member list computed at read time | when an area is relevant | introduction ≤ 800 words each |
 | P2 | Regular notes | on search / link | soft 1,500 words, hard 3,000 |
 | P3 | Reference, archive, raw material | only on explicit search | same as P2 |
 
