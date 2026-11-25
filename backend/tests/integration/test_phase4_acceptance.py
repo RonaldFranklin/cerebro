@@ -116,4 +116,7 @@ def test_proposal_admission_review_and_commit(tmp_path: Path) -> None:
 
     with serving(config, port):
         asyncio.run(run())
-    assert marker not in config.with_suffix(".log").read_text()
+    log = config.with_suffix(".log").read_text()
+    assert marker not in log
+    assert str(CREATE["body"]) not in log
+    assert issue.stdout.strip() not in log
