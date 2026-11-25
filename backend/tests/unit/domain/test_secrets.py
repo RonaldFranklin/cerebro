@@ -2,13 +2,23 @@
 
 import random
 import string
+import time
+from collections.abc import Callable
 
 import pytest
 
 from cerebro.domain.enums import Priority
+from cerebro.domain.frontmatter import parse_note
 from cerebro.domain.note import NoteId
-from cerebro.domain.report import OWNER_EDIT_POLICY, PROPOSAL_POLICY, Finding, Severity, ViolationCode
-from cerebro.domain.secrets import scan_note, scan_text, shannon_entropy
+from cerebro.domain.report import (
+    OWNER_EDIT_POLICY,
+    PROPOSAL_POLICY,
+    Finding,
+    Severity,
+    ValidationReport,
+    ViolationCode,
+)
+from cerebro.domain.secrets import MAX_FINDINGS_PER_FIELD, scan_note, scan_text, shannon_entropy
 from cerebro.domain.validation import validate_note
 from tests.unit.domain.builders import VOCABULARY, make_note
 
@@ -225,3 +235,71 @@ def test_secret_is_an_error_under_both_policies(policy: object) -> None:
 def test_validate_note_reports_secrets_together_with_other_problems() -> None:
     report = validate_note(make_note(priority=Priority.P0, body=TOKENS["aws"]), VOCABULARY, PROPOSAL_POLICY)
     assert {ViolationCode.SECRET_DETECTED, ViolationCode.PRIORITY_TYPE_MISMATCH} <= report.codes
+
+
+@pytest.mark.parametrize(
+    "disguise",
+    [
+        lambda s: s[:6] + "​" + s[6:],  # zero-width space
+        lambda s: s[:6] + "­" + s[6:],  # soft hyphen
+        lambda s: s[:6] + "⁠" + s[6:],  # word joiner
+        lambda s: "".join(chr(ord(c) + 0xFEE0) if "!" <= c <= "~" else c for c in s),  # fullwidth forms
+    ],
+    ids=["zero-width", "soft-hyphen", "word-joiner", "fullwidth"],
+)
+def test_invisible_and_lookalike_characters_do_not_hide_secrets(disguise: Callable[[str], str]) -> None:
+    for secret in (TOKENS["github classic"], TOKENS["aws"], "pass" + "​" + "word=" + "Tr0ub4dor" + "&3"):
+        assert scan_text(disguise(secret), field="body"), secret[:4]
+
+
+@pytest.mark.parametrize(
+    "line",
+    ["dbpassword=" + "Tr0ub4dor" + "&3", "MYSQL_ROOT_PASSWORD: " + "Tr0ub4dor" + "&3", "senha: " + "Tr0ub4dor" + "&3"],
+)
+def test_credential_keyword_variants_are_detected(line: str) -> None:
+    assert scan_text(line, field="body")
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "https://github.com/org/repo/commit/83dc8a7f1e2d3c4b5a69788796a5b4c3d2e1f001",
+        "https://github.com/org/repo/blob/83dc8a7f1e2d3c4b5a69788796a5b4c3d2e1f001/backend/src/main.py",
+        "secretary: Maria",
+    ],
+)
+def test_commit_urls_and_lookalike_words_are_not_flagged(text: str) -> None:
+    assert scan_text(text, field="body") == ()
+
+
+def test_findings_per_field_are_capped() -> None:
+    body = "\n".join(rand(40) for _ in range(100))
+    findings = scan_text(body, field="body")
+    assert len(findings) == MAX_FINDINGS_PER_FIELD + 1
+    assert "not listed" in findings[-1].message
+
+
+@pytest.mark.parametrize(
+    "line",
+    ["a." * 100_000, "a-" * 100_000, "eyJ-" * 50_000, "sk-" * 70_000, ("ey" + "J" + "a" * 8 + ".") * 20_000],
+    ids=["dotted", "dashed", "jwt-prefix", "sk-prefix", "jwt-like"],
+)
+def test_adversarial_long_lines_scan_in_linear_time(line: str) -> None:
+    start = time.perf_counter()
+    scan_text(line, field="body")
+    assert time.perf_counter() - start < 2.0  # quadratic patterns took tens of seconds at this size
+
+
+def test_parse_errors_never_echo_a_secret_value() -> None:
+    secret = TOKENS["github classic"]
+    raw = {"id": secret, "status": secret, "created": secret, secret: 1}
+    report = parse_note(raw, "body")
+    assert isinstance(report, ValidationReport)
+    assert secret not in repr(report)
+    assert secret[4:] not in repr(report)
+    assert {v.field for v in report.violations if v.code is ViolationCode.SECRET_DETECTED} == {
+        None,
+        "id",
+        "status",
+        "created",
+    }

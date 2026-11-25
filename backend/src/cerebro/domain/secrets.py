@@ -9,6 +9,7 @@ a tiny redacted preview (see ``PREVIEW_CHARS``). The scanner is a heuristic, not
 
 import math
 import re
+import unicodedata
 from collections import Counter
 from collections.abc import Iterator
 from dataclasses import dataclass
@@ -25,6 +26,9 @@ ENTROPY_THRESHOLD: Final = 4.3
 
 ASSIGNMENT_MIN_LENGTH: Final = 8
 """Shortest value of a ``password=``-style assignment that is considered a real secret."""
+
+MAX_FINDINGS_PER_FIELD: Final = 20
+"""Findings listed per field; past this one summary finding is added (keeps reports and scan time bounded)."""
 
 PREVIEW_MIN_LENGTH: Final = 16
 PREVIEW_CHARS: Final = 2
@@ -44,15 +48,16 @@ _TOKEN_DETECTORS: Final[tuple[tuple[str, re.Pattern[str]], ...]] = (
     ("OpenAI API key", re.compile(r"\bsk-(?:proj-)?[A-Za-z0-9_-]{32,}")),
     ("npm token", re.compile(r"\bnpm_[A-Za-z0-9]{36}\b")),
     ("SendGrid API key", re.compile(r"\bSG\.[A-Za-z0-9_-]{22}\.[A-Za-z0-9_-]{43}\b")),
-    ("JSON Web Token", re.compile(r"\beyJ[A-Za-z0-9_-]{8,}\.eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}")),
+    ("JSON Web Token", re.compile(r"(?<![A-Za-z0-9_-])eyJ[A-Za-z0-9_-]{8,}\.eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}")),
 )
 
 # group 1 is the secret.
 _BEARER: Final = re.compile(r"\bBearer\s+([A-Za-z0-9._~+/=-]{20,})")
-_URL_CREDENTIALS: Final = re.compile(r"\b[A-Za-z][A-Za-z0-9+.-]*://[^\s/:@]+:([^\s/@]{3,})@")
+# The scheme starts a run and is bounded, so a long ``a.a.a...`` line stays linear (no quadratic rescans).
+_URL_CREDENTIALS: Final = re.compile(r"(?<![A-Za-z0-9+.-])[A-Za-z][A-Za-z0-9+.-]{0,31}://[^\s/:@]+:([^\s/@]{3,})@")
 _ASSIGNMENT: Final = re.compile(
     r"""(?ix)
-    (?<![A-Za-z0-9])(?:password|passwd|pwd|passphrase|secret|(?:api|access|secret|private|auth|client)[_-]?(?:key|secret|token)
+    (?<![A-Za-z0-9])(?:[a-z0-9]*(?:password|passwd|passphrase)|pwd|senha|secret|(?:api|access|secret|private|auth|client)[_-]?(?:key|secret|token)
         |apikey|token)(?![A-Za-z0-9])
     ["']?\s*[:=]\s*
     (?:(?P<quote>["'])(?P<quoted>[^"'\n]{1,200}?)(?P=quote)|(?P<bare>[^\s"',;]+))
@@ -119,10 +124,23 @@ def scan_note(note: Note) -> tuple[Finding, ...]:
 
 
 def scan_text(text: str, *, field: str) -> tuple[Finding, ...]:
-    """Scan one text field line by line. Line numbers are 1-based."""
+    """Scan one text field line by line. Line numbers are 1-based.
+
+    The text is normalized first (NFKC, invisible format characters such as zero-width spaces and soft hyphens
+    removed), so look-alike or interleaved characters do not hide a secret.
+    """
     findings: list[Finding] = []
-    for number, line in enumerate(text.splitlines(), start=1):
+    for number, line in enumerate(normalize(text).splitlines(), start=1):
         for hit in _scan_line(line):
+            if len(findings) == MAX_FINDINGS_PER_FIELD:
+                findings.append(
+                    Finding(
+                        code=ViolationCode.SECRET_DETECTED,
+                        field=field,
+                        message=f"more possible secrets after line {number - 1} were not listed",
+                    )
+                )
+                return tuple(findings)
             findings.append(
                 Finding(
                     code=ViolationCode.SECRET_DETECTED,
@@ -131,6 +149,11 @@ def scan_text(text: str, *, field: str) -> tuple[Finding, ...]:
                 )
             )
     return tuple(findings)
+
+
+def normalize(text: str) -> str:
+    """NFKC-normalize ``text`` and drop format characters (Unicode category ``Cf``: zero-width, soft hyphen...)."""
+    return "".join(c for c in unicodedata.normalize("NFKC", text) if unicodedata.category(c) != "Cf")
 
 
 def _message(kind: str, line_number: int, secret: str) -> str:
@@ -197,9 +220,18 @@ def shannon_entropy(text: str) -> float:
     return -sum((n / total) * math.log2(n / total) for n in Counter(text).values())
 
 
+def _is_public_identifier(token: str) -> bool:
+    return _HEX_ONLY.fullmatch(token) is not None or _UUID.fullmatch(token) is not None
+
+
 def _is_high_entropy(token: str) -> bool:
-    if _HEX_ONLY.fullmatch(token) or _UUID.fullmatch(token):
+    if _is_public_identifier(token):
         return False  # commit hashes, digests and UUIDs are public identifiers, not secrets
+    if "/" in token:
+        # URL paths such as ``repo/commit/<sha>``: drop hex and UUID segments, judge what is left.
+        token = "/".join(s for s in token.split("/") if not (len(s) >= 7 and _is_public_identifier(s)))
+        if len(token) < ENTROPY_MIN_LENGTH:
+            return False
     has_digit = any(c.isdigit() for c in token)
     has_letter = any(c.isalpha() for c in token)
     return has_digit and has_letter and shannon_entropy(token) >= ENTROPY_THRESHOLD
