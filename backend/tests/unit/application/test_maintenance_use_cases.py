@@ -1,5 +1,5 @@
 import hashlib
-from dataclasses import replace
+from dataclasses import fields, replace
 from datetime import date, timedelta
 from typing import Any
 
@@ -11,6 +11,7 @@ from cerebro.application.dto import (
     HealthReportRequest,
     HealthReportResult,
     IssueAgentTokenRequest,
+    ListAgentTokensRequest,
     RebuildIndexRequest,
     ReviewAction,
     RevokeAgentTokenRequest,
@@ -28,6 +29,7 @@ from cerebro.application.use_cases import (
     AuthenticateToken,
     HealthReport,
     IssueAgentToken,
+    ListAgentTokens,
     RebuildIndex,
     RevokeAgentToken,
 )
@@ -120,6 +122,34 @@ class TokenKit:
 @pytest.fixture
 def tk() -> TokenKit:
     return TokenKit()
+
+
+class TestListAgentTokens:
+    def test_returns_only_owner_metadata(self, tk: TokenKit) -> None:
+        issued = tk.issue()
+        tk.revoke_uc.execute(RevokeAgentTokenRequest(token_id=issued.token_id), owner())
+        (row,) = ListAgentTokens(tk.store).execute(ListAgentTokensRequest(), owner())
+        assert {f.name for f in fields(row)} == {
+            "token_id",
+            "agent",
+            "scopes",
+            "ceiling",
+            "created_at",
+            "expires_at",
+            "revoked_at",
+        }
+        assert (row.token_id, row.agent, row.scopes, row.ceiling) == (
+            issued.token_id,
+            issued.agent,
+            issued.scopes,
+            issued.ceiling,
+        )
+        assert row.revoked_at == tk.clock.now()
+
+    def test_denies_an_agent_before_reading_credentials(self, tk: TokenKit, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(tk.store, "all", lambda: pytest.fail("agent read the store"))
+        with pytest.raises(PermissionDenied):
+            ListAgentTokens(tk.store).execute(ListAgentTokensRequest(), agent())
 
 
 class TestIssueAgentToken:

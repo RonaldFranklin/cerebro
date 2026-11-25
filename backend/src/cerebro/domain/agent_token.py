@@ -21,6 +21,12 @@ class TokenNotValidError(DomainError):
     """The token is expired, revoked or not yet valid and must not authenticate anything."""
 
 
+def validate_token_id(value: object) -> str:
+    if not isinstance(value, str) or _TOKEN_ID.fullmatch(value) is None:
+        raise InvalidValueError("id", "must be 1-64 characters of letters, digits, '_' or '-'")
+    return value
+
+
 def _require_aware(value: object, field_name: str) -> datetime:
     if not isinstance(value, datetime) or value.tzinfo is None or value.utcoffset() is None:
         raise InvalidValueError(field_name, "expected a timezone-aware datetime")
@@ -47,8 +53,7 @@ class AgentToken:
     revoked_at: datetime | None = None
 
     def __post_init__(self) -> None:
-        if not isinstance(self.id, str) or _TOKEN_ID.fullmatch(self.id) is None:
-            raise InvalidValueError("id", "must be 1-64 characters of letters, digits, '_' or '-'")
+        validate_token_id(self.id)
         validate_agent_name(self.agent)
         if not isinstance(self.ceiling, AccessCeiling):
             raise InvalidValueError("ceiling", "expected an AccessCeiling")

@@ -583,6 +583,24 @@ class IssuedToken:
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
+class ListAgentTokensRequest:
+    """Enumerate credentials for local owner administration."""
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class AgentTokenSummary:
+    """Metadata returned to the owner even for revoked or expired tokens."""
+
+    token_id: str
+    agent: str
+    ceiling: AccessCeiling
+    scopes: frozenset[Scope]
+    created_at: datetime
+    expires_at: datetime | None
+    revoked_at: datetime | None
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
 class RevokeAgentTokenRequest:
     token_id: str
 
