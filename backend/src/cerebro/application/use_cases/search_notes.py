@@ -3,7 +3,7 @@
 from cerebro.application.access import require_scope
 from cerebro.application.dto import NoteSummary, SearchNotesRequest, SearchResult, SearchResults
 from cerebro.application.ports.search import SearchIndex, SearchQuery
-from cerebro.domain.access import AccessContext, Scope
+from cerebro.domain.access import AccessContext, Scope, is_visible
 
 
 class SearchNotes:
@@ -22,5 +22,10 @@ class SearchNotes:
             include_history=request.include_history,
             limit=request.limit,
         )
-        hits = self._search.search(query)
+        # The index already filters; every hit is re-checked so a faulty adapter cannot leak a hidden note.
+        hits = (
+            h
+            for h in self._search.search(query)
+            if is_visible(h.sensitivity, h.status, ctx.ceiling, include_history=request.include_history)
+        )
         return SearchResults(results=tuple(SearchResult(note=NoteSummary.from_hit(h), score=h.score) for h in hits))

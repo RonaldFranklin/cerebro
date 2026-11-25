@@ -12,4 +12,5 @@ class GetGraph:
 
     def execute(self, request: GetGraphRequest, ctx: AccessContext) -> GraphView:
         require_scope(ctx, Scope.READ)
-        return GraphView.from_slice(self._graph.graph(ceiling=ctx.ceiling, include_history=request.include_history))
+        graph = self._graph.graph(ceiling=ctx.ceiling, include_history=request.include_history)
+        return GraphView.from_slice(graph, ceiling=ctx.ceiling, include_history=request.include_history)

@@ -10,6 +10,7 @@ from typing import Final
 
 from cerebro.application.ports.graph import GraphSlice
 from cerebro.application.ports.search import MAX_LIMIT, SearchHit
+from cerebro.domain.access import AccessCeiling, is_visible
 from cerebro.domain.content_hash import content_hash
 from cerebro.domain.enums import Priority, Sensitivity, Status
 from cerebro.domain.errors import InvalidValueError
@@ -102,9 +103,14 @@ class GraphView:
     center: NoteId | None = None
 
     @classmethod
-    def from_slice(cls, graph: GraphSlice, *, center: NoteId | None = None) -> GraphView:
+    def from_slice(
+        cls, graph: GraphSlice, *, ceiling: AccessCeiling, include_history: bool, center: NoteId | None = None
+    ) -> GraphView:
+        # Nodes are re-checked against the ceiling here too (defense in depth on top of the index).
         nodes = tuple(
-            GraphNode(id=n.id, title=n.title, type=n.type, priority=n.priority, status=n.status) for n in graph.nodes
+            GraphNode(id=n.id, title=n.title, type=n.type, priority=n.priority, status=n.status)
+            for n in graph.nodes
+            if is_visible(n.sensitivity, n.status, ceiling, include_history=include_history)
         )
         ids = {n.id for n in nodes}
         # An edge is only shown when both ends are nodes of the view (defense in depth on top of the index).
@@ -216,6 +222,8 @@ class NoteView:
 
     ``members`` is ``None`` for ordinary notes and, for a hub, the members the caller may see (ADR-0015).
     ``content_hash`` is of the whole stored note, whichever part of the body is returned.
+    ``hub``, ``related`` and ``superseded_by`` list only references whose target the caller may see; the others are
+    dropped (the body is served as written, so it is up to the curator not to link to restricted notes there).
     """
 
     id: NoteId
@@ -240,7 +248,15 @@ class NoteView:
 
     @classmethod
     def from_note(
-        cls, note: Note, *, body: str, section: str | None = None, members: tuple[HubMember, ...] | None = None
+        cls,
+        note: Note,
+        *,
+        body: str,
+        hub: NoteId | None,
+        related: tuple[NoteId, ...],
+        superseded_by: NoteId | None,
+        section: str | None = None,
+        members: tuple[HubMember, ...] | None = None,
     ) -> NoteView:
         return cls(
             id=note.id,
@@ -251,9 +267,9 @@ class NoteView:
             sensitivity=note.sensitivity,
             status=note.status,
             summary=note.summary,
-            hub=note.hub,
-            related=note.related,
-            superseded_by=note.superseded_by,
+            hub=hub,
+            related=related,
+            superseded_by=superseded_by,
             lang=note.lang,
             created=note.created,
             updated=note.updated,

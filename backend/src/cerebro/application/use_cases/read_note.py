@@ -7,7 +7,7 @@ from cerebro.application.ports.graph import GraphIndex
 from cerebro.application.ports.notes import NoteRepository
 from cerebro.domain.access import AccessContext, Scope, is_visible
 from cerebro.domain.links import LinkKind
-from cerebro.domain.note import Note
+from cerebro.domain.note import Note, NoteId
 from cerebro.domain.sections import extract_section
 
 
@@ -26,7 +26,26 @@ class ReadNote:
                 raise SectionNotFound(note.id, request.section)
             body = found
         members = self._members(note, ctx, request.include_history) if note.is_hub else None
-        return NoteView.from_note(note, body=body, section=request.section, members=members)
+        return NoteView.from_note(
+            note,
+            body=body,
+            section=request.section,
+            members=members,
+            hub=self._visible_id(note.hub, ctx, request.include_history),
+            related=tuple(r for r in note.related if self._visible_id(r, ctx, request.include_history) is not None),
+            superseded_by=self._visible_id(note.superseded_by, ctx, request.include_history),
+        )
+
+    def _visible_id(self, note_id: NoteId | None, ctx: AccessContext, include_history: bool) -> NoteId | None:
+        """A reference echoed from a visible note is kept only if its target is visible too (and exists)."""
+        if note_id is None:
+            return None
+        target = self._notes.get(note_id)
+        if target is None or not is_visible(
+            target.sensitivity, target.status, ctx.ceiling, include_history=include_history
+        ):
+            return None
+        return note_id
 
     def _members(self, hub: Note, ctx: AccessContext, include_history: bool) -> tuple[HubMember, ...]:
         """Notes whose ``hub`` is this hub, computed now from the index and filtered by the ceiling (ADR-0015)."""

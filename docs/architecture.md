@@ -123,7 +123,10 @@ and a hidden neighbors center all raise the same `NoteNotFound`; search results,
 the graph contain visible notes only and carry no totals, so nothing reveals a hidden note. `GetOverview` serves
 current P0 notes in id order within the 1,500-word core budget (`core_truncated` when some do not fit) plus the
 visible hubs and their areas. `ReadNote` accepts `id`, `id#Section` or `[[id#Section]]` (`SectionNotFound` for a
-visible note without that heading) and, for a hub, returns the member list built at read time (ADR-0015).
+visible note without that heading) and, for a hub, returns the member list built at read time (ADR-0015). The
+`hub`, `related` and `superseded_by` references of a note are dropped when their target is hidden or missing; hits
+and graph nodes from the indexes are re-checked against the ceiling (defense in depth). Wikilinks inside a body are
+served as written.
 
 **Write**
 - `SubmitProposal` — store an incoming proposal in the Inbox (agents only have this).

@@ -23,7 +23,11 @@ class GetOverview:
         hits = self._search.search(SearchQuery(ceiling=ctx.ceiling, types=frozenset({HUB}), limit=MAX_LIMIT))
         hubs = tuple(
             sorted(
-                (NoteSummary.from_hit(h) for h in hits if h.type == HUB),
+                (
+                    NoteSummary.from_hit(h)
+                    for h in hits
+                    if h.type == HUB and is_visible(h.sensitivity, h.status, ctx.ceiling)
+                ),
                 key=lambda s: (s.area, s.id),
             )
         )

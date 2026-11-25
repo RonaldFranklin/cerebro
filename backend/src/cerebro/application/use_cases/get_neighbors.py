@@ -19,4 +19,6 @@ class GetNeighbors:
         graph = self._graph.neighbors(
             request.note_id, hops=request.hops, ceiling=ctx.ceiling, include_history=request.include_history
         )
-        return GraphView.from_slice(graph, center=request.note_id)
+        return GraphView.from_slice(
+            graph, ceiling=ctx.ceiling, include_history=request.include_history, center=request.note_id
+        )

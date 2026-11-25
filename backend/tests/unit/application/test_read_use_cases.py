@@ -12,7 +12,7 @@ from cerebro.application.dto import (
 from cerebro.application.errors import NoteNotFound, PermissionDenied, SectionNotFound
 from cerebro.application.use_cases import GetGraph, GetNeighbors, GetOverview, ReadNote, SearchNotes
 from cerebro.domain.access import Scope
-from cerebro.domain.enums import Priority, Sensitivity
+from cerebro.domain.enums import Priority, Sensitivity, Status
 from cerebro.domain.errors import InvalidValueError
 from cerebro.domain.links import LinkKind
 from cerebro.domain.vocabulary import CORE, HUB, Area
@@ -434,3 +434,66 @@ class TestNoLeakAcrossUseCases:
             ]
 
         assert snapshot(world) == snapshot(without)
+
+
+class TestEchoedReferencesAndFaultyIndexes:
+    def test_references_to_hidden_notes_are_not_echoed(self, world: World) -> None:
+        # server-ssh-access (internal) is related to vault-layout (restricted)
+        low = ReadNote(world.notes, world.graph).execute(
+            ReadNoteRequest(note_id=NID("server-ssh-access")), ctx(INTERNAL)
+        )
+        assert low.related == ()
+        assert "vault" not in repr(low)
+        high = ReadNote(world.notes, world.graph).execute(
+            ReadNoteRequest(note_id=NID("server-ssh-access")), ctx(RESTRICTED)
+        )
+        assert high.related == (NID("vault-layout"),)
+        assert high.hub == NID("infrastructure")
+
+    def test_hidden_hub_and_superseded_by_are_not_echoed(self, world: World) -> None:
+        world.add(id=NID("secret-hub"), type=HUB, priority=Priority.P1, sensitivity=RESTRICTED)
+        world.add(id=NID("successor"), sensitivity=RESTRICTED)
+        world.add(id=NID("plain"), hub=NID("secret-hub"), related=(NID("missing-note"),))
+        world.add(id=NID("plain-old"), status=Status.SUPERSEDED, superseded_by=NID("successor"), priority=Priority.P3)
+        read = ReadNote(world.notes, world.graph)
+        plain = read.execute(ReadNoteRequest(note_id=NID("plain")), ctx(INTERNAL))
+        assert plain.hub is None
+        assert plain.related == ()
+        old = read.execute(ReadNoteRequest(note_id=NID("plain-old"), include_history=True), ctx(INTERNAL))
+        assert old.superseded_by is None
+
+    def test_search_rechecks_hits_from_a_faulty_index(self, world: World) -> None:
+        class Leaky:
+            def search(self, query: object) -> object:
+                return world.search.search(replace(query, ceiling=ctx(RESTRICTED).ceiling, include_history=True))  # type: ignore[type-var,arg-type]
+
+        results = SearchNotes(Leaky()).execute(SearchNotesRequest(), ctx(INTERNAL))  # type: ignore[arg-type]
+        assert {r.note.id.value for r in results.results} == {"core-rules", "infrastructure", "server-ssh-access"}
+
+    def test_overview_rechecks_hubs_from_a_faulty_index(self, world: World) -> None:
+        world.add(id=NID("secret-hub"), type=HUB, priority=Priority.P1, sensitivity=RESTRICTED)
+
+        class Leaky:
+            def search(self, query: object) -> object:
+                return world.search.search(replace(query, ceiling=ctx(RESTRICTED).ceiling))  # type: ignore[type-var,arg-type]
+
+        overview = GetOverview(world.notes, Leaky()).execute(GetOverviewRequest(), ctx(INTERNAL))  # type: ignore[arg-type]
+        assert [h.id.value for h in overview.hubs] == ["infrastructure"]
+
+    def test_graph_rechecks_nodes_from_a_faulty_index(self, world: World) -> None:
+        class Leaky:
+            def graph(self, *, ceiling: object, include_history: bool = False) -> object:
+                return world.graph.graph(ceiling=ctx(RESTRICTED).ceiling, include_history=True)
+
+            def neighbors(
+                self, note_id: object, *, hops: int, ceiling: object, include_history: bool = False
+            ) -> object:
+                return world.graph.neighbors(note_id, hops=hops, ceiling=ctx(RESTRICTED).ceiling, include_history=True)  # type: ignore[arg-type]
+
+        full = GetGraph(Leaky()).execute(GetGraphRequest(), ctx(INTERNAL))  # type: ignore[arg-type]
+        assert {n.id.value for n in full.nodes} == {"core-rules", "infrastructure", "server-ssh-access"}
+        near = GetNeighbors(world.notes, Leaky()).execute(  # type: ignore[arg-type]
+            GetNeighborsRequest(note_id=NID("infrastructure"), hops=3), ctx(INTERNAL)
+        )
+        assert "vault-layout" not in {n.id.value for n in near.nodes}
+        assert all(e.source.value != "vault-layout" and e.target.value != "vault-layout" for e in near.edges)
