@@ -23,7 +23,9 @@ Inbox, which are validated, curated and approved before becoming notes.
 
 ## 3. Current status
 
-- Phase 0 (bootstrap) has **not started**. There is no code yet.
+- Phase 0 (bootstrap) is **done**: `backend/` skeleton with uv (Python 3.14), pytest, ruff, mypy `--strict`,
+  import-linter (layers + custom `stdlib_only` contract with canary tests) and GitHub Actions CI.
+- Next: Phase 1 (domain and application core). There is no domain code yet.
 - Update this section and `docs/roadmap.md` whenever a phase starts or finishes.
 
 ## 4. Non-negotiable rules
@@ -67,22 +69,17 @@ Inbox, which are validated, curated and approved before becoming notes.
 
 ## 6. Commands
 
-To be filled during Phase 0. Expected shape:
-
 ```bash
 # backend (from backend/)
-uv sync
-uv run pytest
+uv sync                                         # create .venv from uv.lock
+uv run pytest                                   # tests (incl. import-contract canaries)
 uv run ruff check . && uv run ruff format --check .
-uv run mypy
-uv run lint-imports
-
-# web (from web/)
-pnpm install
-pnpm dev
-pnpm test
-pnpm build
+uv run mypy                                     # strict, covers src/, tests/, devtools/
+uv run lint-imports                             # import contracts
 ```
+
+CI (`.github/workflows/ci.yml`) runs the same checks with `uv sync --locked`, so a stale `uv.lock` fails the
+build. Web commands (`pnpm …`) are added in Phase 5.
 
 ## 7. Repository map (target)
 

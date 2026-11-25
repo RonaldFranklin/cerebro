@@ -7,7 +7,7 @@ Status legend: ⬜ not started · 🟨 in progress · ✅ done
 
 ---
 
-## ⬜ Phase 0 — Bootstrap
+## ✅ Phase 0 — Bootstrap
 
 Set up the repository so that quality rules are enforced from the first line of code.
 
@@ -21,6 +21,10 @@ Set up the repository so that quality rules are enforced from the first line of 
 
 **Acceptance:** a trivial test passes; CI is green; adding `import yaml` in `cerebro.domain` makes
 import-linter fail.
+
+*Done 2026-11-24.* The `import yaml` criterion is checked continuously by
+`backend/tests/architecture/test_import_contracts.py`. Built-in import-linter contracts cannot express
+"standard library only", so a small custom contract type lives in `backend/devtools/import_contracts.py`.
 
 ## ⬜ Phase 1 — Domain and application core
 
