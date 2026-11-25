@@ -202,6 +202,19 @@ effective_ceiling = min(listener_ceiling, token_ceiling)
   `owner` (with or without a host part) is reserved so an agent can never appear as the owner in trailers.
 - `restricted` notes are encrypted at rest in the content repository ([ADR-0008](adr/0008-encryption-of-restricted-notes.md)).
 
+### Raising a note to `restricted`: previous versions stay in history
+
+Every applied change is a git commit and history is never rewritten. When an **existing** note's sensitivity
+rises to `restricted` from `public` or `internal` (through an `update` proposal in `ApplyProposal`, or through
+`OwnerEditNote`), the result carries a warning `ApplyWarning(code=PREVIOUS_VERSION_IN_HISTORY, message=...)`
+(`ApplyProposalResult.warnings`, `OwnerEditNoteResult.warnings`): the earlier, less sensitive plaintext version
+remains in the content repository's git history and in any backups, so the new level protects only the current
+version. The message is a fixed text with no note content. No warning is raised for a create, for an unchanged or
+lowered sensitivity, for a note that was already `restricted`, for an `already_applied` retry, or when nothing was
+written (validation errors, conflicts). The warning is delivered only by the call that performs the commit: a retry
+after a crash returns `already_applied` without it, so the caller should persist or show it immediately. Scrubbing history (and backups) is a manual owner operation, out of scope
+for Cérebro.
+
 ## 5. Status
 
 | Status | Meaning | Served as current? |

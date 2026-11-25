@@ -1,7 +1,7 @@
 """``ApplyProposal``: writes an approved proposal to the content repository, as one commit."""
 
 from cerebro.application.access import require_owner, visible_note
-from cerebro.application.dto import ApplyOutcome, ApplyProposalResult, ProposalIdRequest
+from cerebro.application.dto import ApplyOutcome, ApplyProposalResult, ProposalIdRequest, sensitivity_raise_warnings
 from cerebro.application.errors import (
     NoteNotFound,
     PermissionDenied,
@@ -125,6 +125,7 @@ class ApplyProposal:
             note_id=note_id,
             revision=revision,
             validation=report,
+            warnings=sensitivity_raise_warnings(None if base is None else base.sensitivity, candidate.sensitivity),
         )
 
     def _conflict(self, proposal: Proposal, candidate: Note, current: Note | None) -> ApplyProposalResult:

@@ -408,6 +408,36 @@ class ApplyOutcome(StrEnum):
     """Re-validation right before writing found errors; the proposal went back to the owner, nothing was written."""
 
 
+class ApplyWarningCode(StrEnum):
+    PREVIOUS_VERSION_IN_HISTORY = "previous_version_in_history"
+    """An existing note became ``restricted``: its earlier, less sensitive version stays readable in git history."""
+
+
+PREVIOUS_VERSION_IN_HISTORY_MESSAGE: Final = (
+    "The note is now restricted, but its previous version remains in the content repository's git history and in "
+    "any backups. History is never rewritten; scrubbing it is a manual owner operation."
+)
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class ApplyWarning:
+    """A successful write the owner should still know the consequences of. Fixed text: no note content."""
+
+    code: ApplyWarningCode
+    message: str
+
+
+def sensitivity_raise_warnings(previous: Sensitivity | None, new: Sensitivity) -> tuple[ApplyWarning, ...]:
+    """Warn when an existing note (``previous`` is not ``None``) rises to ``restricted`` from a lower level."""
+    if previous is not None and previous < Sensitivity.RESTRICTED and new is Sensitivity.RESTRICTED:
+        return (
+            ApplyWarning(
+                code=ApplyWarningCode.PREVIOUS_VERSION_IN_HISTORY, message=PREVIOUS_VERSION_IN_HISTORY_MESSAGE
+            ),
+        )
+    return ()
+
+
 @dataclass(frozen=True, slots=True, kw_only=True)
 class ApplyProposalResult:
     proposal_id: str
@@ -416,6 +446,7 @@ class ApplyProposalResult:
     note_id: NoteId | None = None
     revision: str | None = None
     validation: ValidationReport | None = None
+    warnings: tuple[ApplyWarning, ...] = ()
 
 
 # --- write path: owner edits ----------------------------------------------------------------------------------
@@ -446,6 +477,7 @@ class OwnerEditNoteResult:
     validation: ValidationReport
     revision: str | None = None
     content_hash: str | None = None
+    warnings: tuple[ApplyWarning, ...] = ()
 
 
 # --- maintenance: indexes, health, tokens -----------------------------------------------------------------------

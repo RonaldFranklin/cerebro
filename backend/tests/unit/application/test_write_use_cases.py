@@ -5,8 +5,10 @@ from typing import Any
 import pytest
 
 from cerebro.application.dto import (
+    PREVIOUS_VERSION_IN_HISTORY_MESSAGE,
     ApplyOutcome,
     ApplyProposalResult,
+    ApplyWarningCode,
     HealthCode,
     HealthReportRequest,
     OwnerEditNoteRequest,
@@ -740,6 +742,113 @@ def edit_note(kit: Kit, **changes: Any) -> Note:
     changed = kit.world.notes.get(SSH)
     assert changed is not None
     return changed
+
+
+class TestRestrictedRaiseWarning:
+    """An existing note rising to ``restricted`` keeps its old version in git history: the owner is told."""
+
+    @staticmethod
+    def free_ssh(kit: Kit, previous: Sensitivity = Sensitivity.INTERNAL) -> None:
+        """Give ``server-ssh-access`` the ``previous`` level and no lower-sensitivity inbound link blocking a raise."""
+        old_proxy = kit.world.notes.get(NID("old-proxy"))
+        assert old_proxy is not None
+        request = OwnerEditNoteRequest(
+            note=replace(old_proxy, sensitivity=Sensitivity.RESTRICTED), expected_hash=content_hash(old_proxy)
+        )
+        assert kit.edit_uc().execute(request, owner_ctx()).revision is not None
+        edit_note(kit, sensitivity=previous)
+
+    @staticmethod
+    def submit_raise(
+        kit: Kit, body: str = "# SSH\n\nA new body.\n", level: Sensitivity = Sensitivity.RESTRICTED
+    ) -> str:
+        """An update of ``server-ssh-access`` to ``level``, from an agent whose token reaches ``restricted``."""
+        current = kit.world.notes.get(SSH)
+        assert current is not None
+        request = SubmitProposalRequest(
+            kind=ProposalKind.UPDATE,
+            target=SSH,
+            base_hash=content_hash(current),
+            content=ProposedContent(body=body, sensitivity=level),
+        )
+        return kit.submit(request, agent_ctx(Sensitivity.RESTRICTED)).proposal_id
+
+    @staticmethod
+    def codes(result: Any) -> list[ApplyWarningCode]:
+        return [w.code for w in result.warnings]
+
+    @pytest.mark.parametrize("previous", [Sensitivity.PUBLIC, Sensitivity.INTERNAL])
+    def test_apply_proposal_warns_when_an_update_raises_to_restricted(self, kit: Kit, previous: Sensitivity) -> None:
+        self.free_ssh(kit, previous)
+        pid = kit.approved(self.submit_raise(kit))
+        result = kit.apply(pid)
+        assert result.outcome is ApplyOutcome.APPLIED
+        assert self.codes(result) == [ApplyWarningCode.PREVIOUS_VERSION_IN_HISTORY]
+        assert result.warnings[0].message == PREVIOUS_VERSION_IN_HISTORY_MESSAGE
+
+    def test_apply_proposal_does_not_warn_for_creates_or_other_changes(self, kit: Kit) -> None:
+        self.free_ssh(kit)
+        request = SubmitProposalRequest(
+            kind=ProposalKind.CREATE, content=new_content(sensitivity=Sensitivity.RESTRICTED)
+        )
+        created = kit.approved(kit.submit(request, agent_ctx(Sensitivity.RESTRICTED)).proposal_id)
+        assert kit.apply(created).warnings == ()
+        same = kit.approved(self.submit_raise(kit, level=Sensitivity.INTERNAL))
+        assert kit.apply(same).warnings == ()  # internal stays internal
+        pid = kit.approved(self.submit_raise(kit, "# SSH\n\nRaised.\n"))
+        assert self.codes(kit.apply(pid)) == [ApplyWarningCode.PREVIOUS_VERSION_IN_HISTORY]
+        # already restricted: no new exposure
+        again = kit.approved(self.submit_raise(kit, "# SSH\n\nAgain.\n"))
+        assert kit.apply(again).warnings == ()
+
+    def test_apply_proposal_does_not_warn_on_already_applied_or_noop_retries(self, kit: Kit) -> None:
+        self.free_ssh(kit)
+        pid = kit.approved(self.submit_raise(kit))
+        assert self.codes(kit.apply(pid)) == [ApplyWarningCode.PREVIOUS_VERSION_IN_HISTORY]
+        assert kit.apply(pid).warnings == ()
+        assert kit.apply(pid).outcome is ApplyOutcome.ALREADY_APPLIED
+
+    def test_apply_proposal_conflict_while_raising_does_not_warn(self, kit: Kit) -> None:
+        self.free_ssh(kit)
+        pid = kit.approved(self.submit_raise(kit))
+        edit_note(kit, body="# SSH\n\nThe owner got there first.\n")
+        result = kit.apply(pid)
+        assert result.outcome is ApplyOutcome.CONFLICT
+        assert result.warnings == ()
+
+    @pytest.mark.parametrize("previous", [Sensitivity.PUBLIC, Sensitivity.INTERNAL])
+    def test_owner_edit_warns_when_raising_to_restricted(self, kit: Kit, previous: Sensitivity) -> None:
+        self.free_ssh(kit, previous)
+        current = kit.world.notes.get(SSH)
+        assert current is not None
+        request = OwnerEditNoteRequest(
+            note=replace(current, sensitivity=Sensitivity.RESTRICTED), expected_hash=content_hash(current)
+        )
+        result = kit.edit_uc().execute(request, owner_ctx())
+        assert self.codes(result) == [ApplyWarningCode.PREVIOUS_VERSION_IN_HISTORY]
+
+    def test_owner_edit_does_not_warn_otherwise(self, kit: Kit) -> None:
+        current = kit.world.notes.get(SSH)
+        assert current is not None
+        assert current.sensitivity is Sensitivity.INTERNAL  # fixture precondition
+        for level in (Sensitivity.INTERNAL, Sensitivity.PUBLIC):  # unchanged, then lowered
+            current = kit.world.notes.get(SSH)
+            assert current is not None
+            request = OwnerEditNoteRequest(
+                note=replace(current, sensitivity=level), expected_hash=content_hash(current)
+            )
+            assert kit.edit_uc().execute(request, owner_ctx()).warnings == ()
+        created = replace(
+            current, id=NID("fresh-restricted"), title="Fresh", sensitivity=Sensitivity.RESTRICTED, hub=None
+        )
+        assert kit.edit_uc().execute(OwnerEditNoteRequest(note=created), owner_ctx()).warnings == ()
+
+    def test_owner_edit_with_errors_writes_nothing_and_does_not_warn(self, kit: Kit) -> None:
+        current = kit.world.notes.get(SSH)
+        assert current is not None
+        bad = replace(current, sensitivity=Sensitivity.RESTRICTED, body=f"key {SECRET}\n")
+        result = kit.edit_uc().execute(OwnerEditNoteRequest(note=bad, expected_hash=content_hash(current)), owner_ctx())
+        assert (result.revision, result.warnings) == (None, ())
 
 
 class TestApplyProposal:
