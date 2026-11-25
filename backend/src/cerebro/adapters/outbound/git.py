@@ -22,13 +22,18 @@ Hardening (every call, ``init`` included):
 * errors are ``GitError``: sub-command, exit code and a heavily scrubbed hint (quoted strings, URLs, anything that
   looks like a path, the configured remote and the repository root are removed). Never the commit message.
 
-Rollback scope: ``discard_changes`` restores only the paths it is given. Out-of-band edits to other files are left
-untouched on purpose (an owner editing a note by hand is not ours to revert).
+Rollback: ``discard_changes`` restores only the ``modified`` paths it is given and deletes only ``created`` paths
+that did not exist before the transaction (the caller records them with ``snapshot_existing`` first). Out-of-band
+edits to other files, drafts and ignored files are left untouched on purpose. It is NOT atomic across its git calls:
+when it raises, the error is surfaced and the caller must check ``is_clean()`` / ``head()`` before going on.
 
 Residual risks (config-driven, not overridable from the command line): the repository's ``.git/config`` can still
 define ``filter.*`` drivers (run through ``.gitattributes``), ``diff``/``merge`` drivers and ``url.*.insteadOf``
-rewrites. The content repository is the owner's own private repository; do not point Cérebro at one you do not
-trust. Refusing to stage ``.gitattributes`` narrows how a note write could activate such a driver.
+rewrites and ``remote.<name>.receivepack`` / ``uploadpack`` (a configured remote name can name a command to run;
+a push by URL does not read them). ssh itself reads the real ``~/.ssh/config`` of the service user (``HOME`` only
+hides git's own config), so keep that file trustworthy. The content repository is the owner's own private
+repository; do not point Cérebro at one you do not trust. Refusing to stage ``.gitattributes`` narrows how a
+note write could activate such a driver.
 """
 
 import contextlib
@@ -217,6 +222,10 @@ class GitRepo:
         redact: Sequence[str] = (),
         init: bool = False,
     ) -> tuple[int, str]:
+        if not init:
+            git_dir = self._root / ".git"
+            if git_dir.is_symlink() or not git_dir.is_dir():
+                raise GitError("the repository's .git must be a real directory")
         command = [*self._base_args(with_dirs=not init), *args]
         data_in = stdin.encode() if stdin is not None else b""
         if len(data_in) > MAX_STDIN_BYTES:
@@ -241,7 +250,7 @@ class GitRepo:
         if process.returncode not in ok:
             detail = scrub(err.decode("utf-8", errors="replace"), secrets=redact, root=self._root)
             raise GitError(f"git {args[0]} failed (exit {process.returncode}): {detail}")
-        return process.returncode, out.decode("utf-8", errors="replace")
+        return process.returncode, out.decode("utf-8", errors="surrogateescape")
 
     @staticmethod
     def _communicate(process: subprocess.Popen[bytes], data_in: bytes, limit: float, name: str) -> tuple[bytes, bytes]:
@@ -299,6 +308,10 @@ class GitRepo:
         text = str(path)
         if not text or "\x00" in text or text.startswith("-"):
             raise GitError("invalid path")
+        try:
+            text.encode("utf-8")
+        except UnicodeEncodeError:
+            raise GitError("path must be valid UTF-8") from None
         pure = PurePath(text)
         if pure.is_absolute() or pure.drive or not pure.parts or pure.parts == (".",):
             raise GitError("path must be a relative file path")
@@ -323,6 +336,12 @@ class GitRepo:
     def _check_paths(self, paths: Iterable[str | PurePath], *, allow_final_symlink: bool = False) -> list[str]:
         return [self._check_path(p, allow_final_symlink=allow_final_symlink) for p in paths]
 
+    @staticmethod
+    def _names(paths: Iterable[str]) -> list[str]:
+        """Paths and their base names, to be removed from error hints."""
+        found = list(paths)
+        return [*found, *(PurePath(p).name for p in found)]
+
     # -- operations ----------------------------------------------------------------------------------------------
 
     def init(self, initial_branch: str) -> None:
@@ -339,7 +358,7 @@ class GitRepo:
         """Stage additions, modifications and deletions of the listed files (literal paths, no globs)."""
         checked = self._check_paths(paths)
         if checked:
-            self._run(["add", "--all", "--", *checked])
+            self._run(["add", "--all", "--", *checked], redact=self._names(checked))
 
     add = stage
 
@@ -357,28 +376,57 @@ class GitRepo:
             raise GitError("commit left no HEAD")
         return commit_id
 
-    def discard_changes(self, paths: Iterable[str | PurePath]) -> None:
-        """Roll back an apply: put the listed files (and only them) back as they are in ``HEAD``.
+    def snapshot_existing(self, paths: Iterable[str | PurePath]) -> frozenset[str]:
+        """Which of ``paths`` already exist (on disk, as a symlink, or in the index) right now.
 
-        Files tracked in ``HEAD`` are restored in index and working tree; files that are not in ``HEAD`` (created by
-        the failed apply) are unstaged and deleted. Other files are never touched: out-of-band edits, uncommitted
-        drafts and gitignored files survive. Directories are refused; empty parent directories are left behind.
+        Call it before writing; hand the result to ``discard_changes`` so that a path a failed transaction merely
+        overwrote or staged, but did not create, is never deleted.
         """
         checked = self._check_paths(paths, allow_final_symlink=True)
-        if not checked:
+        existing = {p for p in checked if os.path.lexists(self._root / p)}
+        if checked:
+            _, listing = self._run(["ls-files", "-z", "--", *checked], redact=self._names(checked))
+            existing.update(name for name in listing.split("\x00") if name)
+        return frozenset(existing)
+
+    def discard_changes(
+        self,
+        *,
+        created: Iterable[str | PurePath],
+        modified: Iterable[str | PurePath],
+        preexisting: frozenset[str] = frozenset(),
+    ) -> None:
+        """Roll back an apply, touching only the listed files.
+
+        ``modified`` files (tracked in ``HEAD``, possibly deleted on disk) are restored in index and working tree.
+        ``created`` files are unstaged and deleted, unless they are in ``preexisting`` (the ``snapshot_existing``
+        taken before the apply): those were not made by the transaction and are left exactly as they are. Paths
+        that are trees in ``HEAD`` and directories are refused. Other files are never touched. Empty parent
+        directories are left behind. Not atomic: see the module docstring.
+        """
+        to_restore = self._check_paths(modified, allow_final_symlink=True)
+        to_remove = [p for p in self._check_paths(created, allow_final_symlink=True) if p not in preexisting]
+        every = [*to_restore, *to_remove]
+        if not every:
             return
-        if self.head() is None:
-            tracked: list[str] = []
-        else:
-            _, listing = self._run(["ls-tree", "-r", "--name-only", "-z", "HEAD", "--", *checked])
-            known = {name for name in listing.split("\x00") if name}
-            tracked = [path for path in checked if path in known]
-        created = [path for path in checked if path not in tracked]
-        if tracked:
-            self._run(["restore", "--source=HEAD", "--staged", "--worktree", "--", *tracked])
-        if created:
-            self._run(["rm", "--cached", "-r", "-f", "--quiet", "--ignore-unmatch", "--", *created])
-            self._run(["clean", "-f", "--quiet", "--", *created])
+        redact = self._names(every)
+        in_head: dict[str, str] = {}
+        if self.head() is not None:
+            _, listing = self._run(["ls-tree", "-z", "HEAD", "--", *every], redact=redact)
+            for entry in filter(None, listing.split("\x00")):
+                meta, _, name = entry.partition("\t")
+                in_head[name] = meta.split()[1]
+        if "tree" in in_head.values():
+            raise GitError("a path names a directory in HEAD")
+        if any(p not in in_head for p in to_restore):
+            raise GitError("a modified path is not tracked in HEAD")
+        if any(p in in_head for p in to_remove):
+            raise GitError("a created path is tracked in HEAD")
+        if to_restore:
+            self._run(["restore", "--source=HEAD", "--staged", "--worktree", "--", *to_restore], redact=redact)
+        if to_remove:
+            self._run(["rm", "--cached", "-f", "--quiet", "--ignore-unmatch", "--", *to_remove], redact=redact)
+            self._run(["clean", "-f", "--quiet", "--", *to_remove], redact=redact)
 
     def log(self, count: int = 10) -> list[str]:
         """The messages of the last ``count`` commits, newest first, each without its trailing newline.

@@ -163,7 +163,7 @@ def test_unsafe_paths_are_rejected(tmp_path: Path, bad: str) -> None:
     with pytest.raises(GitError):
         repo.stage([bad])
     with pytest.raises(GitError):
-        repo.discard_changes([bad])
+        repo.discard_changes(created=[bad], modified=[])
 
 
 def test_symlink_escape_is_rejected(tmp_path: Path) -> None:
@@ -193,6 +193,7 @@ def test_paths_are_literal_not_globs_and_not_options(tmp_path: Path) -> None:
 def test_timeout_is_enforced(tmp_path: Path) -> None:
     root = tmp_path / "repo"
     root.mkdir()
+    (root / ".git").mkdir()
     slow = tmp_path / "slow-git"
     slow.write_text("#!/bin/sh\nsleep 30\n")
     slow.chmod(0o755)
@@ -204,6 +205,7 @@ def test_timeout_is_enforced(tmp_path: Path) -> None:
 def test_output_is_capped(tmp_path: Path) -> None:
     root = tmp_path / "repo"
     root.mkdir()
+    (root / ".git").mkdir()
     noisy = tmp_path / "noisy-git"
     noisy.write_text("#!/bin/sh\nhead -c 3000000 /dev/zero | tr '\\0' 'a'\n")
     noisy.chmod(0o755)
@@ -230,7 +232,7 @@ def test_rollback_restores_listed_files_and_removes_new_ones(tmp_path: Path) -> 
     raw_git(root, "config", "core.excludesFile", "/dev/null")
     (root / ".git" / "info" / "exclude").write_text("ignored.log\n")
     repo.stage(["a.md", "notes/new.md"])
-    repo.discard_changes(["a.md", "b.md", "notes/new.md", "notes/new-unstaged.md"])
+    repo.discard_changes(created=["notes/new.md", "notes/new-unstaged.md"], modified=["a.md", "b.md"])
     assert repo.head() == head
     assert (root / "a.md").read_text() == "one\n"
     assert (root / "b.md").read_text() == "keep\n"
@@ -249,7 +251,7 @@ def test_rollback_refuses_directories_and_the_whole_tree(tmp_path: Path) -> None
     write(root, "draft.md", "draft\n")
     for bad in (".", "notes", ""):
         with pytest.raises(GitError):
-            repo.discard_changes([bad])
+            repo.discard_changes(created=[bad], modified=[])
     assert (root / "draft.md").exists()
     assert (root / "notes/a.md").exists()
 
@@ -260,7 +262,7 @@ def test_rollback_before_the_first_commit(tmp_path: Path) -> None:
     write(root, "a.md")
     write(root, "draft.md")
     repo.stage(["a.md"])
-    repo.discard_changes(["a.md"])
+    repo.discard_changes(created=["a.md"], modified=[])
     assert not (root / "a.md").exists()
     assert (root / "draft.md").exists()
     assert repo.head() is None
@@ -276,7 +278,7 @@ def test_rollback_removes_a_planted_symlink_entry_without_following_it(tmp_path:
     repo.stage(["base.md"])
     repo.commit("base")
     (root / "planted.md").symlink_to(victim)
-    repo.discard_changes(["planted.md"])
+    repo.discard_changes(created=["planted.md"], modified=[])
     assert not (root / "planted.md").is_symlink()
     assert victim.read_text() == "precious\n"
 
@@ -373,7 +375,7 @@ def test_symlink_to_dot_git_is_rejected(tmp_path: Path) -> None:
         with pytest.raises(GitError):
             repo.stage([path])
         with pytest.raises(GitError):
-            repo.discard_changes([path])
+            repo.discard_changes(created=[path], modified=[])
 
 
 def test_symlinked_parent_inside_the_repository_is_rejected_for_writes(tmp_path: Path) -> None:
@@ -423,6 +425,7 @@ def test_passthrough_env_is_an_allowlist(tmp_path: Path, name: str) -> None:
 def test_timeout_kills_the_whole_process_group(tmp_path: Path) -> None:
     root = tmp_path / "repo"
     root.mkdir()
+    (root / ".git").mkdir()
     pid_file = tmp_path / "child.pid"
     script = tmp_path / "forking-git"
     script.write_text(f"#!/bin/sh\nsleep 60 &\necho $! > '{pid_file}'\nsleep 60\n")
