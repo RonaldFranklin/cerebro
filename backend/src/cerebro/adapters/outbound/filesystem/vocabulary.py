@@ -8,7 +8,7 @@ Both files are one YAML mapping with exactly one key holding a list of kebab-cas
       - finance                    - guide
 
 Strict: a missing or symlinked file, extra keys, duplicates, a non-list or an invalid name raise
-``VocabularyError``. ``areas`` must not be empty; ``types`` may be (``core`` and ``hub`` are built in).
+``VocabularyError``. Both lists may be empty (``core`` and ``hub`` are built in).
 The repository adapter does not enforce the vocabulary: validation is a use-case concern, and notes that predate a
 vocabulary change must still load so they can be reported.
 """
@@ -50,8 +50,6 @@ def load_vocabulary(root: Path) -> Vocabulary:
     """The vocabulary of the content repository at ``root``."""
     areas = _names(root, "areas.yaml", "areas")
     types = _names(root, "types.yaml", "types")
-    if not areas:
-        raise VocabularyError("schema/areas.yaml: 'areas' must not be empty")
     try:
         return Vocabulary(areas=frozenset(Area(a) for a in areas), types=frozenset(NoteType(t) for t in types))
     except InvalidValueError:

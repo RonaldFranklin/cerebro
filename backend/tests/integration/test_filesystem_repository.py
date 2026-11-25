@@ -602,7 +602,6 @@ def test_the_vocabulary_is_loaded_from_the_schema_files(root: Path, git: GitRepo
 @pytest.mark.parametrize(
     ("areas", "types"),
     [
-        ("areas: []\n", "types: []\n"),
         ("areas: [a]\nextra: 1\n", "types: []\n"),
         ("areas: [a, a]\n", "types: []\n"),
         ("areas: [Not Kebab]\n", "types: []\n"),

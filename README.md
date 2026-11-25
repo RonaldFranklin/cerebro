@@ -57,3 +57,31 @@ Cérebro makes that context a single, structured, versioned source that agents c
 ## License
 
 [Apache License 2.0](LICENSE)
+
+### Initialize local content
+
+From `backend/`, set the instance environment variables shown in `.env.example` or supply the corresponding
+settings with `--config <file.toml>`. Point `content_dir` at a new directory under an owner-controlled parent.
+Run `uv run cerebro init-content` to create the private git repository. Set the allowed areas in
+`schema/areas.yaml` before adding notes. Repeating the command verifies the layout and preserves owner edits.
+
+Provision the Fernet key separately, before starting a command that opens the container. For a new instance,
+export `CEREBRO_KEY_FILE` to a path outside the content directory. From `backend/`, run the following as the
+service user. The parent directory must have mode 0700. The exclusive create preserves an existing key.
+
+```bash
+(umask 077
+ uv run python - <<'PY'
+import os
+from pathlib import Path
+from cerebro.adapters.outbound.crypto import generate_key
+
+path = Path(os.environ["CEREBRO_KEY_FILE"])
+path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+with path.open("xb") as output:
+    output.write(generate_key() + b"\n")
+PY
+)
+```
+
+Keep an offline backup of this key for recovery.
