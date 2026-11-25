@@ -7,8 +7,11 @@ import pytest
 from cerebro.application.dto import (
     ApplyOutcome,
     ApplyProposalResult,
+    HealthCode,
+    HealthReportRequest,
     OwnerEditNoteRequest,
     ProposalIdRequest,
+    RebuildIndexRequest,
     ReviewAction,
     ReviewProposalRequest,
     SubmitProposalRequest,
@@ -20,9 +23,11 @@ from cerebro.application.errors import (
     ProposalNotApplicable,
     ProposalNotFound,
 )
+from cerebro.application.index_state import index_is_stale
 from cerebro.application.null_curator import NullCurator
 from cerebro.application.ports.notes import NoteChange
 from cerebro.application.proposal_support import provisional_note_id
+from cerebro.application.use_cases import HealthReport, RebuildIndex
 from cerebro.domain.access import Scope
 from cerebro.domain.content_hash import content_hash
 from cerebro.domain.decision import Decision, DecisionKind
@@ -47,7 +52,7 @@ from tests.unit.application.write_kit import (
     note_hash,
     owner_ctx,
 )
-from tests.unit.domain.builders import VALID_SUMMARY, words
+from tests.unit.domain.builders import VALID_SUMMARY, VOCABULARY, words
 
 S = ProposalStatus
 INTERNAL = Sensitivity.INTERNAL
@@ -1339,3 +1344,86 @@ def test_a_proposal_without_a_decision_has_no_commit_target() -> None:
 
     with pytest.raises(ProposalNotApplicable, match="no decision"):
         commit_target(make_proposal())
+
+
+class TestIndexRevisionOnWrites:
+    """The indexes record the revision they reflect; a failed index update after a commit is detectable."""
+
+    @staticmethod
+    def stale(kit: Kit) -> bool:
+        w = kit.world
+        return index_is_stale(w.notes, w.search, w.graph)
+
+    @staticmethod
+    def health(kit: Kit) -> Any:
+        w = kit.world
+        use_case = HealthReport(w.notes, kit.proposals, w.search, w.graph, kit.clock, VOCABULARY)
+        return use_case.execute(HealthReportRequest(), owner_ctx())
+
+    def test_the_seeded_world_is_fresh(self, kit: Kit) -> None:
+        assert not self.stale(kit)
+
+    def test_apply_advances_both_indexes_to_the_new_head(self, kit: Kit) -> None:
+        result = kit.apply(kit.approved(kit.submit_create()))
+        assert result.revision == kit.world.notes.head()
+        assert kit.world.search.built_from() == kit.world.graph.built_from() == result.revision
+        assert not self.stale(kit)
+
+    def test_owner_edit_advances_both_indexes_to_the_new_head(self, kit: Kit) -> None:
+        current = kit.world.notes.get(SSH)
+        assert current is not None
+        result = kit.edit_uc().execute(
+            OwnerEditNoteRequest(note=replace(current, body="# SSH\n\nEdited.\n"), expected_hash=note_hash(kit)),
+            owner_ctx(),
+        )
+        assert result.revision == kit.world.notes.head()
+        assert kit.world.search.built_from() == kit.world.graph.built_from() == result.revision
+
+    def test_a_failed_index_update_after_apply_leaves_it_stale_until_rebuilt(self, kit: Kit) -> None:
+        pid = kit.approved(kit.submit_create())
+
+        def boom(ref: Any) -> None:
+            raise RuntimeError("graph store down")
+
+        kit.world.graph.upsert = boom  # type: ignore[method-assign]
+        with pytest.raises(RuntimeError):
+            kit.apply(pid)
+        assert self.stale(kit)  # committed, search updated, graph not
+        assert HealthCode.INDEX_STALE in {i.code for i in self.health(kit).issues}
+
+        del kit.world.graph.upsert  # the store is back
+        RebuildIndex(kit.world.notes, kit.world.search, kit.world.graph).execute(RebuildIndexRequest(), owner_ctx())
+        assert not self.stale(kit)
+        stale_codes = {HealthCode.INDEX_STALE, HealthCode.SEARCH_INDEX_STALE, HealthCode.GRAPH_INDEX_STALE}
+        assert not stale_codes & {i.code for i in self.health(kit).issues}
+
+    def test_a_failed_index_update_after_owner_edit_is_flagged(self, kit: Kit) -> None:
+        current = kit.world.notes.get(SSH)
+        assert current is not None
+
+        def boom(note: Any) -> None:
+            raise RuntimeError("search store down")
+
+        kit.world.search.upsert = boom  # type: ignore[method-assign]
+        with pytest.raises(RuntimeError):
+            kit.edit_uc().execute(
+                OwnerEditNoteRequest(note=replace(current, body="# SSH\n\nEdited.\n"), expected_hash=note_hash(kit)),
+                owner_ctx(),
+            )
+        assert self.stale(kit)
+
+    def test_a_later_successful_write_does_not_hide_an_earlier_failure(self, kit: Kit) -> None:
+        pid = kit.approved(kit.submit_create())
+        kit.world.search.upsert = lambda note: (_ for _ in ()).throw(RuntimeError("down"))  # type: ignore[method-assign]
+        with pytest.raises(RuntimeError):
+            kit.apply(pid)
+        del kit.world.search.upsert
+        current = kit.world.notes.get(SSH)
+        assert current is not None
+        kit.edit_uc().execute(
+            OwnerEditNoteRequest(note=replace(current, body="# SSH\n\nEdited.\n"), expected_hash=note_hash(kit)),
+            owner_ctx(),
+        )
+        assert kit.world.graph.built_from() != kit.world.notes.head()  # not advanced past the missed commit
+        assert kit.world.search.built_from() != kit.world.notes.head()
+        assert self.stale(kit)

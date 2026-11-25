@@ -475,6 +475,7 @@ class HealthCode(StrEnum):
     ORPHAN_PROPOSAL = "orphan_proposal"
     SEARCH_INDEX_STALE = "search_index_stale"
     GRAPH_INDEX_STALE = "graph_index_stale"
+    INDEX_STALE = "index_stale"
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)

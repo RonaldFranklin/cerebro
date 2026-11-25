@@ -95,9 +95,9 @@ backend/
 
 | Port | Responsibility | Adapter(s) |
 |---|---|---|
-| `NoteRepository` | `get`, `list_refs` (body-free `NoteRef` snapshot), `list_notes`, and `apply(changes, message)`: write one or more notes and record **one** commit with the trailers, all-or-nothing; each `NoteChange` carries the `expected_hash` (`None` = must not exist) and a mismatch raises `ContentConflict` | filesystem; in-memory fake |
-| `SearchIndex` | `upsert` / `remove` / `rebuild`, `search(SearchQuery)` (ceiling mandatory; order: score, priority, id) and `find_similar` (duplicate detection); returns summaries only | SQLite FTS5 |
-| `GraphIndex` | `graph`, `backlinks`, `neighbors(hops)`, `orphans`, `broken_links`; every query takes the ceiling, hidden notes are neither nodes nor broken links | SQLite tables |
+| `NoteRepository` | `get`, `list_refs` (body-free `NoteRef` snapshot), `list_notes`, `head()` (the current content revision: the id the last `apply` returned, `None` when empty), and `apply(changes, message)`: write one or more notes and record **one** commit with the trailers, all-or-nothing; each `NoteChange` carries the `expected_hash` (`None` = must not exist) and a mismatch raises `ContentConflict` | filesystem; in-memory fake |
+| `SearchIndex` | `upsert` / `remove` / `rebuild(notes, revision=)`, `built_from()` / `set_revision()` (the content revision the index reflects; `upsert`/`remove` never change it), `search(SearchQuery)` (ceiling mandatory; order: score, priority, id) and `find_similar` (duplicate detection); returns summaries only | SQLite FTS5 |
+| `GraphIndex` | `rebuild(refs, revision=)`, `built_from()` / `set_revision()` (as `SearchIndex`), `graph`, `backlinks`, `neighbors(hops)`, `orphans`, `broken_links`; every query takes the ceiling, hidden notes are neither nodes nor broken links | SQLite tables |
 | `ProposalStore` | `add`, `get`, `save(proposal, expected_revision)` (compare-and-swap on `revision`, else `ProposalConflict`), `find(status, source_agent)`: proposals and decisions (audit) | SQLite |
 | `VersionControl` | `push` to the backup remote. Commits are made by `NoteRepository.apply`, so a write and its commit cannot diverge | git CLI |
 | `Cipher` | encrypt/decrypt restricted note payloads (used by the filesystem adapter only); `DecryptionError` on tampering | Fernet |
@@ -149,7 +149,7 @@ body (whole or one section) whose target the reader cannot see, or that does not
 - `RebuildIndex` — re-read the content repo, decrypt restricted notes in memory, rebuild the index (owner only; also
   the recovery path when an index update failed after a commit).
 - `HealthReport` — orphans, broken links, hub chains, overdue `review_by`, budget violations, secrets in existing
-  notes (never echoed), stale or orphaned proposals, stale indexes (owner only, restricted ceiling).
+  notes (never echoed), stale or orphaned proposals, stale indexes (owner only, restricted ceiling): an index is stale when its `built_from()` differs from the repository `head()` (`index_is_stale`, which the container also uses at startup to decide whether to reindex), or when its content differs note by note. `RebuildIndex` records `head()` (read before the notes), `ApplyProposal` and `OwnerEditNote` advance it after updating an index that was fresh before the commit, so a failed index update stays visible until `RebuildIndex` runs.
 - `IssueAgentToken` / `RevokeAgentToken` — owner only; only the SHA-256 hash is stored, the secret is shown once.
 - `AuthenticateToken` — presented secret + listener ceiling -> `AccessContext` (used by every inbound adapter).
 

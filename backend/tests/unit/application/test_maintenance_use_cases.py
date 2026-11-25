@@ -21,6 +21,7 @@ from cerebro.application.errors import (
     PermissionDenied,
     TokenNotFound,
 )
+from cerebro.application.index_state import advance_revision, index_is_stale
 from cerebro.application.ports.notes import NoteChange
 from cerebro.application.ports.search import SearchQuery
 from cerebro.application.use_cases import (
@@ -528,3 +529,82 @@ class TestFindingIssue:
     def test_other_findings_keep_their_message(self) -> None:
         finding = Finding(code=ViolationCode.CORE_OVER_BUDGET, field=None, message="too big")
         assert _finding_issue("core-budget", finding).message == "too big"
+
+
+# -- index revision -------------------------------------------------------------------------------------------------
+
+
+class TestIndexRevision:
+    def test_rebuild_records_the_head_in_both_indexes(self) -> None:
+        w = healthy_world()
+        w.search.set_revision(None)
+        w.graph.set_revision("rev-old")
+        RebuildIndex(w.notes, w.search, w.graph).execute(RebuildIndexRequest(), owner())
+        assert w.search.built_from() == w.graph.built_from() == w.notes.head()
+
+    def test_rebuild_of_an_empty_repository_records_none(self) -> None:
+        w = World()
+        w.search.set_revision("rev-old")
+        RebuildIndex(w.notes, w.search, w.graph).execute(RebuildIndexRequest(), owner())
+        assert (w.search.built_from(), w.graph.built_from(), w.notes.head()) == (None, None, None)
+
+    def test_rebuild_reads_the_head_before_the_notes(self) -> None:
+        w = healthy_world()
+        seen = w.notes.head()
+        original = w.notes.list_notes
+
+        def commit_then_list() -> Any:
+            notes = original()
+            w.notes.apply([NoteChange(note=_unindexed())], MESSAGE)  # a commit lands while the notes are read
+            return notes
+
+        w.notes.list_notes = commit_then_list  # type: ignore[method-assign]
+        RebuildIndex(w.notes, w.search, w.graph).execute(RebuildIndexRequest(), owner())
+        assert w.search.built_from() == seen != w.notes.head()
+        assert index_is_stale(w.notes, w.search, w.graph)
+
+    def test_is_stale_compares_each_index_with_the_head(self) -> None:
+        w = healthy_world()
+        assert not index_is_stale(w.notes, w.search, w.graph)
+        w.search.set_revision("rev-other")
+        assert index_is_stale(w.notes, w.search, w.graph)
+        w.search.set_revision(w.notes.head())
+        w.graph.set_revision(None)
+        assert index_is_stale(w.notes, w.search, w.graph)
+
+    def test_fresh_empty_indexes_of_an_empty_repository_are_not_stale(self) -> None:
+        w = World()
+        assert not index_is_stale(w.notes, w.search, w.graph)
+        w.search.set_revision("rev-gone")
+        assert index_is_stale(w.notes, w.search, w.graph)
+
+    def test_advance_skips_an_index_that_was_already_stale(self) -> None:
+        w = World()
+        w.search.set_revision("rev-1")
+        w.graph.set_revision("rev-0")
+        advance_revision(w.search, w.graph, previous="rev-1", current="rev-2")
+        assert (w.search.built_from(), w.graph.built_from()) == ("rev-2", "rev-0")
+
+    def test_health_report_flags_a_stale_revision_even_when_the_content_matches(self) -> None:
+        kit = HealthKit()
+        kit.world.graph.set_revision("rev-other")
+        report = kit.run()
+        assert [(i.code, i.severity, i.subject) for i in report.issues] == [
+            (HealthCode.INDEX_STALE, Severity.ERROR, "index")
+        ]
+        assert "rev-" not in report.issues[0].message
+        assert not report.ok
+
+    def test_health_report_flags_an_index_that_was_never_built(self) -> None:
+        kit = HealthKit()
+        kit.world.search.set_revision(None)
+        assert HealthCode.INDEX_STALE in codes(kit.run())
+
+    def test_a_healthy_base_has_no_stale_index_issue(self) -> None:
+        assert HealthCode.INDEX_STALE not in codes(HealthKit().run())
+
+    def test_rebuild_clears_the_stale_flag(self) -> None:
+        kit = HealthKit()
+        kit.world.search.set_revision("rev-other")
+        RebuildIndex(kit.world.notes, kit.world.search, kit.world.graph).execute(RebuildIndexRequest(), owner())
+        assert kit.run().ok

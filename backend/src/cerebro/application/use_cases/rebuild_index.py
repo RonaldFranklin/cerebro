@@ -25,7 +25,10 @@ class RebuildIndex:
 
     def execute(self, request: RebuildIndexRequest, ctx: AccessContext) -> RebuildIndexResult:
         require_owner(ctx, "rebuild the index")
+        revision = (
+            self._notes.head()
+        )  # read first: a commit landing meanwhile leaves the index looking stale, never fresh
         notes = self._notes.list_notes()
-        self._search.rebuild(notes)
-        self._graph.rebuild(NoteRef.from_note(n) for n in notes)
+        self._search.rebuild(notes, revision=revision)
+        self._graph.rebuild((NoteRef.from_note(n) for n in notes), revision=revision)
         return RebuildIndexResult(notes_indexed=len(notes))

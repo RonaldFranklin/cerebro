@@ -6,6 +6,7 @@ from datetime import datetime, timedelta
 from cerebro.application.access import require_owner
 from cerebro.application.dto import HealthCode, HealthIssue, HealthReportRequest, HealthReportResult
 from cerebro.application.errors import PermissionDenied
+from cerebro.application.index_state import index_is_stale
 from cerebro.application.ports.graph import GraphIndex
 from cerebro.application.ports.notes import NoteRepository
 from cerebro.application.ports.proposals import ProposalStore
@@ -35,8 +36,8 @@ class HealthReport:
     It runs the **same domain rules** as the write paths over every stored note, with the owner-edit severity
     policy (broken links warn): per-note rules, budgets, cross-note rules (broken links, hubs, ``superseded_by``
     cycles, hub chains), the combined P0 budget. It adds orphan notes and overdue ``review_by`` dates, stale and
-    orphaned proposals, and compares both indexes with the repository (a stale index is an error: run
-    ``RebuildIndex``).
+    orphaned proposals, and compares both indexes with the repository, by recorded revision and note by note (a stale
+    index is an error: run ``RebuildIndex``).
 
     Secrets in existing notes are reported as ``secret_detected`` with the field, detector and line only,
     described from the findings' structured fields (the scanner's message text is never used), so the
@@ -140,6 +141,14 @@ class HealthReport:
                 )
 
     def _index_issues(self, notes: tuple[Note, ...], *, search_checked: bool) -> Iterable[HealthIssue]:
+        if index_is_stale(self._notes, self._search, self._graph):
+            yield HealthIssue(
+                subject="index",
+                code=HealthCode.INDEX_STALE,
+                severity=Severity.ERROR,
+                field=None,
+                message="an index was not built from the current content revision: run RebuildIndex",
+            )
         by_id = {n.id: n for n in notes}
         stored_refs = {n.id: NoteRef.from_note(n) for n in notes}
         indexed_refs = {r.id: r for r in self._graph.graph(ceiling=FULL_VIEW, include_history=True).nodes}

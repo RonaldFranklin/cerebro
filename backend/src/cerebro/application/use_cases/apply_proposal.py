@@ -9,6 +9,7 @@ from cerebro.application.errors import (
     ProposalNotApplicable,
     ProposalNotFound,
 )
+from cerebro.application.index_state import advance_revision
 from cerebro.application.ports.graph import GraphIndex
 from cerebro.application.ports.notes import NoteChange, NoteRepository
 from cerebro.application.ports.proposals import ProposalStore
@@ -108,12 +109,15 @@ class ApplyProposal:
             return self._send_back(proposal, ApplyOutcome.INVALID, report, note_id)
 
         change = NoteChange(note=candidate, expected_hash=None if is_create else proposal.base_hash)
+        previous = self._notes.head()
         try:
             revision = self._notes.apply([change], proposal.commit_message())
         except ContentConflict:
             return self._conflict(proposal, candidate, self._notes.get(note_id))
         self._mark_applied(proposal)
         self._reindex(candidate)
+        # Only after both upserts: if one failed, the index keeps its old revision and ``HealthReport`` flags it.
+        advance_revision(self._search, self._graph, previous=previous, current=revision)
         return ApplyProposalResult(
             proposal_id=proposal.id,
             status=ProposalStatus.APPLIED,

@@ -29,8 +29,18 @@ class GraphIndex(Protocol):
         """Unknown ids are ignored."""
         ...
 
-    def rebuild(self, refs: Iterable[NoteRef]) -> None:
-        """Replace the whole graph atomically."""
+    def rebuild(self, refs: Iterable[NoteRef], *, revision: str | None = None) -> None:
+        """Replace the whole graph atomically and record ``revision`` (the content revision the refs were read
+        at; ``None`` if unknown) as the one the graph was built from."""
+        ...
+
+    def built_from(self) -> str | None:
+        """The content revision recorded by the last ``rebuild`` / ``set_revision``; ``None`` if none (a new
+        index). ``upsert`` and ``remove`` never change it."""
+        ...
+
+    def set_revision(self, revision: str | None) -> None:
+        """Record that the graph now reflects ``revision`` (used after an incremental update)."""
         ...
 
     def graph(self, *, ceiling: AccessCeiling, include_history: bool = False) -> GraphSlice:
