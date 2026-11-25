@@ -368,6 +368,10 @@ Authorization lives in the use cases, never in the adapters:
 - **Curation.** `NullCurator` (default) answers `needs_owner`, suggesting the target (or an id derived from the
   title for a `create`); a `needs_owner` decision moves the proposal to `needs_owner`. A curator decision that does
   not fit the proposal (another target, wrong shape for the kind) is replaced by `needs_owner`.
+  The curator never receives restricted notes ([ADR-0016](adr/0016-curator-never-sees-restricted.md)): its context
+  ceiling is `min(request ceiling, internal)`, and a proposal that creates, changes or links a restricted note (own
+  sensitivity, target, `hub`, `related`, `superseded_by` or body wikilinks) skips it: the decision is `needs_owner`
+  with a generic reason and `Curated-by: curator/policy`.
 - **Review.** The owner approves (optionally `override`ing the decision, e.g. to name the id of a note to create) or
   rejects (reason required). Approval is refused when the decision could not be applied.
 - **Apply.** `decision.target` must equal `proposal.target` for `update` / `link` / `deprecate`; a `create` needs a
