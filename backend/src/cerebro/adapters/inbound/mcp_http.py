@@ -14,7 +14,7 @@ from starlette.routing import Route, Router
 from starlette.types import Message, Receive, Scope, Send
 
 from cerebro.adapters.inbound.input_limits import MAX_INPUT_BYTES
-from cerebro.adapters.inbound.mcp_tools import InvalidToolArguments, ReadTools, parse_tool
+from cerebro.adapters.inbound.mcp_tools import InvalidToolArguments, MCPTools, parse_tool, tool_scope
 from cerebro.application.dto import AuthenticateTokenRequest
 from cerebro.application.errors import AuthenticationFailed, PermissionDenied
 from cerebro.application.use_case import AnonymousUseCase
@@ -40,7 +40,7 @@ def invalid_arguments(rpc_id: object) -> dict[str, object]:
     return {"jsonrpc": "2.0", "id": rpc_id, "error": {"code": -32602, "message": "Invalid tool arguments."}}
 
 
-def validate_params(message: dict[str, object]) -> None:
+def validate_params(message: dict[str, object]) -> AgentScope | None:
     params = message.get("params", {})
     if not isinstance(params, dict):
         raise InvalidToolArguments
@@ -49,16 +49,18 @@ def validate_params(message: dict[str, object]) -> None:
         if not isinstance(name, str):
             raise InvalidToolArguments
         parse_tool(name, params.get("arguments"))
+        return tool_scope(name)
+    return None
 
 
 def http_app(
-    tools: ReadTools,
+    tools: MCPTools,
     authenticate: AnonymousUseCase[AuthenticateTokenRequest, AccessContext],
     listeners: Mapping[int, AccessCeiling],
 ) -> Router:
     ceilings = dict(listeners)
 
-    def reader(raw: object) -> AccessContext:
+    def agent(raw: object) -> AccessContext:
         if not isinstance(raw, Request) or raw.scope.get("server") is None:
             raise AuthenticationFailed
         ceiling = ceilings.get(raw.scope["server"][1])
@@ -67,17 +69,18 @@ def http_app(
         if ceiling is None or credential is None:
             raise AuthenticationFailed
         ctx = authenticate.execute(AuthenticateTokenRequest(secret=credential[1], listener=ceiling))
-        if ctx.is_owner or not ctx.can(AgentScope.READ):
+        if ctx.is_owner or not ctx.scopes:
             raise PermissionDenied("read")
         return ctx
 
     manager = StreamableHTTPSessionManager(
-        tools.server(reader), stateless=True, json_response=True, max_request_body_size=MAX_INPUT_BYTES
+        tools.server(agent), stateless=True, json_response=True, max_request_body_size=MAX_INPUT_BYTES
     )
 
     async def handle(scope: Scope, receive: Receive, send: Send) -> None:
         request = Request(scope, receive)
         rpc_id: object = None
+        required_scope = None
         try:
             if scope["query_string"] or request.headers.get("origin") is not None:
                 raise ValueError("unexpected request source")
@@ -85,14 +88,16 @@ def http_app(
             if request.method == "POST":
                 message = decode_frame(body)
                 rpc_id = message.get("id")
-                validate_params(message)
+                required_scope = validate_params(message)
         except InvalidToolArguments:
             response: Response = JSONResponse(invalid_arguments(rpc_id), status_code=400)
         except ValueError, RecursionError:
             response = Response("Invalid request.", status_code=400)
         else:
             try:
-                await asyncio.to_thread(reader, request)
+                ctx = await asyncio.to_thread(agent, request)
+                if required_scope is not None and not ctx.can(required_scope):
+                    raise PermissionDenied("call tool")
             except AuthenticationFailed:
                 await Response("Access denied.", status_code=401, headers={"WWW-Authenticate": "Bearer"})(
                     scope, receive, send

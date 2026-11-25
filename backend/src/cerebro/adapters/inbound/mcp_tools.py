@@ -1,4 +1,4 @@
-"""The four read tools. Transport identity comes from the request's authentication callback."""
+"""The read and proposal tools. Transport identity comes from the request's authentication callback."""
 
 import asyncio
 import json
@@ -9,8 +9,10 @@ from mcp import MCPError, types
 from mcp.server import Server, ServerRequestContext
 
 from cerebro.adapters.inbound.input_limits import MAX_FIELD_BYTES, MAX_QUERY_BYTES, bounded_text
+from cerebro.adapters.inbound.mcp_proposal import PROPOSE_TOOL, parse_proposal
 from cerebro.adapters.inbound.read_views import read_view, search_view
 from cerebro.application.dto import (
+    AdmissionResult,
     GetNeighborsRequest,
     GetOverviewRequest,
     GraphView,
@@ -19,8 +21,15 @@ from cerebro.application.dto import (
     ReadNoteRequest,
     SearchNotesRequest,
     SearchResults,
+    SubmitProposalRequest,
 )
-from cerebro.application.errors import AuthenticationFailed, NoteNotFound, PermissionDenied, SectionNotFound
+from cerebro.application.errors import (
+    AuthenticationFailed,
+    NoteNotFound,
+    PermissionDenied,
+    ProposalLimitReached,
+    SectionNotFound,
+)
 from cerebro.application.use_case import ContextUseCase
 from cerebro.domain.access import AccessContext, Scope
 from cerebro.domain.enums import Priority, Status
@@ -28,7 +37,9 @@ from cerebro.domain.errors import DomainError
 from cerebro.domain.note import NoteId
 from cerebro.domain.vocabulary import Area, NoteType
 
-type ToolRequest = GetOverviewRequest | SearchNotesRequest | ReadNoteRequest | GetNeighborsRequest
+type ToolRequest = (
+    GetOverviewRequest | SearchNotesRequest | ReadNoteRequest | GetNeighborsRequest | SubmitProposalRequest
+)
 
 
 class InvalidToolArguments(ValueError):  # noqa: N818
@@ -55,6 +66,7 @@ _TEXT = {"type": "string", "maxLength": MAX_FIELD_BYTES, "description": f"Up to 
 _TOOLS = {
     tool.name: tool
     for tool in (
+        PROPOSE_TOOL,
         _tool("cerebro_overview", "Read core notes and visible hubs.", {}),
         _tool(
             "cerebro_search",
@@ -116,6 +128,8 @@ def parse_tool(name: str, arguments: object) -> ToolRequest:
         raise InvalidToolArguments
 
     try:
+        if name == PROPOSE_TOOL.name:
+            return parse_proposal(args)
         if name == "cerebro_overview":
             return GetOverviewRequest()
         if name == "cerebro_search":
@@ -171,39 +185,51 @@ def _error(message: str) -> types.CallToolResult:
     return types.CallToolResult(is_error=True, content=[types.TextContent(text=message)])
 
 
-def _reader(ctx: AccessContext) -> AccessContext:
-    if ctx.is_owner or not ctx.can(Scope.READ):
-        raise PermissionDenied("read")
-    return ctx
+def tool_scope(name: str) -> Scope:
+    return Scope.PROPOSE if name == PROPOSE_TOOL.name else Scope.READ
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
-class ReadTools:
+class MCPTools:
     get_overview: ContextUseCase[GetOverviewRequest, Overview]
     search_notes: ContextUseCase[SearchNotesRequest, SearchResults]
     read_note: ContextUseCase[ReadNoteRequest, NoteView]
     get_neighbors: ContextUseCase[GetNeighborsRequest, GraphView]
 
-    def list_tools(self) -> types.ListToolsResult:
-        return types.ListToolsResult(tools=list(_TOOLS.values()))
+    submit_proposal: ContextUseCase[SubmitProposalRequest, AdmissionResult]
+
+    def list_tools(self, ctx: AccessContext) -> types.ListToolsResult:
+        if ctx.is_owner:
+            raise PermissionDenied("discover tools")
+        return types.ListToolsResult(tools=[tool for tool in _TOOLS.values() if ctx.can(tool_scope(tool.name))])
 
     def call(self, name: str, arguments: object, authenticate: Callable[[], AccessContext]) -> types.CallToolResult:
         try:
             request = parse_tool(name, arguments)
-            ctx = _reader(authenticate())
+            ctx = authenticate()
+            if ctx.is_owner or not ctx.can(tool_scope(name)):
+                raise PermissionDenied("call tool")
             if isinstance(request, GetOverviewRequest):
                 output = _overview(self.get_overview.execute(request, ctx))
             elif isinstance(request, SearchNotesRequest):
                 output = {"results": search_view(self.search_notes.execute(request, ctx))}
             elif isinstance(request, ReadNoteRequest):
-                output = read_view(self.read_note.execute(request, ctx))
+                view = self.read_note.execute(request, ctx)
+                output = read_view(view)
+                if ctx.can(Scope.PROPOSE) and view.complete:
+                    output["base_hash"] = view.content_hash
+            elif isinstance(request, SubmitProposalRequest):
+                admitted = self.submit_proposal.execute(request, ctx)
+                output = {"proposal_id": admitted.proposal_id, "valid": admitted.valid}
             else:
                 output = _neighbors(self.get_neighbors.execute(request, ctx))
             return types.CallToolResult(
                 content=[types.TextContent(text=json.dumps(output, ensure_ascii=False))], structured_content=output
             )
-        except InvalidToolArguments:
+        except InvalidToolArguments, DomainError:
             return _error("Invalid tool arguments.")
+        except ProposalLimitReached as error:
+            return _error(str(error))
         except NoteNotFound, SectionNotFound:
             return _error("Not found.")
         except PermissionDenied, AuthenticationFailed:
@@ -217,12 +243,11 @@ class ReadTools:
             ctx: ServerRequestContext[dict[str, object]], params: types.PaginatedRequestParams | None
         ) -> types.ListToolsResult:
             try:
-                _reader(await asyncio.to_thread(authenticate, ctx.request))
+                return self.list_tools(await asyncio.to_thread(authenticate, ctx.request))
             except AuthenticationFailed, PermissionDenied:
                 raise MCPError(code=types.INVALID_REQUEST, message="Access denied.") from None
             except Exception:
                 raise MCPError(code=types.INTERNAL_ERROR, message="Cérebro offline") from None
-            return self.list_tools()
 
         async def call_tool(
             ctx: ServerRequestContext[dict[str, object]], params: types.CallToolRequestParams

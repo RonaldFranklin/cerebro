@@ -16,7 +16,7 @@ from cerebro.adapters.inbound.cli import ArgumentParser
 from cerebro.adapters.inbound.input_limits import MAX_INPUT_BYTES
 from cerebro.adapters.inbound.mcp_http import http_app
 from cerebro.adapters.inbound.mcp_stdio import bridge
-from cerebro.adapters.inbound.mcp_tools import ReadTools
+from cerebro.adapters.inbound.mcp_tools import MCPTools
 from cerebro.bootstrap.container import build_container
 from cerebro.bootstrap.settings import load_settings
 from cerebro.domain.access import AccessCeiling
@@ -74,11 +74,12 @@ def serve() -> int:
             container = build_container(load_settings(options.config, os.environ))
             container.start()
             cases = container.use_cases
-            tools = ReadTools(
+            tools = MCPTools(
                 get_overview=cases.get_overview,
                 search_notes=cases.search_notes,
                 read_note=cases.read_note,
                 get_neighbors=cases.get_neighbors,
+                submit_proposal=cases.submit_proposal,
             )
             app = http_app(tools, cases.authenticate_token, listeners)
             config = uvicorn.Config(

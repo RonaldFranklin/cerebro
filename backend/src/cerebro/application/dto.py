@@ -250,6 +250,7 @@ class NoteView:
     section: str | None
     body: str
     members: tuple[HubMember, ...] | None = None
+    complete: bool = False
 
     @classmethod
     def from_note(
@@ -280,6 +281,13 @@ class NoteView:
             updated=note.updated,
             review_by=note.review_by,
             content_hash=content_hash(note),
+            complete=(
+                section is None
+                and body == note.body
+                and hub == note.hub
+                and related == note.related
+                and superseded_by == note.superseded_by
+            ),
             section=section,
             body=body,
             members=members,

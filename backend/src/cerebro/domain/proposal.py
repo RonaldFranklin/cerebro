@@ -133,6 +133,34 @@ class ProposedContent:
             raise InvalidValueError("related", "expected a tuple of NoteId")
 
 
+def validate_submission_shape(
+    kind: ProposalKind, target: NoteId | None, base_hash: str | None, content: ProposedContent
+) -> None:
+    """Required and forbidden fields for each submission kind."""
+    if kind is ProposalKind.CREATE:
+        if target is not None:
+            raise InvalidValueError("target", "not allowed for create")
+        if base_hash is not None:
+            raise InvalidValueError("base_hash", "not allowed for create")
+        if content.title is None or not content.title.strip():
+            raise InvalidValueError("content.title", "required for create")
+        if content.body is None:
+            raise InvalidValueError("content.body", "required for create")
+        return
+    if target is None:
+        raise InvalidValueError("target", f"required for {kind.value}")
+    if base_hash is None:
+        raise InvalidValueError("base_hash", f"required for {kind.value}")
+    if kind is ProposalKind.UPDATE:
+        if content.body is None:
+            raise InvalidValueError("content.body", "required for update (the full new body)")
+        return
+    if content.body is not None:
+        raise InvalidValueError("content.body", f"not allowed for {kind.value}")
+    if kind is ProposalKind.LINK and not content.related:
+        raise InvalidValueError("content.related", "required for link")
+
+
 @dataclass(frozen=True, slots=True, kw_only=True)
 class Proposal:
     """Required fields per kind (checked on construction):
@@ -204,32 +232,7 @@ class Proposal:
             self.curated_by is None or self.approved_by is None or self.decision is None
         ):
             raise InvalidValueError("status", f"{self.status.value} needs a decision, curated_by and approved_by")
-        self._check_kind_rules()
-
-    def _check_kind_rules(self) -> None:
-        c = self.content
-        if self.kind is ProposalKind.CREATE:
-            if self.target is not None:
-                raise InvalidValueError("target", "not allowed for create")
-            if self.base_hash is not None:
-                raise InvalidValueError("base_hash", "not allowed for create")
-            if c.title is None or not c.title.strip():
-                raise InvalidValueError("content.title", "required for create")
-            if c.body is None:
-                raise InvalidValueError("content.body", "required for create")
-            return
-        if self.target is None:
-            raise InvalidValueError("target", f"required for {self.kind.value}")
-        if self.base_hash is None:
-            raise InvalidValueError("base_hash", f"required for {self.kind.value}")
-        if self.kind is ProposalKind.UPDATE:
-            if c.body is None:
-                raise InvalidValueError("content.body", "required for update (the full new body)")
-            return
-        if c.body is not None:
-            raise InvalidValueError("content.body", f"not allowed for {self.kind.value}")
-        if self.kind is ProposalKind.LINK and not c.related:
-            raise InvalidValueError("content.related", "required for link")
+        validate_submission_shape(self.kind, self.target, self.base_hash, self.content)
 
     # -- lifecycle ---------------------------------------------------------------------------------------------
 
