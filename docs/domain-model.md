@@ -211,7 +211,8 @@ rises to `restricted` from `public` or `internal` (through an `update` proposal 
 remains in the content repository's git history and in any backups, so the new level protects only the current
 version. The message is a fixed text with no note content. No warning is raised for a create, for an unchanged or
 lowered sensitivity, for a note that was already `restricted`, for an `already_applied` retry, or when nothing was
-written (validation errors, conflicts). Scrubbing history (and backups) is a manual owner operation, out of scope
+written (validation errors, conflicts). The warning is delivered only by the call that performs the commit: a retry
+after a crash returns `already_applied` without it, so the caller should persist or show it immediately. Scrubbing history (and backups) is a manual owner operation, out of scope
 for Cérebro.
 
 ## 5. Status

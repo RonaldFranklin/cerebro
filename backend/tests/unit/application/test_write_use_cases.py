@@ -808,6 +808,14 @@ class TestRestrictedRaiseWarning:
         assert kit.apply(pid).warnings == ()
         assert kit.apply(pid).outcome is ApplyOutcome.ALREADY_APPLIED
 
+    def test_apply_proposal_conflict_while_raising_does_not_warn(self, kit: Kit) -> None:
+        self.free_ssh(kit)
+        pid = kit.approved(self.submit_raise(kit))
+        edit_note(kit, body="# SSH\n\nThe owner got there first.\n")
+        result = kit.apply(pid)
+        assert result.outcome is ApplyOutcome.CONFLICT
+        assert result.warnings == ()
+
     @pytest.mark.parametrize("previous", [Sensitivity.PUBLIC, Sensitivity.INTERNAL])
     def test_owner_edit_warns_when_raising_to_restricted(self, kit: Kit, previous: Sensitivity) -> None:
         self.free_ssh(kit, previous)
@@ -822,6 +830,7 @@ class TestRestrictedRaiseWarning:
     def test_owner_edit_does_not_warn_otherwise(self, kit: Kit) -> None:
         current = kit.world.notes.get(SSH)
         assert current is not None
+        assert current.sensitivity is Sensitivity.INTERNAL  # fixture precondition
         for level in (Sensitivity.INTERNAL, Sensitivity.PUBLIC):  # unchanged, then lowered
             current = kit.world.notes.get(SSH)
             assert current is not None
