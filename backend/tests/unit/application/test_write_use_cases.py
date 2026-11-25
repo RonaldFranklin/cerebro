@@ -700,6 +700,24 @@ class TestApplyProposal:
         assert kit.commits == commits + 1
         assert kit.stored(pid).status is S.APPLIED
 
+    def test_a_send_back_that_lost_the_race_to_an_applied_proposal_reports_already_applied(self, kit: Kit) -> None:
+        pid = kit.approved(kit.submit_update())
+        stored = kit.stored(pid)
+        commits = kit.commits
+
+        def other_apply_finished() -> None:
+            current = kit.world.notes.get(SSH)
+            assert current is not None
+            change = NoteChange(note=replace(current, body="raced\n"), expected_hash=content_hash(current))
+            kit.world.notes.apply([change], kit.world.notes.commits[0][1])
+            kit.overwrite(stored.mark_applied(stored.updated_at))
+
+        kit.race_after_next_get(other_apply_finished)
+        result = kit.apply(pid)  # sees a changed target and would send the proposal back
+        assert (result.outcome, result.status) == (ApplyOutcome.ALREADY_APPLIED, S.APPLIED)
+        assert kit.commits == commits + 1  # only the racing writer's commit
+        assert kit.stored(pid).status is S.APPLIED
+
     def test_a_lost_proposal_race_after_the_commit_is_not_swallowed(self, kit: Kit) -> None:
         pid = kit.approved(kit.submit_create())
         commits = kit.commits

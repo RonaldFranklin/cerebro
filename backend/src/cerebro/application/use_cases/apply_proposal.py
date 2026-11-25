@@ -40,12 +40,12 @@ class ApplyProposal:
 
     **Retries and races.** ``ProposalStore.save`` is a compare-and-swap on the proposal's ``revision`` and the note
     write is a compare-and-swap on the content hash, so two racing applies commit the change at most once. The
-    note commit comes first and the proposal save second: a crash, or a proposal changed by someone else in that
-    window (``ProposalConflict``, never swallowed), can leave an ``approved`` proposal whose
-    change is already committed. Applying again then finds the target changed, but
-    ``is_noop`` shows that writing the proposal would change nothing: it is marked ``applied`` without a second
-    commit (``ALREADY_APPLIED``). Two simultaneous calls are serialized by the repository's compare-and-swap, so
-    at most one commit is made. An already ``applied`` proposal returns ``ALREADY_APPLIED`` and touches nothing.
+    note commit comes first and the proposal save second. A crash in between, or a proposal changed by someone
+    else in that window (``ProposalConflict``, never swallowed unless the stored proposal is already ``applied``),
+    can leave an ``approved`` proposal whose change is already committed. Applying again then finds the target
+    changed, but ``is_noop`` shows that writing the proposal would change nothing: it is marked ``applied``
+    without a second commit (``ALREADY_APPLIED``). An already ``applied`` proposal returns ``ALREADY_APPLIED``
+    and touches nothing.
     """
 
     def __init__(
@@ -141,18 +141,30 @@ class ApplyProposal:
         Any other lost race is re-raised (``ProposalConflict``): the change may already be committed, and a retry
         is safe because it ends in ``ALREADY_APPLIED`` without a second commit.
         """
+        self._save_unless_applied(proposal.mark_applied(self._clock.now()), proposal.revision)
+
+    def _save_unless_applied(self, result: Proposal, expected_revision: int) -> bool:
+        """Save; on a lost race return False if the stored proposal is already ``applied``, else re-raise."""
         try:
-            self._proposals.save(proposal.mark_applied(self._clock.now()), expected_revision=proposal.revision)
+            self._proposals.save(result, expected_revision=expected_revision)
         except ProposalConflict:
-            stored = self._proposals.get(proposal.id)
+            stored = self._proposals.get(result.id)
             if stored is None or stored.status is not ProposalStatus.APPLIED:
                 raise
+            return False
+        return True
 
     def _send_back(
         self, proposal: Proposal, outcome: ApplyOutcome, report: ValidationReport | None, note_id: NoteId
     ) -> ApplyProposalResult:
         sent = proposal.mark_needs_owner(self._clock.now(), conflict=True)
-        self._proposals.save(sent, expected_revision=proposal.revision)
+        if not self._save_unless_applied(sent, proposal.revision):
+            return ApplyProposalResult(
+                proposal_id=proposal.id,
+                status=ProposalStatus.APPLIED,
+                outcome=ApplyOutcome.ALREADY_APPLIED,
+                note_id=note_id,
+            )
         return ApplyProposalResult(
             proposal_id=sent.id, status=sent.status, outcome=outcome, note_id=note_id, validation=report
         )

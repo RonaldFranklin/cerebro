@@ -358,8 +358,9 @@ Authorization lives in the use cases, never in the adapters:
   **Races and retries:** the proposal carries an integer `revision` (0 on creation; domain transitions never touch
   it). `ProposalStore.save(proposal, expected_revision=n)` is a compare-and-swap: it stores the proposal with
   revision `n + 1` only if the stored revision is `n`, otherwise raises `ProposalConflict`. Every use case that
-  saves passes the revision of the copy it loaded and **never swallows** the conflict (two racing reviews,
-  validations or curations: exactly one wins, the other gets `ProposalConflict` and must reload). `ApplyProposal`
+  saves passes the revision of the copy it loaded and does not swallow the conflict, except in `ApplyProposal` when
+  the stored proposal is already `applied`. Of two racing reviews, validations or curations exactly one wins; the
+  other gets `ProposalConflict` and must reload. `ApplyProposal`
   commits the note first (guarded by the content-hash compare-and-swap) and saves the proposal second, so the one
   non-atomic window is a lost proposal save after a successful commit. Two racing applies commit at most once; the
   loser finds the note changed, recognizes that writing the proposal would change nothing but the `updated` date,

@@ -75,6 +75,20 @@ class ProposalStoreContract:
         with pytest.raises(ProposalNotFound):
             store.save(make_proposal("proposal-0099"), expected_revision=0)
 
+    def test_save_stores_expected_plus_one_whatever_the_proposal_carries(self, store: ProposalStore) -> None:
+        proposal = make_proposal()
+        store.add(proposal)
+        saved = store.save(replace(proposal, revision=41), expected_revision=0)
+        assert saved.revision == 1
+        stored = store.get(proposal.id)
+        assert stored is not None
+        assert stored.revision == 1
+        assert [p.revision for p in store.find()] == [1]
+
+    def test_unknown_id_is_not_found_even_with_a_nonzero_expected_revision(self, store: ProposalStore) -> None:
+        with pytest.raises(ProposalNotFound):
+            store.save(make_proposal("proposal-0099"), expected_revision=7)
+
     def test_add_requires_revision_zero(self, store: ProposalStore) -> None:
         with pytest.raises(InvalidValueError):
             store.add(replace(make_proposal(), revision=3))

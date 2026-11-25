@@ -7,7 +7,8 @@ from cerebro.domain.proposal import Proposal, ProposalStatus
 
 class ProposalStore(Protocol):
     def add(self, proposal: Proposal) -> None:
-        """Store a new proposal (``revision`` must be 0). Raises ``AlreadyExists`` if the id is taken."""
+        """Store a new proposal. Raises ``InvalidValueError`` if ``revision`` is not 0 and ``AlreadyExists`` if the
+        id is taken."""
         ...
 
     def get(self, proposal_id: str) -> Proposal | None: ...
@@ -17,7 +18,9 @@ class ProposalStore(Protocol):
 
         Succeeds only if the stored revision equals ``expected_revision`` (the revision of the copy the caller
         loaded); the stored copy gets ``expected_revision + 1`` and is returned. Raises ``ProposalNotFound`` if
-        unknown and ``ProposalConflict`` if the revision differs. The check and the write are atomic.
+        unknown (checked before the revision) and ``ProposalConflict`` if the revision differs. The check and the
+        write must be atomic (a real adapter needs a transaction or ``UPDATE ... WHERE revision = ?``). The stored
+        revision is ``expected_revision + 1`` whatever ``proposal.revision`` holds.
         """
         ...
 
