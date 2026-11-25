@@ -16,7 +16,7 @@ from cerebro.application.errors import AuthenticationFailed
 from cerebro.bootstrap.container import Container, build_container
 from cerebro.domain.access import AccessCeiling, AccessContext, Agent, Scope
 from cerebro.domain.enums import Priority, Sensitivity, Status
-from tests.integration.content_kit import HUB_ID, RESTRICTED_MARKER, SSH_ID, VAULT_ID, make_sample_repo
+from tests.integration.content_kit import DOCKER_ID, HUB_ID, RESTRICTED_MARKER, SSH_ID, VAULT_ID, make_sample_repo
 
 AGENT = AccessContext(
     principal=Agent("reader"), ceiling=AccessCeiling(Sensitivity.INTERNAL), scopes=frozenset({Scope.READ})
@@ -139,7 +139,9 @@ def test_previous_index_schema_is_rebuilt_from_content(container: Container) -> 
     assert restored.start()
     result = tools_for(restored).call("cerebro_neighbors", {"id": SSH_ID.value}, lambda: AGENT)
     assert not result.is_error
-    assert all(n["summary"] for n in result.structured_content["neighbors"])
+    docker = next(n for n in result.structured_content["neighbors"] if n["id"] == DOCKER_ID.value)
+    assert docker["summary"] == "How containers are named, built and run on the home server, as plain conventions."
+    assert {"source": SSH_ID.value, "target": DOCKER_ID.value, "kind": "related"} in docker["relation"]
 
 
 def test_sdk_client_discovers_and_calls_registered_handlers(container: Container) -> None:
