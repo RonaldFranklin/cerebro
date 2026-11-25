@@ -3,13 +3,14 @@ from dataclasses import fields, replace
 import pytest
 
 from cerebro.application.dto import AmendProposalRequest, SubmitProposalRequest
-from cerebro.application.errors import NoteNotFound, PermissionDenied, ProposalConflict, ProposalNotApplicable
+from cerebro.application.errors import PermissionDenied, ProposalConflict, ProposalNotApplicable
 from cerebro.application.use_cases import AdmitProposal, AmendProposal
+from cerebro.domain.content_hash import content_hash
 from cerebro.domain.decision import Decision
 from cerebro.domain.enums import Sensitivity
 from cerebro.domain.errors import InvalidValueError
 from cerebro.domain.note import NoteId
-from cerebro.domain.proposal import Proposal, ProposalKind, ProposalLimits, ProposalStatus
+from cerebro.domain.proposal import Proposal, ProposalKind, ProposalLimits, ProposalStatus, ProposedContent
 from tests.fakes.stores import FakeCurator
 from tests.unit.application.write_kit import Kit, agent_ctx, new_content, owner_ctx
 
@@ -100,7 +101,7 @@ def test_amend_validates_before_saving_and_preserves_provenance() -> None:
 
 @pytest.mark.parametrize("ref", ["vault-layout", "absent-note"])
 @pytest.mark.parametrize("field", ["body", "related", "hub", "secret_related"])
-def test_hidden_and_missing_references_are_indistinguishable_before_admission(ref: str, field: str) -> None:
+def test_hidden_and_missing_content_references_are_scrubbed_and_rejected(ref: str, field: str) -> None:
     k = Kit()
 
     values: dict[str, object] = {"body": f"See [[{ref}]].", "related": (NoteId(ref),), "hub": NoteId(ref)}
@@ -109,9 +110,13 @@ def test_hidden_and_missing_references_are_indistinguishable_before_admission(re
     else:
         content = new_content(**{field: values[field]})
     req = SubmitProposalRequest(kind=ProposalKind.CREATE, content=content)
-    with pytest.raises(NoteNotFound, match=r"^note not found$"):
-        intake(k).execute(req, AGENT)
-    assert not k.store.find()
+    outcome = intake(k).execute(req, AGENT)
+    assert not outcome.valid
+    stored = k.stored(outcome.proposal_id)
+    assert stored.status is ProposalStatus.REJECTED
+    assert stored.content.body == ""
+    assert stored.content.related == ()
+    assert ref not in repr(stored)
 
 
 def test_unexpected_curator_output_never_reaches_admission(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -124,3 +129,22 @@ def test_unexpected_curator_output_never_reaches_admission(monkeypatch: pytest.M
     with pytest.raises(InvalidValueError):
         intake(k).execute(SubmitProposalRequest(kind=ProposalKind.CREATE, content=new_content()), AGENT)
     assert k.store.find() == ()
+
+
+@pytest.mark.parametrize("secret", [True, False])
+def test_rejected_link_uses_a_placeholder_for_required_metadata(secret: bool) -> None:
+    k = Kit()
+    target = NoteId("server-ssh-access")
+    base = k.world.notes.get(target)
+    assert base
+    request = SubmitProposalRequest(
+        kind=ProposalKind.LINK,
+        target=target,
+        base_hash=content_hash(base),
+        content=ProposedContent(
+            related=(NoteId("vault-layout"),), rationale="-----BEGIN PRIVATE KEY-----" if secret else "link"
+        ),
+    )
+    result = intake(k).execute(request, AGENT)
+    assert not result.valid
+    assert k.stored(result.proposal_id).content.related == (NoteId("redacted-reference"),)

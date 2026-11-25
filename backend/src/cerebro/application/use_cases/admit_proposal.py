@@ -33,10 +33,9 @@ class AdmitProposal:
         if ctx.token_id is None:
             raise PermissionDenied("submit without an authenticated token")
         proposal = self._submit.execute(request, ctx)
-        self._submit.check_references(request, ctx)
         owner = AccessContext.for_owner(ctx.ceiling)
         if proposal.status is ProposalStatus.RECEIVED:
-            proposal = self._validate.validate(proposal, owner)
+            proposal = self._validate.validate(proposal, owner, submitted_by=ctx)
         if proposal.status is ProposalStatus.VALIDATED:
             proposal = self._curate.curate(proposal, owner)
         require_admissible(proposal)

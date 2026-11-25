@@ -371,10 +371,12 @@ Authorization lives in the use cases, never in the adapters:
   rejects is stored scrubbed (not only those holding a secret): only the kind, target, base hash, source agent,
   timestamps and the structured findings (codes, fields, detectors, line numbers) are kept; every free text and
   every suggested field (title, body, summary, rationale, area, type, priority, sensitivity, hub, superseded_by,
-  session, context) is replaced by a placeholder or dropped (a `link` keeps `related`, which the domain requires).
+  session, context) is replaced by a placeholder or dropped (a `link` uses a placeholder for its required nonempty `related` list).
   Admission stages the submission, validation and curation in request-local memory. The first durable row
   is a scrubbed rejection or a validated proposal awaiting owner review, inserted together with its quota
-  charge. The agent receives only the proposal id and a boolean validation outcome.
+  charge. Unavailable references inside content produce a scrubbed validation rejection whether the note is
+  missing or hidden. Direct mutation targets keep the not-found rule. The agent receives only the proposal
+  id and a boolean validation outcome.
 - **Owner amendment.** The full-ceiling owner can replace the body of a reviewable create/update before
   approval using the preview revision. The candidate is validated before the revision-checked save.
   A stale or invalid amendment leaves the stored proposal unchanged. Its id, source, decision, curator and

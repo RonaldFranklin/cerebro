@@ -9,7 +9,6 @@ import unicodedata
 from dataclasses import replace
 from datetime import date
 
-from cerebro.application.dto import SubmitProposalRequest
 from cerebro.application.errors import ProposalNotApplicable
 from cerebro.application.ports.notes import NoteRepository
 from cerebro.domain.budgets import core_budget_findings, word_count
@@ -210,7 +209,7 @@ def is_noop(candidate: Note, current: Note) -> bool:
     return replace(candidate, updated=current.updated, created=current.created) == current
 
 
-def proposal_references(proposal: Proposal | SubmitProposalRequest) -> set[NoteId]:
+def proposal_references(proposal: Proposal) -> set[NoteId]:
     """Every note referenced by proposed metadata and by text passed to a curator."""
     c = proposal.content
     refs = set(c.related)
@@ -241,13 +240,13 @@ def scrubbed(proposal: Proposal) -> Proposal:
     Kept: id, kind, target, base hash, agent, timestamps, status and the validation report (structured findings).
     Dropped: every free text and every suggested field (title, body, summary, rationale, area, type, priority,
     sensitivity, hub, superseded_by, session, context). Required fields keep a harmless placeholder; a ``link``
-    keeps ``related`` because the domain requires it to be non-empty.
+    uses a single placeholder id to satisfy its nonempty related tuple.
     """
     c = proposal.content
     content = ProposedContent(
         title=REDACTED_TITLE if c.title is not None else None,
         body="" if c.body is not None else None,
-        related=c.related if proposal.kind is ProposalKind.LINK else (),
+        related=(NoteId("redacted-reference"),) if proposal.kind is ProposalKind.LINK else (),
     )
     return replace(proposal, content=content, source_session=None, source_context=None)
 

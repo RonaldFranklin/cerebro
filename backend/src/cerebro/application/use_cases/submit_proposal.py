@@ -5,7 +5,7 @@ from cerebro.application.dto import SubmitProposalRequest
 from cerebro.application.errors import PermissionDenied
 from cerebro.application.ports.notes import NoteRepository
 from cerebro.application.ports.system import Clock, IdGenerator
-from cerebro.application.proposal_support import proposal_references, scrubbed, secret_findings
+from cerebro.application.proposal_support import scrubbed, secret_findings
 from cerebro.domain.access import AccessContext, Agent, Scope
 from cerebro.domain.proposal import Proposal, ProposalKind
 from cerebro.domain.report import PROPOSAL_POLICY
@@ -56,8 +56,3 @@ class SubmitProposal:
             report = PROPOSAL_POLICY.report(found)
             return scrubbed(proposal).reject_invalid(report, now)
         return proposal
-
-    def check_references(self, request: SubmitProposalRequest, ctx: AccessContext) -> None:
-        """A reference outside the submitting ceiling has the same outcome as an absent reference."""
-        for ref in proposal_references(request):
-            visible_note(self._notes, ref, ctx, include_history=True)
