@@ -37,7 +37,8 @@ about YAML, SQLite, git, HTTP, MCP or any LLM provider. See [ADR-0001](adr/0001-
 | `cerebro.bootstrap` | everything (composition root) |
 
 Enforced with `import-linter` contracts in CI. The "standard library only" rule for `cerebro.domain` and
-`cerebro.application` is guaranteed by the custom `stdlib_only` contract in `backend/devtools/import_contracts.py`.
+`cerebro.application` is enforced by a contract of the custom `stdlib_only` type, defined in
+`backend/devtools/import_contracts.py` (static imports only; dynamic imports are not detected).
 
 ## 2. Backend package layout (target)
 
@@ -183,7 +184,7 @@ Full policy in [ADR-0013](adr/0013-stack-and-dependency-policy.md). Summary:
 | MCP | official `mcp` Python SDK | adapter only |
 | CLI | Typer (or argparse if we want zero deps) | decided in Phase 3 |
 | LLM | provider SDKs, one adapter each | optional, Phase 7 |
-| Quality | pytest, ruff, mypy (strict), import-linter | custom `stdlib_only` contract in `backend/devtools/` |
+| Quality | pytest, ruff, mypy (strict), import-linter | custom `stdlib_only` contract type in `backend/devtools/` |
 | Web | Node Active LTS (exact version chosen in Phase 5), pnpm, React, TypeScript, Vite, TanStack Query, Sigma.js, graphology, CodeMirror 6 | |
 
 All versions are pinned exactly in lockfiles. Exact versions are chosen after checking the latest stable
