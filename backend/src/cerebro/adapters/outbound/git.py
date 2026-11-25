@@ -1,46 +1,77 @@
 """Git adapters: a hardened wrapper around the ``git`` CLI and the ``VersionControl`` port on top of it.
 
-Hardening (every call):
+Hardening (every call, ``init`` included):
 
-* never a shell: the command is an argument list, ``--`` precedes every path, paths are validated first
-  (relative, no ``..``, no ``.git``, no symlink escape);
-* a fixed, minimal environment: nothing inherited (no ``GIT_*`` variables, no ``HOME`` config), system and global
-  config disabled, ``HOME`` is an empty private temp directory, ``LC_ALL=C``, no terminal prompts, literal pathspecs;
-* command-line overrides that win over repository config: hooks off, signing off, fsmonitor off, ``ext::`` transport
-  off, credential helpers off; the identity comes from the constructor, never from any config file;
+* never a shell: the command is an argument list, ``--`` precedes every path, paths are validated first (relative,
+  no ``.``/``..``, no ``.git`` component, no symlink in any component, no directory, no ``.gitattributes`` /
+  ``.gitmodules`` / ``.gitignore``);
+* a fixed, minimal environment: nothing inherited, system and global config disabled, ``HOME`` is an empty private
+  temp directory, ``LC_ALL=C``, no terminal prompts, literal pathspecs. ``passthrough_env`` may copy only an
+  allowlist of variables (ssh agent, ssh command, TLS bundle, proxies); anything else is refused;
+* command-line overrides, which win over the repository's own ``.git/config``: hooks, signing, fsmonitor, pager,
+  askpass, credential helpers, signature display, global attributes and submodule recursion off; ``core.sshCommand``
+  is plain ``ssh`` (a ``GIT_SSH_COMMAND`` passed through still takes precedence, by git's own rules); every transport
+  is denied except https, ssh and file (``ext::`` and friends never run); the identity comes from the constructor;
 * ``--git-dir`` / ``--work-tree`` are explicit, so git never walks up to a parent repository;
 * ``safe.directory`` is passed for the repository root on the command line (the only place git honours it besides
   system/global config, which are disabled): the root is operator configuration, not user input;
-* a timeout on every call (the whole process group is killed), stdout and stderr capped in size;
-* the commit message goes through stdin (``-F -``), never the command line;
-* errors are ``GitError`` and carry only the sub-command, exit code and a scrubbed, truncated stderr: no commit
-  message, no URL credentials, no paths.
+* the git executable is resolved to an absolute path and only absolute directories reach the child ``PATH``;
+* a timeout on every call (the whole process group is killed on any exit path), stdout read through a pipe with a
+  hard cap (exceeding it kills git and raises, so data is never silently partial), the commit message through
+  stdin (``-F -``), never the command line;
+* errors are ``GitError``: sub-command, exit code and a heavily scrubbed hint (quoted strings, URLs, anything that
+  looks like a path, the configured remote and the repository root are removed). Never the commit message.
 
-Residual risk: the repository's own ``.git/config`` is still read, so keys that cannot be overridden here (for
-example ``core.sshCommand``) would run if someone with write access to the content repository planted them. The
-content repository is the owner's own, private repository; do not point Cérebro at a repository you do not trust.
+Rollback scope: ``discard_changes`` restores only the paths it is given. Out-of-band edits to other files are left
+untouched on purpose (an owner editing a note by hand is not ours to revert).
+
+Residual risks (config-driven, not overridable from the command line): the repository's ``.git/config`` can still
+define ``filter.*`` drivers (run through ``.gitattributes``), ``diff``/``merge`` drivers and ``url.*.insteadOf``
+rewrites. The content repository is the owner's own private repository; do not point Cérebro at one you do not
+trust. Refusing to stage ``.gitattributes`` narrows how a note write could activate such a driver.
 """
 
+import contextlib
 import os
 import re
+import selectors
 import shutil
 import signal
 import subprocess
 import tempfile
+import time
 import weakref
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from pathlib import Path, PurePath
-from typing import IO, Final
+from typing import Final
 
 DEFAULT_TIMEOUT: Final = 30.0
 DEFAULT_PUSH_TIMEOUT: Final = 120.0
 MAX_OUTPUT_BYTES: Final = 1024 * 1024
-_MAX_ERROR_CHARS: Final = 500
+MAX_STDIN_BYTES: Final = 32 * 1024  # below the pipe buffer: writing it can never block
+_MAX_STDERR_BYTES: Final = 16 * 1024
+_MAX_ERROR_CHARS: Final = 200
 _BRANCH: Final = re.compile(r"[A-Za-z0-9][A-Za-z0-9._/-]{0,99}")
-_USERINFO: Final = re.compile(r"(?<=://)[^/@\s'\"]+@")
-_ABSOLUTE_PATH: Final = re.compile(r"(?<![\w:/.])/[^\s'\":]+")
-_SAFE_PATH: Final = "/usr/local/bin:/usr/bin:/bin"
+_URL: Final = re.compile(r"[A-Za-z][A-Za-z0-9+.-]*://\S*")
+_QUOTED: Final = re.compile(r"'[^']*'|\"[^\"]*\"")
+_PATHLIKE_WORD: Final = re.compile(r"\S*[/@=?\\]\S*")
+_SAFE_PATH: Final = ("/usr/local/bin", "/usr/bin", "/bin")
+_FORBIDDEN_NAMES: Final = frozenset({".gitattributes", ".gitmodules", ".gitignore"})
+ALLOWED_PASSTHROUGH_ENV: Final = frozenset(
+    {
+        "SSH_AUTH_SOCK",
+        "GIT_SSH_COMMAND",
+        "SSL_CERT_FILE",
+        "SSL_CERT_DIR",
+        "http_proxy",
+        "https_proxy",
+        "no_proxy",
+        "HTTP_PROXY",
+        "HTTPS_PROXY",
+        "NO_PROXY",
+    }
+)
 
 
 class GitError(Exception):
@@ -61,15 +92,29 @@ class GitIdentity:
 
 
 def scrub(text: str, *, secrets: Iterable[str] = (), root: Path | None = None) -> str:
-    """Remove from ``text`` everything an error must not carry: given secrets, URL userinfo, absolute paths."""
+    """Reduce git's stderr to a harmless hint: no URLs (userinfo, query), quoted strings, paths or secrets."""
     for secret in secrets:
         if secret:
             text = text.replace(secret, "<redacted>")
     if root is not None:
         text = text.replace(str(root), "<repo>")
-    text = _USERINFO.sub("***@", text)
-    text = _ABSOLUTE_PATH.sub("<path>", text)
-    return text.strip()[:_MAX_ERROR_CHARS]
+    text = _URL.sub("<url>", text)
+    text = _QUOTED.sub("<quoted>", text)
+    text = _PATHLIKE_WORD.sub("<redacted>", text)
+    return " ".join(text.split())[:_MAX_ERROR_CHARS]
+
+
+def validate_branch(branch: str) -> str:
+    if _BRANCH.fullmatch(branch) is None or ".." in branch or branch.endswith((".lock", "/", ".")):
+        raise GitError("invalid branch name")
+    return branch
+
+
+def validate_remote(remote: str) -> str:
+    """A configured remote name or URL: not an option, no whitespace or control characters."""
+    if not remote or remote.startswith("-") or any(c.isspace() or ord(c) < 32 or ord(c) == 127 for c in remote):
+        raise GitError("invalid remote")
+    return remote
 
 
 def _remove_dir(path: str) -> None:
@@ -88,17 +133,25 @@ class GitRepo:
         git_executable: str = "git",
         passthrough_env: Sequence[str] = (),
     ) -> None:
-        """``passthrough_env`` names environment variables copied to every call (for example ``SSH_AUTH_SOCK`` or
-        ``GIT_SSH_COMMAND`` when pushing over ssh). Empty by default: nothing is inherited."""
+        """``passthrough_env`` names environment variables copied to every call, from ``ALLOWED_PASSTHROUGH_ENV``
+        only (for example ``SSH_AUTH_SOCK`` when pushing over ssh). Empty by default: nothing is inherited."""
         if not root.is_dir():
             raise GitError("repository directory does not exist")
-        resolved = shutil.which(git_executable)
-        if resolved is None:
+        refused = [name for name in passthrough_env if name not in ALLOWED_PASSTHROUGH_ENV]
+        if refused:
+            raise GitError(f"environment variable not allowed: {refused[0].split('=')[0][:40]}")
+        found = shutil.which(git_executable)
+        if found is None:
             raise GitError("git executable not found")
+        git_path = Path(found).resolve()
+        if not git_path.is_absolute():  # pragma: no cover - resolve() always returns an absolute path
+            raise GitError("git executable must resolve to an absolute path")
         self._root = root.resolve()
+        if (self._root / ".git").is_symlink():
+            raise GitError("the repository's .git must not be a symlink")
         self._identity = identity
         self._timeout = timeout
-        self._git = resolved
+        self._git = str(git_path)
         self._home = tempfile.mkdtemp(prefix="cerebro-git-home-")
         weakref.finalize(self, _remove_dir, self._home)
         self._env = self._build_env(passthrough_env)
@@ -107,7 +160,7 @@ class GitRepo:
 
     def _build_env(self, passthrough: Sequence[str]) -> dict[str, str]:
         env = {
-            "PATH": os.pathsep.join([str(Path(self._git).parent), _SAFE_PATH]),
+            "PATH": os.pathsep.join([str(Path(self._git).parent), *_SAFE_PATH]),
             "HOME": self._home,
             "XDG_CONFIG_HOME": self._home,
             "LC_ALL": "C",
@@ -122,32 +175,35 @@ class GitRepo:
                 env[name] = os.environ[name]
         return env
 
-    def _base_args(self) -> list[str]:
-        return [
-            self._git,
-            f"--git-dir={self._root / '.git'}",
-            f"--work-tree={self._root}",
-            "-c",
-            "core.hooksPath=" + os.devnull,
-            "-c",
-            "commit.gpgsign=false",
-            "-c",
-            "tag.gpgsign=false",
-            "-c",
+    def _base_args(self, *, with_dirs: bool = True) -> list[str]:
+        overrides = [
+            f"core.hooksPath={os.devnull}",
+            f"core.attributesFile={os.devnull}",
             "core.fsmonitor=false",
-            "-c",
-            "protocol.ext.allow=never",
-            "-c",
+            "core.pager=cat",
+            "core.askPass=",
+            "core.sshCommand=ssh",
+            "commit.gpgsign=false",
+            "tag.gpgsign=false",
+            "log.showSignature=false",
             "credential.helper=",
-            "-c",
-            f"safe.directory={self._root}",
-            "-c",
-            f"user.name={self._identity.name}",
-            "-c",
-            f"user.email={self._identity.email}",
-            "-c",
+            "submodule.recurse=false",
             "gc.auto=0",
+            "protocol.allow=never",
+            "protocol.https.allow=always",
+            "protocol.ssh.allow=always",
+            "protocol.file.allow=always",
+            "protocol.ext.allow=never",
+            f"safe.directory={self._root}",
+            f"user.name={self._identity.name}",
+            f"user.email={self._identity.email}",
         ]
+        args = [self._git]
+        if with_dirs:
+            args += [f"--git-dir={self._root / '.git'}", f"--work-tree={self._root}"]
+        for item in overrides:
+            args += ["-c", item]
+        return args
 
     # -- process execution ---------------------------------------------------------------------------------------
 
@@ -161,75 +217,117 @@ class GitRepo:
         redact: Sequence[str] = (),
         init: bool = False,
     ) -> tuple[int, str]:
-        command = [self._git, *args] if init else [*self._base_args(), *args]
-        with tempfile.TemporaryFile() as out, tempfile.TemporaryFile() as err:
-            try:
-                process = subprocess.Popen(
-                    command,
-                    cwd=self._root,
-                    env=self._env,
-                    stdin=subprocess.PIPE,
-                    stdout=out,
-                    stderr=err,
-                    start_new_session=True,
-                )
-            except OSError:
-                raise GitError(f"git {args[0]}: could not start git") from None
-            try:
-                process.communicate(
-                    input=stdin.encode() if stdin is not None else None,
-                    timeout=self._timeout if timeout is None else timeout,
-                )
-            except subprocess.TimeoutExpired:
-                self._kill(process)
-                raise GitError(f"git {args[0]}: timed out") from None
-            except BrokenPipeError:
-                process.wait()
-            stdout = self._read(out)
-            stderr = self._read(err)
-        if process.returncode not in ok:
-            detail = scrub(stderr, secrets=redact, root=self._root)
-            raise GitError(f"git {args[0]} failed (exit {process.returncode}): {detail}")
-        return process.returncode, stdout
-
-    @staticmethod
-    def _kill(process: subprocess.Popen[bytes]) -> None:
+        command = [*self._base_args(with_dirs=not init), *args]
+        data_in = stdin.encode() if stdin is not None else b""
+        if len(data_in) > MAX_STDIN_BYTES:
+            raise GitError(f"git {args[0]}: input too large")
+        limit = self._timeout if timeout is None else timeout
         try:
-            os.killpg(process.pid, signal.SIGKILL)
-        except ProcessLookupError:
-            process.kill()
-        process.wait()
+            process = subprocess.Popen(  # argument list, never a shell
+                command,
+                cwd=self._root,
+                env=self._env,
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                start_new_session=True,
+            )
+        except OSError:
+            raise GitError(f"git {args[0]}: could not start git") from None
+        try:
+            out, err = self._communicate(process, data_in, limit, args[0])
+        finally:
+            self._kill_group(process)
+        if process.returncode not in ok:
+            detail = scrub(err.decode("utf-8", errors="replace"), secrets=redact, root=self._root)
+            raise GitError(f"git {args[0]} failed (exit {process.returncode}): {detail}")
+        return process.returncode, out.decode("utf-8", errors="replace")
 
     @staticmethod
-    def _read(handle: IO[bytes]) -> str:
-        handle.seek(0)
-        data = handle.read(MAX_OUTPUT_BYTES + 1)
-        return data[:MAX_OUTPUT_BYTES].decode("utf-8", errors="replace")
+    def _communicate(process: subprocess.Popen[bytes], data_in: bytes, limit: float, name: str) -> tuple[bytes, bytes]:
+        assert process.stdin is not None
+        assert process.stdout is not None
+        assert process.stderr is not None
+        deadline = time.monotonic() + limit
+        try:
+            if data_in:
+                process.stdin.write(data_in)
+            process.stdin.close()
+        except BrokenPipeError:
+            pass  # git exited early; its exit code and stderr tell why
+        buffers: dict[int, bytearray] = {process.stdout.fileno(): bytearray(), process.stderr.fileno(): bytearray()}
+        stdout_fd = process.stdout.fileno()
+        with selectors.DefaultSelector() as selector:
+            selector.register(process.stdout, selectors.EVENT_READ)
+            selector.register(process.stderr, selectors.EVENT_READ)
+            while selector.get_map():
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    raise GitError(f"git {name}: timed out")
+                for key, _ in selector.select(remaining):
+                    chunk = os.read(key.fd, 65536)
+                    if not chunk:
+                        selector.unregister(key.fileobj)
+                        continue
+                    buffer = buffers[key.fd]
+                    if key.fd == stdout_fd:
+                        buffer += chunk
+                        if len(buffer) > MAX_OUTPUT_BYTES:
+                            raise GitError(f"git {name}: output exceeds the size limit")
+                    elif len(buffer) < _MAX_STDERR_BYTES:
+                        buffer += chunk[: _MAX_STDERR_BYTES - len(buffer)]
+        try:
+            process.wait(timeout=max(deadline - time.monotonic(), 0.1))
+        except subprocess.TimeoutExpired:
+            raise GitError(f"git {name}: timed out") from None
+        return bytes(buffers[stdout_fd]), bytes(buffers[process.stderr.fileno()])
+
+    @staticmethod
+    def _kill_group(process: subprocess.Popen[bytes]) -> None:
+        """Always runs: no descendant of git (ssh, helpers) survives the call."""
+        with contextlib.suppress(ProcessLookupError, PermissionError):
+            os.killpg(process.pid, signal.SIGKILL)
+        process.wait()
+        for stream in (process.stdin, process.stdout, process.stderr):
+            if stream is not None:
+                stream.close()
 
     # -- path validation -----------------------------------------------------------------------------------------
 
-    def _check_path(self, path: str | PurePath) -> str:
+    def _check_path(self, path: str | PurePath, *, allow_final_symlink: bool = False) -> str:
+        """A repository-relative path of one regular file (or, for removal, a symlink entry); never a directory."""
         text = str(path)
         if not text or "\x00" in text or text.startswith("-"):
             raise GitError("invalid path")
         pure = PurePath(text)
-        if pure.is_absolute() or pure.drive:
-            raise GitError("path must be relative")
-        parts = pure.parts
-        if ".." in parts or any(p.lower() == ".git" for p in parts):
+        if pure.is_absolute() or pure.drive or not pure.parts or pure.parts == (".",):
+            raise GitError("path must be a relative file path")
+        if ".." in pure.parts or "." in pure.parts or any(p.lower() == ".git" for p in pure.parts):
             raise GitError("path must stay inside the repository")
-        if not (self._root / pure).resolve().is_relative_to(self._root):
+        if pure.name.lower() in _FORBIDDEN_NAMES:
+            raise GitError("git control files are not managed here")
+        current = self._root
+        for index, part in enumerate(pure.parts):
+            current = current / part
+            if current.is_symlink() and not (allow_final_symlink and index == len(pure.parts) - 1):
+                raise GitError("symlinks are not allowed in paths")
+        resolved = current.parent.resolve() / current.name  # a final symlink entry is judged by its own location
+        if not resolved.is_relative_to(self._root):
             raise GitError("path must stay inside the repository")
+        if any(p.lower() == ".git" for p in resolved.relative_to(self._root).parts):
+            raise GitError("path must stay inside the repository")
+        if current.is_dir() and not current.is_symlink():
+            raise GitError("path must name a file, not a directory")
         return pure.as_posix()
 
-    def _check_paths(self, paths: Iterable[str | PurePath]) -> list[str]:
-        return [self._check_path(p) for p in paths]
+    def _check_paths(self, paths: Iterable[str | PurePath], *, allow_final_symlink: bool = False) -> list[str]:
+        return [self._check_path(p, allow_final_symlink=allow_final_symlink) for p in paths]
 
     # -- operations ----------------------------------------------------------------------------------------------
 
     def init(self, initial_branch: str) -> None:
-        """Create the repository (a no-op for an existing one)."""
-        self._check_branch(initial_branch)
+        """Create the repository (a no-op for an existing one), with the same hardening as every other call."""
+        validate_branch(initial_branch)
         self._run(["init", "--quiet", f"--initial-branch={initial_branch}"], init=True)
 
     def head(self) -> str | None:
@@ -238,7 +336,7 @@ class GitRepo:
         return out.strip() if code == 0 else None
 
     def stage(self, paths: Iterable[str | PurePath]) -> None:
-        """Stage additions, modifications and deletions of ``paths`` (literal paths, no globs)."""
+        """Stage additions, modifications and deletions of the listed files (literal paths, no globs)."""
         checked = self._check_paths(paths)
         if checked:
             self._run(["add", "--all", "--", *checked])
@@ -259,22 +357,34 @@ class GitRepo:
             raise GitError("commit left no HEAD")
         return commit_id
 
-    def discard_changes(self, untracked: Iterable[str | PurePath] = ()) -> None:
-        """Make the working tree and the index identical to ``HEAD`` (all-or-nothing rollback).
+    def discard_changes(self, paths: Iterable[str | PurePath]) -> None:
+        """Roll back an apply: put the listed files (and only them) back as they are in ``HEAD``.
 
-        Files created since ``HEAD`` are removed when listed in ``untracked`` (tracked-but-new files are removed
-        by the reset itself); untouched untracked files elsewhere are left alone.
+        Files tracked in ``HEAD`` are restored in index and working tree; files that are not in ``HEAD`` (created by
+        the failed apply) are unstaged and deleted. Other files are never touched: out-of-band edits, uncommitted
+        drafts and gitignored files survive. Directories are refused; empty parent directories are left behind.
         """
-        checked = self._check_paths(untracked)
+        checked = self._check_paths(paths, allow_final_symlink=True)
+        if not checked:
+            return
         if self.head() is None:
-            self._run(["rm", "-r", "-f", "--cached", "--quiet", "--ignore-unmatch", "--", "."])
+            tracked: list[str] = []
         else:
-            self._run(["reset", "--hard", "--quiet", "HEAD"])
-        if checked:
-            self._run(["clean", "-f", "-d", "-x", "--quiet", "--", *checked])
+            _, listing = self._run(["ls-tree", "-r", "--name-only", "-z", "HEAD", "--", *checked])
+            known = {name for name in listing.split("\x00") if name}
+            tracked = [path for path in checked if path in known]
+        created = [path for path in checked if path not in tracked]
+        if tracked:
+            self._run(["restore", "--source=HEAD", "--staged", "--worktree", "--", *tracked])
+        if created:
+            self._run(["rm", "--cached", "-r", "-f", "--quiet", "--ignore-unmatch", "--", *created])
+            self._run(["clean", "-f", "--quiet", "--", *created])
 
     def log(self, count: int = 10) -> list[str]:
-        """The messages of the last ``count`` commits, newest first, each without its trailing newline."""
+        """The messages of the last ``count`` commits, newest first, each without its trailing newline.
+
+        Raises ``GitError`` rather than returning partial data when the output exceeds the size limit.
+        """
         if count < 1:
             raise GitError("count must be positive")
         if self.head() is None:
@@ -289,15 +399,9 @@ class GitRepo:
 
     def push(self, remote: str, branch: str, *, timeout: float = DEFAULT_PUSH_TIMEOUT) -> None:
         """``git push -- <remote> <branch>``. ``remote`` is a configured name or URL; it is redacted from errors."""
-        self._check_branch(branch)
-        if not remote or remote.startswith("-") or any(c.isspace() or ord(c) < 32 for c in remote):
-            raise GitError("invalid remote")
+        validate_branch(branch)
+        validate_remote(remote)
         self._run(["push", "--quiet", "--", remote, branch], timeout=timeout, redact=[remote])
-
-    @staticmethod
-    def _check_branch(branch: str) -> None:
-        if _BRANCH.fullmatch(branch) is None or ".." in branch or branch.endswith((".lock", "/", ".")):
-            raise GitError("invalid branch name")
 
 
 class GitVersionControl:
@@ -312,8 +416,8 @@ class GitVersionControl:
         push_timeout: float = DEFAULT_PUSH_TIMEOUT,
     ) -> None:
         self._repo = repo
-        self._remote = remote or None
-        self._branch = branch
+        self._remote = validate_remote(remote) if remote else None
+        self._branch = validate_branch(branch)
         self._push_timeout = push_timeout
 
     def push(self) -> None:
@@ -323,4 +427,13 @@ class GitVersionControl:
         self._repo.push(self._remote, self._branch, timeout=self._push_timeout)
 
 
-__all__ = ["GitError", "GitIdentity", "GitRepo", "GitVersionControl", "scrub"]
+__all__ = [
+    "ALLOWED_PASSTHROUGH_ENV",
+    "GitError",
+    "GitIdentity",
+    "GitRepo",
+    "GitVersionControl",
+    "scrub",
+    "validate_branch",
+    "validate_remote",
+]
