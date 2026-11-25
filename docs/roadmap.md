@@ -13,7 +13,8 @@ Set up the repository so that quality rules are enforced from the first line of 
 
 - `backend/` with `uv`, `pyproject.toml`, `src/cerebro/{domain,application,adapters,bootstrap}` packages.
 - Choose and pin the Python version and dev tools (check latest stable releases; record them in
-  `docs/architecture.md` §7).
+  `docs/architecture.md` §7 after `uv.lock` is generated). Node is **not** chosen here: only the policy
+  (Active LTS, [ADR-0013](adr/0013-stack-and-dependency-policy.md)) is fixed; the exact version comes in Phase 5.
 - pytest, ruff (lint + format), mypy `--strict`, import-linter with the contracts from `docs/architecture.md` §1.
 - `.editorconfig`, `.gitignore`, `.env.example`.
 - GitHub Actions CI running all checks on push/PR.
@@ -71,6 +72,9 @@ a proposal containing a fake private key is blocked.
 
 ## ⬜ Phase 5 — HTTP API and web UI
 
+- Choose the Node version per [ADR-0013](adr/0013-stack-and-dependency-policy.md) (Active LTS at phase start),
+  pin it (`package.json` `engines`, `.nvmrc`, CI) and record it with the frontend versions in
+  `docs/architecture.md` §7.
 - FastAPI routers for read, graph, inbox and owner edit; single-user login (scrypt hash, secure session cookie).
 - Web UI: note reader (browser-translatable), search, graph view (Sigma.js), local graph, filters,
   inbox review with diffs, owner editor (CodeMirror 6).
