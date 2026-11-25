@@ -40,6 +40,11 @@ minversion = "9.0"
 testpaths = ["tests"]
 addopts = ["--strict-markers", "--strict-config", "-ra"]
 xfail_strict = true
+filterwarnings = [
+    "error::ResourceWarning",
+    # Python reports exceptions from resource finalizers through sys.unraisablehook.
+    "error::pytest.PytestUnraisableExceptionWarning",
+]
 
 [tool.coverage.run]
 source_pkgs = ["cerebro.domain", "cerebro.application"]
