@@ -39,7 +39,7 @@ class ReviewProposal:
         now = self._clock.now()
         if request.action is ReviewAction.REJECT:
             reason = request.reason or ""
-            result = scrubbed(proposal.reject(reason, now))
+            result = scrubbed(proposal.reject(reason, now), keep_reviewed_links=True)
         else:
             if proposal.status not in (ProposalStatus.CURATED, ProposalStatus.NEEDS_OWNER):
                 raise InvalidTransition("approve", proposal.status.value)

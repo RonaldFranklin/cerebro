@@ -376,7 +376,9 @@ Authorization lives in the use cases, never in the adapters:
   is a scrubbed rejection or a validated proposal awaiting owner review, inserted together with its quota
   charge. Unavailable references inside content produce a scrubbed validation rejection whether the note is
   missing or hidden. Direct mutation targets keep the not-found rule. The agent receives only the proposal
-  id and a boolean validation outcome.
+  id and a boolean validation outcome. When the owner declines a previously valid proposal, the current
+  row retains its identity, attribution, decision and reason. A declined link keeps the reviewed endpoints
+  for audit. Submitted free text is scrubbed.
 - **Owner amendment.** The full-ceiling owner can replace the body of a reviewable create/update before
   approval using the preview revision. The candidate is validated before the revision-checked save.
   A stale or invalid amendment leaves the stored proposal unchanged. Its id, source, decision, curator and

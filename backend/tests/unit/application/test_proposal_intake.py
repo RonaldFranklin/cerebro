@@ -2,7 +2,7 @@ from dataclasses import fields, replace
 
 import pytest
 
-from cerebro.application.dto import AmendProposalRequest, SubmitProposalRequest
+from cerebro.application.dto import AmendProposalRequest, ReviewAction, SubmitProposalRequest
 from cerebro.application.errors import PermissionDenied, ProposalConflict, ProposalNotApplicable
 from cerebro.application.use_cases import AdmitProposal, AmendProposal
 from cerebro.domain.content_hash import content_hash
@@ -148,3 +148,31 @@ def test_rejected_link_uses_a_placeholder_for_required_metadata(secret: bool) ->
     result = intake(k).execute(request, AGENT)
     assert not result.valid
     assert k.stored(result.proposal_id).content.related == (NoteId("redacted-reference"),)
+
+
+def test_manual_rejection_scrubs_text_and_retains_reviewed_link_audit() -> None:
+    k = Kit()
+    target = NoteId("server-ssh-access")
+    related = (NoteId("infrastructure"),)
+    base = k.world.notes.get(target)
+    assert base
+    request = SubmitProposalRequest(
+        kind=ProposalKind.LINK,
+        target=target,
+        base_hash=content_hash(base),
+        source_session="fixture-session",
+        content=ProposedContent(related=related, rationale="reviewed rationale"),
+    )
+    admitted = intake(k).execute(request, AGENT)
+    assert admitted.valid
+    k.review(admitted.proposal_id, ReviewAction.REJECT, reason="Already documented.", expected_revision=0)
+    declined = k.stored(admitted.proposal_id)
+    assert declined.status is ProposalStatus.REJECTED
+    assert declined.content.related == related
+    assert declined.target == target
+    assert declined.base_hash == content_hash(base)
+    assert declined.content.rationale == ""
+    assert declined.source_session is None
+    assert declined.source_agent == "claude-code"
+    assert declined.curated_by == "curator/null"
+    assert declined.decision == Decision.reject("Already documented.")

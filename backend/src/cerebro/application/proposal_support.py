@@ -234,19 +234,22 @@ def secret_findings(proposal: Proposal) -> tuple[Finding, ...]:
     return tuple(f for field, text in texts if text for f in scan_text(text, field=field))
 
 
-def scrubbed(proposal: Proposal) -> Proposal:
+def scrubbed(proposal: Proposal, *, keep_reviewed_links: bool = False) -> Proposal:
     """The proposal reduced to what the audit needs, so the raw payload of a rejected proposal is never stored.
 
     Kept: id, kind, target, base hash, agent, timestamps, status and the validation report (structured findings).
     Dropped: every free text and every suggested field (title, body, summary, rationale, area, type, priority,
     sensitivity, hub, superseded_by, session, context). Required fields keep a harmless placeholder; a ``link``
-    uses a single placeholder id to satisfy its nonempty related tuple.
+    uses a placeholder id on validation failure. A manual refusal retains its reviewed link endpoints.
     """
     c = proposal.content
+    related: tuple[NoteId, ...] = ()
+    if proposal.kind is ProposalKind.LINK:
+        related = c.related if keep_reviewed_links else (NoteId("redacted-reference"),)
     content = ProposedContent(
         title=REDACTED_TITLE if c.title is not None else None,
         body="" if c.body is not None else None,
-        related=(NoteId("redacted-reference"),) if proposal.kind is ProposalKind.LINK else (),
+        related=related,
     )
     return replace(proposal, content=content, source_session=None, source_context=None)
 
