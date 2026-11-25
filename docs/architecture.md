@@ -196,6 +196,14 @@ Workstation                                    Server (docker compose: cerebro-<
 | Proposals, decisions, tokens | state dir, `state.sqlite` | no | yes (file backup) |
 | Fernet key, admin password hash | secrets dir | no | owner keeps an offline copy of the key |
 
+`index.sqlite` is disposable and private (file 0600 in a 0700 directory, `secure_delete` on, symlinks refused). It
+carries an SQLite `application_id` marker and a schema version in `PRAGMA user_version`. A damaged file or a different
+schema version is deleted and recreated empty, but only if the file is clearly ours (zero-length or carrying the
+marker); any other file at that path is never touched and start-up fails with a clear error. A recreate empties both
+the search and the graph tables, so start-up must compare **both** `built_from()` values with `HEAD`. Recreation is
+not coordinated with other processes using the file: rolling deploys with different schema versions are unsupported
+(stop the old process first).
+
 ## 6. Frontend
 
 - React + TypeScript + Vite. Data fetching through a small `api/` layer (the UI's port); components never call
