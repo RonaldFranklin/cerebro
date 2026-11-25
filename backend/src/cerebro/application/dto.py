@@ -367,6 +367,34 @@ class ProposalIdRequest:
             raise InvalidValueError("proposal_id", "expected a non-empty string")
 
 
+@dataclass(frozen=True, slots=True, kw_only=True)
+class ListProposalsRequest:
+    proposal_id: str | None = None
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class InboxItem:
+    id: str
+    kind: ProposalKind
+    status: ProposalStatus
+    revision: int
+    source_agent: str
+    target: NoteId | None
+    conflict: bool
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class InboxPreview:
+    decision: Decision | None
+    candidate: NoteView | None
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class InboxResult:
+    items: tuple[InboxItem, ...]
+    preview: InboxPreview | None = None
+
+
 class ReviewAction(StrEnum):
     APPROVE = "approve"
     REJECT = "reject"
@@ -382,8 +410,13 @@ class ReviewProposalRequest:
     action: ReviewAction
     reason: str | None = None
     override: Decision | None = None
+    expected_revision: int | None = None
 
     def __post_init__(self) -> None:
+        if self.expected_revision is not None and (
+            type(self.expected_revision) is not int or self.expected_revision < 0
+        ):
+            raise InvalidValueError("expected_revision", "expected a nonnegative integer")
         if not isinstance(self.proposal_id, str) or not self.proposal_id:
             raise InvalidValueError("proposal_id", "expected a non-empty string")
         if not isinstance(self.action, ReviewAction):

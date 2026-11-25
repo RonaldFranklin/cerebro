@@ -31,6 +31,12 @@ from cerebro.domain.vocabulary import Area, NoteType
 _PROPOSAL_ID: Final = re.compile(r"[A-Za-z0-9_-]{1,64}")
 
 
+def validate_proposal_id(value: str) -> str:
+    if not isinstance(value, str) or _PROPOSAL_ID.fullmatch(value) is None:
+        raise InvalidValueError("id", "must be 1-64 characters of letters, digits, '_' or '-'")
+    return value
+
+
 class ProposalKind(StrEnum):
     CREATE = "create"
     UPDATE = "update"
@@ -150,8 +156,7 @@ class Proposal:
     revision: int = 0
 
     def __post_init__(self) -> None:
-        if not isinstance(self.id, str) or _PROPOSAL_ID.fullmatch(self.id) is None:
-            raise InvalidValueError("id", "must be 1-64 characters of letters, digits, '_' or '-'")
+        validate_proposal_id(self.id)
         if not isinstance(self.kind, ProposalKind):
             raise InvalidValueError("kind", "expected a ProposalKind")
         if not isinstance(self.status, ProposalStatus):
