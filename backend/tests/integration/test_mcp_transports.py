@@ -44,7 +44,10 @@ def serving(
         args.extend(["--public-port", str(public)])
         if enable_public:
             args.append("--enable-public")
-    with subprocess.Popen(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE) as process:
+    with (
+        config.with_suffix(".log").open("ab") as log,
+        subprocess.Popen(args, stdout=log, stderr=subprocess.STDOUT) as process,
+    ):
         try:
             for _ in range(200):
                 if process.poll() is not None:
@@ -124,7 +127,7 @@ def test_real_listener_credentials_limits_and_logs(tmp_path: Path) -> None:
     _, propose = issue(Sensitivity.RESTRICTED, Scope.PROPOSE)
     private, public = free_port(), free_port()
     read = call("cerebro_read", {"id": VAULT_ID.value})
-    with serving(config, private, public) as process:
+    with serving(config, private, public):
         assert RESTRICTED_MARKER.encode() in post(private, privileged, read)[1]
         for port, secret in [(public, privileged), (private, internal)]:
             status, body = post(port, secret, read)
@@ -153,9 +156,9 @@ def test_real_listener_credentials_limits_and_logs(tmp_path: Path) -> None:
         asyncio.run(run_http())
         container.use_cases.revoke_agent_token.execute(RevokeAgentTokenRequest(token_id=tid), owner)
         assert post(private, privileged, read)[0] == 401
-    out, err = process.communicate()
+    logs = config.with_suffix(".log").read_bytes()
     for value in (privileged, internal, propose, RESTRICTED_MARKER, "fixture-marker"):
-        assert value.encode() not in out + err
+        assert value.encode() not in logs
 
 
 def test_stdio_sdk_contract_and_offline(tmp_path: Path) -> None:
