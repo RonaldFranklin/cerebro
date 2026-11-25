@@ -4,6 +4,8 @@ import json
 
 from cerebro.adapters.inbound.cli_views import note_view
 from cerebro.application.dto import (
+    AmendmentResult,
+    AmendProposalRequest,
     ApplyProposalResult,
     InboxItem,
     InboxResult,
@@ -49,13 +51,18 @@ def _listing(result: InboxResult) -> object:
 
 
 def run_inbox_command(
-    request: ListProposalsRequest | ReviewProposalRequest | ProposalIdRequest,
+    request: ListProposalsRequest | AmendProposalRequest | ReviewProposalRequest | ProposalIdRequest,
     ctx: AccessContext,
     *,
+    amend: ContextUseCase[AmendProposalRequest, AmendmentResult],
     listing: ContextUseCase[ListProposalsRequest, InboxResult],
     review: ContextUseCase[ReviewProposalRequest, ProposalOutcome],
     apply: ContextUseCase[ProposalIdRequest, ApplyProposalResult],
 ) -> int:
+    if isinstance(request, AmendProposalRequest):
+        changed = amend.execute(request, ctx)
+        print(json.dumps({"id": changed.proposal_id, "revision": changed.revision}))
+        return 0
     if isinstance(request, ListProposalsRequest):
         print(json.dumps(_listing(listing.execute(request, ctx)), indent=2))
         return 0

@@ -347,6 +347,29 @@ class SubmitProposalRequest:
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
+class AdmissionResult:
+    proposal_id: str
+    valid: bool
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class AmendProposalRequest:
+    proposal_id: str
+    expected_revision: int
+    body: str
+
+    def __post_init__(self) -> None:
+        if type(self.expected_revision) is not int or self.expected_revision < 0:
+            raise InvalidValueError("revision", "expected a nonnegative integer")
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class AmendmentResult:
+    proposal_id: str
+    revision: int
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
 class ProposalOutcome:
     """Where a proposal stands after a step of the write path. Never carries the proposed content."""
 

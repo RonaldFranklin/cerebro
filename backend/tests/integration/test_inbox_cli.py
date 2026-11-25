@@ -6,7 +6,6 @@ import pytest
 
 from cerebro.application.dto import (
     OwnerEditNoteRequest,
-    ProposalIdRequest,
     ReviewAction,
     ReviewProposalRequest,
     SubmitProposalRequest,
@@ -17,10 +16,11 @@ from cerebro.domain.enums import Sensitivity
 from cerebro.domain.proposal import ProposalKind, ProposedContent
 from tests.integration.content_kit import ISLAND_ID, make_sample_repo
 from tests.integration.test_cli_bootstrap import SAMPLE, invoke
+from tests.integration.test_git import raw_git
 from tests.unit.application.write_kit import agent_ctx, owner_ctx
 
 
-@pytest.mark.parametrize("action", ["approve", "reject", "resume", "conflict"])
+@pytest.mark.parametrize("action", ["approve", "reject", "resume", "conflict", "amend"])
 def test_preview_review_and_retry(tmp_path: Path, action: str) -> None:
     sample = make_sample_repo(tmp_path)
     c = build_container(sample.settings)
@@ -38,20 +38,41 @@ def test_preview_review_and_retry(tmp_path: Path, action: str) -> None:
             base_hash=content_hash(source),
             content=ProposedContent(body=change, sensitivity=Sensitivity.RESTRICTED),
         ),
-        agent_ctx(Sensitivity.RESTRICTED),
+        replace(agent_ctx(Sensitivity.RESTRICTED), token_id="test-token"),
     )
     pid = submitted.proposal_id
-    req = ProposalIdRequest(proposal_id=pid)
-    for step in (c.use_cases.validate_proposal, c.use_cases.curate_proposal):
-        step.execute(req, owner_ctx())
+    assert submitted.valid
     (item,) = json.loads(invoke(*args, "list").stdout)
     assert item["id"] == pid
     assert "body" not in item
     detail = json.loads(invoke(*args, "list", "--id", pid).stdout)
     assert detail["candidate"]["body"] == change
     assert detail["decision"]["kind"] == "needs_owner"
-    assert invoke(*args, "approve", pid, "--revision", "0").returncode == 1
+    assert invoke(*args, "approve", pid, "--revision", "999").returncode == 1
     revision = detail["revision"]
+    if action == "amend":
+        body = "Replace with the owner-reviewed text."
+        edit = invoke(*args, "amend", pid, "--revision", str(revision), stdin=body)
+        assert edit.returncode == 0, edit.stderr
+        preview = json.loads(invoke(*args, "list", "--id", pid).stdout)
+        assert preview["candidate"]["body"] == body
+        assert invoke(*args, "approve", pid, "--revision", str(revision)).returncode == 1
+        assert invoke(*args, "approve", pid, "--revision", str(preview["revision"])).returncode == 0
+        saved = c.notes.get(ISLAND_ID)
+        assert saved
+        assert saved.body == body
+        row = c.proposals.get(pid)
+        assert row
+        assert row.source_agent == "claude-code"
+        assert row.curated_by == "curator/policy"
+        message = raw_git(sample.root, "log", "-1", "--format=%B")
+        assert message.strip().splitlines()[-4:] == [
+            "Proposed-by: claude-code",
+            "Curated-by: curator/policy",
+            "Approved-by: owner",
+            f"Proposal-Id: {pid}",
+        ]
+        return
     if action == "reject":
         head = c.notes.head()
         rejected = invoke(*args, "reject", pid, "--revision", str(revision), "--reason", "Reviewed and declined.")

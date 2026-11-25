@@ -78,7 +78,7 @@ class Kit:
         return store
 
     def submit_uc(self) -> SubmitProposal:
-        return SubmitProposal(self.world.notes, self.proposals, self.clock, self.ids)
+        return SubmitProposal(self.world.notes, self.clock, self.ids)
 
     def validate_uc(self) -> ValidateProposal:
         return ValidateProposal(self.world.notes, self.proposals, self.world.search, self.clock, VOCABULARY)
@@ -100,7 +100,10 @@ class Kit:
     # -- steps -------------------------------------------------------------------------------------------------
 
     def submit(self, request: SubmitProposalRequest, c: AccessContext | None = None) -> ProposalOutcome:
-        return self.submit_uc().execute(request, c or agent_ctx())
+        # Seed the in-memory store to exercise each historical lifecycle transition independently.
+        proposal = self.submit_uc().execute(request, c or agent_ctx())
+        self.store.add(proposal)
+        return ProposalOutcome(proposal_id=proposal.id, status=proposal.status, validation=proposal.validation)
 
     def submit_create(self, **overrides: Any) -> str:
         outcome = self.submit(SubmitProposalRequest(kind=ProposalKind.CREATE, content=new_content(**overrides)))

@@ -6,7 +6,7 @@ from cerebro.application.errors import ProposalConflict, ProposalNotFound
 from cerebro.application.ports.notes import NoteRepository
 from cerebro.application.ports.proposals import ProposalStore
 from cerebro.application.ports.system import Clock
-from cerebro.application.proposal_support import commit_target
+from cerebro.application.proposal_support import commit_target, scrubbed
 from cerebro.domain.access import AccessContext
 from cerebro.domain.commit_message import OWNER_APPROVER
 from cerebro.domain.errors import InvalidTransition
@@ -39,7 +39,7 @@ class ReviewProposal:
         now = self._clock.now()
         if request.action is ReviewAction.REJECT:
             reason = request.reason or ""
-            result = proposal.reject(reason, now)
+            result = scrubbed(proposal.reject(reason, now), keep_reviewed_links=True)
         else:
             if proposal.status not in (ProposalStatus.CURATED, ProposalStatus.NEEDS_OWNER):
                 raise InvalidTransition("approve", proposal.status.value)

@@ -36,6 +36,7 @@ def main() -> int:
             return run_inbox_command(
                 options.request,
                 ctx,
+                amend=container.use_cases.amend_proposal,
                 listing=container.use_cases.list_proposals,
                 review=container.use_cases.review_proposal,
                 apply=container.use_cases.apply_proposal,

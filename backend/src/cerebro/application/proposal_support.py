@@ -16,6 +16,7 @@ from cerebro.domain.cross_note import cross_note_findings, inbound_link_sensitiv
 from cerebro.domain.decision import DecisionKind
 from cerebro.domain.enums import Priority, Status
 from cerebro.domain.errors import InvalidValueError
+from cerebro.domain.links import loose_link_targets
 from cerebro.domain.note import MAX_NOTE_ID_LENGTH, Note, NoteId
 from cerebro.domain.note_ref import NoteRef
 from cerebro.domain.proposal import Proposal, ProposalKind, ProposalStatus, ProposedContent
@@ -208,6 +209,17 @@ def is_noop(candidate: Note, current: Note) -> bool:
     return replace(candidate, updated=current.updated, created=current.created) == current
 
 
+def proposal_references(proposal: Proposal) -> set[NoteId]:
+    """Every note referenced by proposed metadata and by text passed to a curator."""
+    c = proposal.content
+    refs = set(c.related)
+    refs.update(n for n in (c.hub, c.superseded_by) if n is not None)
+    for text in (c.body, c.title, c.summary, c.rationale, proposal.source_session, proposal.source_context):
+        if text:
+            refs.update(loose_link_targets(text))
+    return refs
+
+
 def secret_findings(proposal: Proposal) -> tuple[Finding, ...]:
     """Secret-scanner findings over every free-text field of a proposal (never contain the secret)."""
     c = proposal.content
@@ -222,19 +234,22 @@ def secret_findings(proposal: Proposal) -> tuple[Finding, ...]:
     return tuple(f for field, text in texts if text for f in scan_text(text, field=field))
 
 
-def scrubbed(proposal: Proposal) -> Proposal:
+def scrubbed(proposal: Proposal, *, keep_reviewed_links: bool = False) -> Proposal:
     """The proposal reduced to what the audit needs, so the raw payload of a rejected proposal is never stored.
 
     Kept: id, kind, target, base hash, agent, timestamps, status and the validation report (structured findings).
     Dropped: every free text and every suggested field (title, body, summary, rationale, area, type, priority,
     sensitivity, hub, superseded_by, session, context). Required fields keep a harmless placeholder; a ``link``
-    keeps ``related`` because the domain requires it to be non-empty.
+    uses a placeholder id on validation failure. A manual refusal retains its reviewed link endpoints.
     """
     c = proposal.content
+    related: tuple[NoteId, ...] = ()
+    if proposal.kind is ProposalKind.LINK:
+        related = c.related if keep_reviewed_links else (NoteId("redacted-reference"),)
     content = ProposedContent(
         title=REDACTED_TITLE if c.title is not None else None,
         body="" if c.body is not None else None,
-        related=c.related if proposal.kind is ProposalKind.LINK else (),
+        related=related,
     )
     return replace(proposal, content=content, source_session=None, source_context=None)
 
