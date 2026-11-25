@@ -58,6 +58,8 @@ class InMemorySearchIndex:
 
     def search(self, query: SearchQuery) -> tuple[SearchHit, ...]:
         terms = _terms(query.text)
+        if query.text.strip() and not terms:
+            return ()  # text with no searchable word matches nothing; blank text lists
         hits: list[SearchHit] = []
         for note in self._notes.values():
             if not is_visible(note.sensitivity, note.status, query.ceiling, include_history=query.include_history):

@@ -17,10 +17,6 @@ from cerebro.domain.note_ref import NoteRef
 from cerebro.domain.vocabulary import NoteType
 
 _REVISION_KEY: Final = "graph_revision"
-MAX_HOPS: Final = 32
-"""``neighbors`` stops expanding after this many hops (a larger request is clamped: no personal knowledge base has
-a longer shortest path, and it bounds the work)."""
-
 _NODE_COLUMNS: Final = (
     "note_id, title, type, priority, sensitivity, status, hub, superseded_by, related, body_links, loose_body_targets"
 )
@@ -100,13 +96,26 @@ class SqliteGraphIndex:
             _delete(connection, note_id.value)
 
     def rebuild(self, refs: Iterable[NoteRef], *, revision: str | None = None) -> None:
-        """Rows and revision are replaced in one transaction (see ``SqliteSearchIndex.rebuild``)."""
-        with _db.connect(self._path) as connection, _db.transaction(connection):
-            connection.execute("DELETE FROM graph_nodes")
-            connection.execute("DELETE FROM graph_edges")
-            for ref in refs:
-                _store(connection, ref)
-            _db.write_revision(connection, _REVISION_KEY, revision)
+        """Rows and revision are replaced in one transaction (see ``SqliteSearchIndex.rebuild``, including the
+        recreate-and-retry on a corrupt file)."""
+        items = list(refs)
+        try:
+            self._rebuild(items, revision)
+        except sqlite3.DatabaseError as error:
+            if not _db.is_corruption(error):
+                raise
+            _db.recreate(self._path)
+            self._rebuild(items, revision)
+
+    def _rebuild(self, refs: list[NoteRef], revision: str | None) -> None:
+        with _db.connect(self._path) as connection:
+            with _db.transaction(connection):
+                connection.execute("DELETE FROM graph_nodes")
+                connection.execute("DELETE FROM graph_edges")
+                for ref in refs:
+                    _store(connection, ref)
+                _db.write_revision(connection, _REVISION_KEY, revision)
+            _db.checkpoint(connection)
 
     def built_from(self) -> str | None:
         with _db.connect(self._path) as connection:
@@ -174,7 +183,7 @@ class SqliteGraphIndex:
             adjacent[edge.target].add(edge.source)
         seen = {note_id}
         frontier = {note_id}
-        for _ in range(min(hops, MAX_HOPS)):
+        for _ in range(hops):  # bounded by the frontier: it empties once the component is exhausted
             frontier = {n for current in frontier for n in adjacent[current]} - seen
             if not frontier:
                 break

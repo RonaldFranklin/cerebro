@@ -29,10 +29,18 @@ def test_file_is_private_and_directory_is_0700(path: Path) -> None:
     SqliteSearchIndex(path).upsert(note("a-note"))
     assert mode(path) == 0o600
     assert mode(path.parent) == 0o700
-    for suffix in ("-wal", "-shm"):
-        sidecar = Path(f"{path}{suffix}")
-        if sidecar.exists():
+    # Sidecars exist only while a connection is open: hold one.
+    holder = sqlite3.connect(path)
+    try:
+        holder.execute("SELECT count(*) FROM notes").fetchall()
+        holder.execute("BEGIN")
+        holder.execute("SELECT count(*) FROM notes").fetchall()
+        for suffix in ("-wal", "-shm"):
+            sidecar = Path(f"{path}{suffix}")
+            assert sidecar.exists()
             assert mode(sidecar) == 0o600
+    finally:
+        holder.close()
 
 
 def test_a_loose_existing_file_is_repaired(path: Path) -> None:
@@ -238,7 +246,7 @@ def test_graph_hidden_notes_do_not_leak_through_the_adapter(path: Path) -> None:
     assert graph.orphans(ceiling=PUBLIC) == (NoteId("start-note"),)
 
 
-def test_neighbors_clamps_huge_hop_counts(path: Path) -> None:
+def test_neighbors_with_a_huge_hop_count_stops_at_the_frontier(path: Path) -> None:
     graph = SqliteGraphIndex(path)
     graph.rebuild([ref("a-note", body="[[b-note]]\n"), ref("b-note")])
     result = graph.neighbors(NoteId("a-note"), hops=10**9, ceiling=RESTRICTED)

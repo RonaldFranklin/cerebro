@@ -2,16 +2,21 @@
 
 Rules (``docs/plans/phase-2.md`` section 3):
 
-* The file is created ``0600`` inside a ``0700`` directory (it holds decrypted note text and is never backed up).
-  A looser mode on an existing file is repaired to ``0600``.
-* One connection per operation, WAL journal, schema version in ``PRAGMA user_version``.
-* The index is disposable: a corrupt file or a different schema version is deleted and recreated empty (the
-  recorded revision is then ``None``, which makes the container reindex). There are no migrations.
+* The file is created ``0600`` (symlinks refused) inside a ``0700`` directory: it holds decrypted note text and is
+  never backed up. A looser mode on an existing file or leaf directory is repaired (a directory we do not own and
+  that is open to others is refused).
+* One connection per operation, WAL journal, ``secure_delete`` on, schema version in ``PRAGMA user_version``.
+* The index is disposable: a file that is really corrupt (``not a database``, ``malformed``, ``disk image``,
+  failing ``quick_check``) or has a different schema version is deleted and recreated empty (the recorded revision
+  is then ``None``, which makes the container reindex). There are no migrations. Busy/locked/I/O errors never
+  trigger a recreation.
+* Search and graph share the file, so recreating it empties both.
 """
 
 import contextlib
 import os
 import sqlite3
+import time
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
@@ -23,6 +28,16 @@ from cerebro.domain.errors import InvalidValueError
 
 SCHEMA_VERSION: Final = 1
 _BUSY_TIMEOUT_MS: Final = 5000
+
+TIERS: Final = tuple(Sensitivity)
+"""One FTS5 table per sensitivity tier (``notes_fts_0`` ...). bm25 statistics (document frequencies, average
+length) are per table, so a query that reads only the tiers within its ceiling can never be influenced by, and so
+never leak, text of a note above it."""
+
+
+def fts_table(sensitivity: Sensitivity) -> str:
+    return f"notes_fts_{TIERS.index(sensitivity)}"
+
 
 _SCHEMA: Final = (
     "CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL) WITHOUT ROWID",
@@ -39,7 +54,10 @@ _SCHEMA: Final = (
         status TEXT NOT NULL,
         terms TEXT NOT NULL
     )""",
-    "CREATE VIRTUAL TABLE notes_fts USING fts5(title, summary, body, tokenize = 'porter unicode61')",
+    *(
+        f"CREATE VIRTUAL TABLE {fts_table(tier)} USING fts5(title, summary, body, tokenize = 'porter unicode61')"
+        for tier in TIERS
+    ),
     """CREATE TABLE graph_nodes (
         note_id TEXT PRIMARY KEY,
         title TEXT NOT NULL,
@@ -59,9 +77,21 @@ _SCHEMA: Final = (
     "CREATE INDEX graph_edges_target ON graph_edges (target)",
 )
 
+_CORRUPTION_MARKERS: Final = ("not a database", "malformed", "disk image", "vtable constructor failed")
+
 
 class IndexUnavailableError(RuntimeError):
-    """The SQLite index cannot be used (for example, this SQLite build has no FTS5)."""
+    """The SQLite index cannot be used (no FTS5 in this SQLite build, an unsafe path, ...)."""
+
+
+class _NeedsRecreation(Exception):  # noqa: N818
+    """The file is readable but unusable (stale schema version or failed integrity check)."""
+
+
+def is_corruption(error: sqlite3.Error) -> bool:
+    """Whether ``error`` means the file's content is damaged (as opposed to busy, locked, I/O or a bug)."""
+    message = str(error).lower()
+    return isinstance(error, sqlite3.DatabaseError) and any(marker in message for marker in _CORRUPTION_MARKERS)
 
 
 def _require_fts5() -> None:
@@ -76,11 +106,26 @@ def _require_fts5() -> None:
         probe.close()
 
 
+def _prepare_directory(directory: Path) -> None:
+    directory.mkdir(mode=0o700, parents=True, exist_ok=True)
+    info = directory.stat()
+    if info.st_mode & 0o077 == 0:
+        return
+    if info.st_uid != os.geteuid():
+        raise IndexUnavailableError("the index directory is not owned by this user and is open to others")
+    directory.chmod(0o700)
+
+
 def _create_private_file(path: Path) -> None:
-    """Create ``path`` (empty) as ``0600`` if absent; repair a looser mode."""
-    descriptor = os.open(path, os.O_RDWR | os.O_CREAT, 0o600)
-    os.close(descriptor)
-    path.chmod(0o600)
+    """Create ``path`` (empty) as ``0600`` if absent; repair a looser mode; refuse a symlink."""
+    try:
+        descriptor = os.open(path, os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW, 0o600)
+    except OSError as error:
+        raise IndexUnavailableError(f"cannot open the index file safely (symlinks are refused): {error}") from error
+    try:
+        os.fchmod(descriptor, 0o600)
+    finally:
+        os.close(descriptor)
 
 
 def _delete_files(path: Path) -> None:
@@ -90,28 +135,44 @@ def _delete_files(path: Path) -> None:
 
 def _open(path: Path) -> sqlite3.Connection:
     # Autocommit: transactions are explicit (see ``transaction``). One connection per operation, so the default
-    # same-thread check is right.
+    # same-thread check is right. ``secure_delete`` zeroes freed pages so removed text does not linger in the file.
     connection = sqlite3.connect(path, isolation_level=None, timeout=_BUSY_TIMEOUT_MS / 1000)
     connection.execute(f"PRAGMA busy_timeout = {_BUSY_TIMEOUT_MS}")
+    connection.execute("PRAGMA secure_delete = ON")
     connection.execute("PRAGMA synchronous = NORMAL")
     return connection
+
+
+def _enable_wal(connection: sqlite3.Connection) -> None:
+    """Switch to WAL. The switch does not honour ``busy_timeout`` while another connection is doing the same, so
+    retry for a while on ``locked``."""
+    deadline = time.monotonic() + _BUSY_TIMEOUT_MS / 1000
+    while True:
+        try:
+            connection.execute("PRAGMA journal_mode = WAL")
+            return
+        except sqlite3.OperationalError as error:
+            if ("locked" not in str(error) and "busy" not in str(error)) or time.monotonic() > deadline:
+                raise
+            time.sleep(0.01)
 
 
 def _initialise(path: Path) -> None:
     connection = _open(path)
     try:
-        version = connection.execute("PRAGMA user_version").fetchone()[0]
-        fresh = path.stat().st_size == 0
-        if not fresh and version != SCHEMA_VERSION:
-            raise sqlite3.DatabaseError("index schema version differs")
-        if fresh:
-            connection.execute("PRAGMA journal_mode = WAL")
-            with transaction(connection):
+        _enable_wal(connection)
+        # Decided under the write lock, so two processes opening the same new file cannot both create the schema.
+        with transaction(connection):
+            version = connection.execute("PRAGMA user_version").fetchone()[0]
+            has_tables = connection.execute("SELECT count(*) FROM sqlite_master").fetchone()[0] > 0
+            if version == 0 and not has_tables:
                 for statement in _SCHEMA:
                     connection.execute(statement)
                 connection.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
-        else:
-            connection.execute("SELECT count(*) FROM sqlite_master").fetchone()
+            elif version != SCHEMA_VERSION:
+                raise _NeedsRecreation
+        if connection.execute("PRAGMA quick_check").fetchone()[0] != "ok":
+            raise _NeedsRecreation
     finally:
         connection.close()
 
@@ -119,19 +180,20 @@ def _initialise(path: Path) -> None:
 def prepare(path: Path) -> None:
     """Make ``path`` a usable, current-version index file (creating or recreating it as needed)."""
     _require_fts5()
-    path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    _prepare_directory(path.parent)
     _create_private_file(path)
     try:
         _initialise(path)
-    except sqlite3.OperationalError as error:
-        if "locked" in str(error) or "busy" in str(error):
+    except _NeedsRecreation:
+        recreate(path)
+    except sqlite3.DatabaseError as error:
+        if not is_corruption(error):
             raise
-        _recreate(path)
-    except sqlite3.DatabaseError:
-        _recreate(path)
+        recreate(path)
 
 
-def _recreate(path: Path) -> None:
+def recreate(path: Path) -> None:
+    """Throw the file away and start an empty current-version one (the recovery for a damaged index)."""
     _delete_files(path)
     _create_private_file(path)
     _initialise(path)
@@ -157,6 +219,12 @@ def transaction(connection: sqlite3.Connection) -> Iterator[None]:
             connection.execute("ROLLBACK")
         raise
     connection.execute("COMMIT")
+
+
+def checkpoint(connection: sqlite3.Connection) -> None:
+    """Fold the WAL into the main file and truncate it, so deleted text does not linger in the ``-wal`` file."""
+    with contextlib.suppress(sqlite3.OperationalError):  # busy (a reader is open): best effort
+        connection.execute("PRAGMA wal_checkpoint(TRUNCATE)")
 
 
 def read_revision(connection: sqlite3.Connection, key: str) -> str | None:
