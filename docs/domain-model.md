@@ -107,11 +107,13 @@ Structure and rule details enforced by the domain:
   target. It is an **error on every write path**: unlike `broken_link` it is never a warning, not even for owner
   edits (it is in no severity policy's warning set). The body check covers every `[[id]]` that read-time redaction
   treats as a link, including inside code spans and blocks and the `[[id|alias]]` form. The rule also runs
-  **inbound**: when a note is created or its sensitivity rises, stored notes of lower sensitivity that link to it
+  **inbound**: when a note is created or its sensitivity rises (proposals and owner edits alike), stored notes of lower sensitivity that link to it
   (body, `hub`, `related`, `superseded_by`) are errors, reported as "<linking-id> links to this note". Equal or lower sensitivity is fine. A missing target is a
   `broken_link`, not this. The message names only the target id as the author wrote it (never its title or
   sensitivity); the report goes to the owner and the curator, never to the submitting agent. The health report runs
   the rule too, so legacy leaks are listed as errors.
+- `title` and `summary` may not contain `[[` (`wikilink_in_metadata`, error on every write path): search results
+  and the overview serve them without link redaction.
 - A `hub` that does not exist (`hub_not_found`) or whose type is not `hub` (`hub_not_a_hub`) is always an error.
 - `superseded_by` chains that lead back to the note are a `superseded_by_cycle` error.
 - **Redaction on read (defense in depth).** `ReadNote` replaces every `[[...]]` in the served body (whole note or one

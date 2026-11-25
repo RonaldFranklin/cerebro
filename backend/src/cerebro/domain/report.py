@@ -28,6 +28,7 @@ class ViolationCode(StrEnum):
     TITLE_BLANK = "title_blank"
     TITLE_TOO_LONG = "title_too_long"
     TITLE_MULTILINE = "title_multiline"
+    WIKILINK_IN_METADATA = "wikilink_in_metadata"
     LANG_BLANK = "lang_blank"
     UNKNOWN_TYPE = "unknown_type"
     UNKNOWN_AREA = "unknown_area"

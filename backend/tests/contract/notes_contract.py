@@ -9,6 +9,7 @@ from cerebro.domain.commit_message import CommitMessage
 from cerebro.domain.content_hash import content_hash
 from cerebro.domain.errors import ContentConflict, InvalidValueError
 from cerebro.domain.note import NoteId
+from cerebro.domain.note_ref import NoteRef
 from tests.unit.domain.builders import make_note
 
 MESSAGE = CommitMessage(
@@ -47,6 +48,14 @@ class NoteRepositoryContract:
         ids = [n.id.value for n in repo.list_notes()]
         assert ids == ["alpha-note", "mid-note", "zeta-note"]
         assert [r.id.value for r in repo.list_refs()] == ids
+
+    def test_refs_equal_the_refs_built_from_the_stored_notes(self, repo: NoteRepository) -> None:
+        body = "[[a-note]] `[[b-note]]` [[c-note|alias]]"
+        repo.apply([NoteChange(note=make_note(id=NoteId("note-x"), body=body))], MESSAGE)
+        (ref,) = repo.list_refs()
+        (note,) = repo.list_notes()
+        assert ref == NoteRef.from_note(note)
+        assert [t.value for t in ref.loose_body_targets] == ["a-note", "b-note", "c-note"]
 
     def test_refs_carry_no_body_but_the_extracted_links(self, repo: NoteRepository) -> None:
         repo.apply([NoteChange(note=make_note(body="See [[other-note#Part]]."))], MESSAGE)

@@ -25,7 +25,7 @@ class NoteRef:
     related: tuple[NoteId, ...]
     superseded_by: NoteId | None
     body_links: tuple[WikiLink, ...]
-    loose_body_targets: tuple[NoteId, ...] = ()
+    loose_body_targets: tuple[NoteId, ...]
     """Every id in a ``[[...]]`` of the body, including code and alias forms (what read-time redaction covers)."""
 
     @classmethod

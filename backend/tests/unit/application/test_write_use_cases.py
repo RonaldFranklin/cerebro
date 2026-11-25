@@ -244,12 +244,19 @@ class TestValidateProposal:
         assert ViolationCode.LINK_TO_HIGHER_SENSITIVITY in {v.code for v in outcome.validation.errors}
 
     def test_a_new_note_that_stored_lower_notes_already_link_to_is_rejected(self, kit: Kit) -> None:
-        # core-rules (public) has a body link to the id; a restricted note created under it would be leaked
+        # "writer" (public) links to the id; an internal note created under that id would be leaked
         kit.world.add(id=NID("writer"), hub=NID("infrastructure"), body="Plan: [[future-secret]].\n")
         outcome = kit.validate(kit.submit_create(title="Future secret", sensitivity=INTERNAL))
         assert outcome.validation is not None
         messages = [v.message for v in outcome.validation.errors if v.code is ViolationCode.LINK_TO_HIGHER_SENSITIVITY]
         assert messages == ["writer links to this note"]
+
+    @pytest.mark.parametrize("field", ["title", "summary"])
+    def test_wikilinks_in_title_or_summary_are_errors_for_proposals(self, kit: Kit, field: str) -> None:
+        value = "A title about [[vault-layout]]" if field == "title" else VALID_SUMMARY + " [[vault-layout]]"
+        outcome = kit.validate(kit.submit_create(**{field: value}))
+        assert outcome.validation is not None
+        assert ViolationCode.WIKILINK_IN_METADATA in {v.code for v in outcome.validation.errors}
 
     def test_links_to_equal_or_lower_sensitivity_are_fine_for_proposals(self, kit: Kit) -> None:
         # internal note -> internal and public targets
@@ -922,12 +929,42 @@ class TestOwnerEditNote:
         assert "linker links to this note" in [v.message for v in result.validation.errors]
         assert kit.commits == commits
 
+    def test_an_edit_that_does_not_raise_sensitivity_is_not_blocked_by_legacy_inbound_links(self, kit: Kit) -> None:
+        kit.world.add(id=NID("linker"), hub=NID("infrastructure"), body="See [[server-ssh-access]].\n")
+        current = kit.world.notes.get(SSH)  # internal, linked from the public "linker"
+        assert current is not None
+        unrelated = self.edit(kit, replace(current, body="# SSH\n\nEdited.\n"), note_hash(kit))
+        assert unrelated.revision is not None
+        again = kit.world.notes.get(SSH)
+        assert again is not None
+        # equal sensitivity and lowering are fine too
+        assert self.edit(kit, replace(again, sensitivity=PUBLIC), note_hash(kit)).revision is not None
+
+    def test_creating_a_note_that_lower_notes_link_to_is_refused_for_the_owner(self, kit: Kit) -> None:
+        kit.world.add(id=NID("linker"), hub=NID("infrastructure"), body="See [[not-yet]].\n")
+        current = kit.world.notes.get(SSH)
+        assert current is not None
+        new = replace(current, id=NID("not-yet"), related=(), sensitivity=INTERNAL)
+        result = self.edit(kit, new, None)
+        assert result.revision is None
+        assert [v.message for v in result.validation.errors] == ["linker links to this note"]
+
     def test_raising_a_hubs_sensitivity_is_refused_while_members_point_at_it(self, kit: Kit) -> None:
         hub = kit.world.notes.get(NID("infrastructure"))  # public hub with public/internal members
         assert hub is not None
         result = self.edit(kit, replace(hub, sensitivity=RESTRICTED), note_hash(kit, NID("infrastructure")))
         assert result.revision is None
         assert ViolationCode.LINK_TO_HIGHER_SENSITIVITY in {v.code for v in result.validation.errors}
+
+    @pytest.mark.parametrize("field", ["title", "summary"])
+    def test_wikilinks_in_title_or_summary_are_errors_for_the_owner(self, kit: Kit, field: str) -> None:
+        current = kit.world.notes.get(SSH)
+        assert current is not None
+        value = "About [[core-rules]]" if field == "title" else VALID_SUMMARY + " [[core-rules]]"
+        changes: dict[str, Any] = {field: value}
+        result = self.edit(kit, replace(current, **changes), note_hash(kit))
+        assert result.revision is None
+        assert ViolationCode.WIKILINK_IN_METADATA in {v.code for v in result.validation.errors}
 
     def test_the_owner_may_link_to_equal_or_lower_sensitivity(self, kit: Kit) -> None:
         current = kit.world.notes.get(SSH)
