@@ -82,7 +82,7 @@ correct index; contract tests green for fakes and real adapters.
 composition root (`bootstrap`: `Settings`, `build_container`, a single writer lock, start-up reindex when the index
 revision differs from the repository `HEAD`) and the acceptance test `tests/integration/test_rebuild_acceptance.py`.
 
-## 🟨 Phase 3 — CLI and read-only MCP
+## ✅ Phase 3 — CLI and read-only MCP
 
 Delivery plan: [phase-3.md](plans/phase-3.md).
 
@@ -97,6 +97,11 @@ Delivery plan: [phase-3.md](plans/phase-3.md).
 **Acceptance:** An SDK test client calls `cerebro_overview`, `cerebro_search`,
 `cerebro_read`, `cerebro_neighbors` against a dev instance containing a restricted fixture. A token with ceiling `internal` sees only
 permitted fixtures. The owner runs the real-client checks and reviews the security checkpoint.
+
+*Delivered 2026-11-25.* The SDK acceptance passed with both transports, a restart, a two-hop neighborhood
+and an internal token reading a sample repository with an encrypted restricted note. Delivery and decisions
+are in the [phase report](plans/phase-3.md#6-final-report). The [real-client checks](agent-integration.md)
+and the Phase 3 security checkpoint are with the owner.
 
 ## ⬜ Phase 4 — Inbox
 
