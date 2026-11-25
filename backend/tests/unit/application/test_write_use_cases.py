@@ -480,11 +480,25 @@ class TestCurateProposalNeverSendsRestrictedToTheCurator:
             {"related": (NID("core-rules"), VAULT)},
             {"superseded_by": VAULT},
             {"body": "See [[vault-layout]].\n"},
+            {"rationale": "see [[vault-layout]]"},
+            {"title": "About [[vault-layout]]"},
+            {"summary": "Mentions [[vault-layout|it]]."},
             {"body": "See [[vault-layout|the layout]] and [[vault-layout#Part|x]].\n"},
             {"body": "Code `[[vault-layout]]` here.\n"},
             {"body": "```\n[[vault-layout]]\n```\n"},
         ],
-        ids=["hub", "related", "superseded_by", "wikilink", "alias", "code-span", "code-block"],
+        ids=[
+            "hub",
+            "related",
+            "superseded_by",
+            "wikilink",
+            "rationale",
+            "title",
+            "summary",
+            "alias",
+            "code-span",
+            "code-block",
+        ],
     )
     def test_a_link_to_a_restricted_note_skips_the_curator(self, kit: Kit, content: dict[str, Any]) -> None:
         curator = FakeCurator()
@@ -536,7 +550,7 @@ class TestCurateProposalNeverSendsRestrictedToTheCurator:
         assert all(hit.id != VAULT for hit in similar)
         # sanity: the owner's own ceiling does see it
         owner_hits = kit.world.search.find_similar(
-            "Vault layout Where the vault lives.", ceiling=owner_ctx().ceiling, limit=5
+            "Vault secrets layout Where the vault lives.", ceiling=owner_ctx().ceiling, limit=5
         )
         assert any(hit.id == VAULT for hit in owner_hits)
 
@@ -549,6 +563,20 @@ class TestCurateProposalNeverSendsRestrictedToTheCurator:
         target = curator.requests[0].target
         assert target is not None
         assert target.id == SSH
+
+    def test_the_target_references_to_restricted_notes_are_removed(self, kit: Kit) -> None:
+        curator = FakeCurator()
+        kit.curator = curator
+        ssh = kit.world.notes.get(SSH)
+        assert ssh is not None
+        leaky = replace(ssh, related=(VAULT, NID("core-rules")), superseded_by=VAULT, hub=VAULT)
+        kit.world.notes.apply([NoteChange(note=leaky, expected_hash=content_hash(ssh))], SEED_MESSAGE)
+        pid = self.validated_on(kit, ProposalKind.UPDATE, SSH, ProposedContent(body="# SSH\n\nNew.\n"))
+        kit.curate_uc().execute(ProposalIdRequest(proposal_id=pid), owner_ctx(Sensitivity.RESTRICTED))
+        target = curator.requests[0].target
+        assert target is not None
+        assert (target.hub, target.superseded_by) == (None, None)
+        assert target.related == (NID("core-rules"),)
 
     def test_the_target_body_given_to_the_curator_has_restricted_links_redacted(self, kit: Kit) -> None:
         curator = FakeCurator()

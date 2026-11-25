@@ -11,8 +11,10 @@ from cerebro.domain.proposal import Proposal
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class CurationRequest:
-    """Everything the curator may look at: the proposal, the note it targets (if any, already checked against
-    the owner's ceiling by the use case) and similar notes found by the index.
+    """Everything the curator may look at: the proposal, the note it targets (if any) and similar notes found by
+    the index. The use case caps the target and the similar notes at ``internal`` (ADR-0016): the target's body
+    links and its ``hub`` / ``related`` / ``superseded_by`` to hidden notes are removed, and a proposal touching
+    a restricted note never reaches the curator.
     """
 
     proposal: Proposal

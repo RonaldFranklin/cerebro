@@ -2,7 +2,7 @@
 
 from dataclasses import replace
 
-from cerebro.application.access import redacted_body, require_owner, visible_note
+from cerebro.application.access import redacted_body, require_owner, visible_id, visible_note
 from cerebro.application.dto import ProposalIdRequest, ProposalOutcome
 from cerebro.application.errors import ProposalNotFound
 from cerebro.application.ports.curator import CurationRequest, Curator
@@ -16,7 +16,7 @@ from cerebro.domain.decision import Decision, DecisionKind
 from cerebro.domain.enums import Sensitivity
 from cerebro.domain.errors import InvalidTransition
 from cerebro.domain.links import loose_link_targets
-from cerebro.domain.note import NoteId
+from cerebro.domain.note import Note, NoteId
 from cerebro.domain.proposal import Proposal, ProposalKind, ProposalStatus
 
 SIMILAR_LIMIT = 5
@@ -75,7 +75,7 @@ class CurateProposal:
         target = None
         if proposal.kind is not ProposalKind.CREATE and proposal.target is not None:
             target = visible_note(self._notes, proposal.target, capped, include_history=True)
-            target = replace(target, body=redacted_body(self._notes, capped, target.body, include_history=True))
+            target = self._capped_target(target, capped)
         title = proposal.content.title or (target.title if target else "")
         similar = self._search.find_similar(
             f"{title} {proposal.content.summary or ''}", ceiling=capped.ceiling, limit=SIMILAR_LIMIT
@@ -88,6 +88,20 @@ class CurateProposal:
             )
         return decision
 
+    def _capped_target(self, target: Note, capped: AccessContext) -> Note:
+        """The target as the curator may see it: body links and references to hidden notes removed."""
+
+        def keep(note_id: NoteId | None) -> NoteId | None:
+            return visible_id(self._notes, note_id, capped, include_history=True)
+
+        return replace(
+            target,
+            body=redacted_body(self._notes, capped, target.body, include_history=True),
+            hub=keep(target.hub),
+            related=tuple(r for r in target.related if keep(r) is not None),
+            superseded_by=keep(target.superseded_by),
+        )
+
     def _touches_restricted(self, proposal: Proposal) -> bool:
         """Whether the proposal creates, changes or links a restricted note. Reads the repository directly (not
         through the context's ceiling): missing notes are not restricted."""
@@ -95,8 +109,9 @@ class CurateProposal:
         if content.sensitivity is Sensitivity.RESTRICTED:
             return True
         ids: list[NoteId | None] = [proposal.target, content.hub, content.superseded_by, *content.related]
-        if content.body:
-            ids.extend(loose_link_targets(content.body))
+        for text in (content.body, content.title, content.summary, content.rationale):
+            if text:
+                ids.extend(loose_link_targets(text))
         for note_id in dict.fromkeys(i for i in ids if i is not None):
             note = self._notes.get(note_id)
             if note is not None and note.sensitivity is Sensitivity.RESTRICTED:

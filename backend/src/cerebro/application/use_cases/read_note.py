@@ -1,6 +1,6 @@
 """``ReadNote``: one note, or one section of it; hubs also list their members."""
 
-from cerebro.application.access import redacted_body, require_scope, visible_note
+from cerebro.application.access import redacted_body, require_scope, visible_id, visible_note
 from cerebro.application.dto import HubMember, NoteView, ReadNoteRequest
 from cerebro.application.errors import SectionNotFound
 from cerebro.application.ports.graph import GraphIndex
@@ -41,15 +41,7 @@ class ReadNote:
         )
 
     def _visible_id(self, note_id: NoteId | None, ctx: AccessContext, include_history: bool) -> NoteId | None:
-        """A reference echoed from a visible note is kept only if its target is visible too (and exists)."""
-        if note_id is None:
-            return None
-        target = self._notes.get(note_id)
-        if target is None or not is_visible(
-            target.sensitivity, target.status, ctx.ceiling, include_history=include_history
-        ):
-            return None
-        return note_id
+        return visible_id(self._notes, note_id, ctx, include_history=include_history)
 
     def _members(self, hub: Note, ctx: AccessContext, include_history: bool) -> tuple[HubMember, ...]:
         """Notes whose ``hub`` is this hub, computed now from the index and filtered by the ceiling (ADR-0015)."""
