@@ -3,6 +3,7 @@
 import asyncio
 import json
 import sqlite3
+from contextlib import closing
 from pathlib import Path
 
 import pytest
@@ -131,7 +132,7 @@ def test_all_calls_require_agent_read_scope(container: Container) -> None:
 
 
 def test_previous_index_schema_is_rebuilt_from_content(container: Container) -> None:
-    with sqlite3.connect(container.settings.state_dir / "index.sqlite") as db:
+    with closing(sqlite3.connect(container.settings.state_dir / "index.sqlite")) as db, db:
         db.execute("ALTER TABLE graph_nodes DROP COLUMN summary")
         db.execute("PRAGMA user_version=1")
     restored = build_container(container.settings)
