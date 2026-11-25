@@ -28,8 +28,12 @@ Inbox, which are validated, curated and approved before becoming notes.
 - Phase 1 (domain and application core) is **done** (PRs 1-10): value objects, validation, budgets, links and
   cross-note rules, secret scanner, access ceiling and agent tokens, proposals and commit trailers, ports with
   in-memory fakes and shared contract tests, and every use case (read, write, maintenance, token authentication)
-  running against the fakes. **Next: Phase 2 (outbound adapters).** The human security checkpoint was approved on
+  running against the fakes.  The human security checkpoint was approved on
   2026-11-25 after a batch of follow-up PRs (see `docs/plans/phase-1.md` section 7).
+- Phase 2 (outbound adapters) is **done** (PRs 1-8, #25-#32): system, crypto (Fernet, `MultiFernet`), hardened git,
+  SQLite index (FTS5, one table per sensitivity tier) and state store (proposals sealed with the cipher), filesystem
+  `NoteRepository`, and a minimal composition root with a single writer lock and start-up reindex. Plan:
+  [`docs/plans/phase-2.md`](docs/plans/phase-2.md). **Next: Phase 3 (CLI and read-only MCP).**
 - Update this section and `docs/roadmap.md` whenever a phase starts or finishes.
 - Phase 1 plan (pull requests, status, design decisions): [`docs/plans/phase-1.md`](docs/plans/phase-1.md).
 

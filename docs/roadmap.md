@@ -59,7 +59,7 @@ keeping inbound adapters away from ports and outbound adapters, token clock-skew
 scanner findings, and [ADR-0016](adr/0016-curator-never-sees-restricted.md) (the curator never receives restricted
 notes). Details: [plans/phase-1.md](plans/phase-1.md) section 7.
 
-## ⬜ Phase 2 — Outbound adapters
+## ✅ Phase 2 — Outbound adapters
 
 - `filesystem` NoteRepository (PyYAML frontmatter, content repo layout). Load with a resolver that keeps
   YAML 1.1 implicit booleans/numbers (`no`, `on`, `2026`, `0x1f`) as strings where the domain expects text, and
@@ -77,6 +77,10 @@ notes). Details: [plans/phase-1.md](plans/phase-1.md) section 7.
 
 **Acceptance:** `RebuildIndex` over a sample content repo (fixtures, including an encrypted note) produces a
 correct index; contract tests green for fakes and real adapters.
+
+*Done 2026-11-25.* Delivery record: [plans/phase-2.md](plans/phase-2.md). Beyond the list above, Phase 2 added a minimal
+composition root (`bootstrap`: `Settings`, `build_container`, a single writer lock, start-up reindex when the index
+revision differs from the repository `HEAD`) and the acceptance test `tests/integration/test_rebuild_acceptance.py`.
 
 ## ⬜ Phase 3 — CLI and read-only MCP
 
