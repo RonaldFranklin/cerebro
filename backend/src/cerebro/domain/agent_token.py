@@ -51,6 +51,7 @@ class AgentToken:
             or not all(isinstance(s, Scope) for s in self.scopes)
         ):
             raise InvalidValueError("scopes", "expected a non-empty frozenset of Scope")
+        object.__setattr__(self, "scopes", frozenset(self.scopes))  # plain copy, see AccessContext
         if not isinstance(self.token_hash, str) or _SHA256_HEX.fullmatch(self.token_hash) is None:
             raise InvalidValueError("token_hash", "expected a lowercase SHA-256 hex digest")
         _require_aware(self.created_at, "created_at")

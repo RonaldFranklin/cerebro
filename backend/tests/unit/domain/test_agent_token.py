@@ -11,6 +11,7 @@ from cerebro.domain.errors import DomainError, InvalidValueError
 
 T0 = datetime(2026, 11, 25, 12, 0, tzinfo=UTC)
 HASH = "a" * 64
+PUB, INT, RES = Sensitivity.PUBLIC, Sensitivity.INTERNAL, Sensitivity.RESTRICTED
 
 
 def make_token(**overrides: Any) -> AgentToken:
@@ -154,6 +155,29 @@ class TestContextFromToken:
         assert ctx.principal == Agent("claude-code@workstation")
         assert ctx.scopes == frozenset({Scope.READ, Scope.PROPOSE})
         assert ctx.can(Scope.PROPOSE)
+
+    @pytest.mark.parametrize(
+        ("listener", "token", "expected"),
+        [
+            (PUB, PUB, PUB), (PUB, INT, PUB), (PUB, RES, PUB),
+            (INT, PUB, PUB), (INT, INT, INT), (INT, RES, INT),
+            (RES, PUB, PUB), (RES, INT, INT), (RES, RES, RES),
+        ],
+    )  # fmt: skip
+    def test_context_ceiling_is_min_for_every_pair(
+        self, listener: Sensitivity, token: Sensitivity, expected: Sensitivity
+    ) -> None:
+        ctx = make_token(ceiling=AccessCeiling(token)).to_context(AccessCeiling(listener), T0)
+        assert ctx.ceiling.level is expected
+
+    def test_scopes_are_stored_as_a_plain_frozenset(self) -> None:
+        class Liar(frozenset[Scope]):
+            def __contains__(self, item: object) -> bool:
+                return True
+
+        token = make_token(scopes=Liar({Scope.READ}))
+        assert type(token.scopes) is frozenset
+        assert token.to_context(AccessCeiling(Sensitivity.RESTRICTED), T0).can(Scope.PROPOSE) is False
 
     def test_token_lowers_a_permissive_listener(self) -> None:
         token = make_token(ceiling=AccessCeiling(Sensitivity.PUBLIC))

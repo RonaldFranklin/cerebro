@@ -16,6 +16,13 @@ from cerebro.domain.enums import Sensitivity, Status
 from cerebro.domain.errors import DomainError, InvalidValueError
 
 LEVELS = list(Sensitivity)
+PUB, INT, RES = Sensitivity.PUBLIC, Sensitivity.INTERNAL, Sensitivity.RESTRICTED
+# Written out by hand so the expected minimum does not depend on the ordering code under test.
+MIN_TABLE = [
+    (PUB, PUB, PUB), (PUB, INT, PUB), (PUB, RES, PUB),
+    (INT, PUB, PUB), (INT, INT, INT), (INT, RES, INT),
+    (RES, PUB, PUB), (RES, INT, INT), (RES, RES, RES),
+]  # fmt: skip
 
 
 class TestAccessCeiling:
@@ -52,6 +59,13 @@ class TestEffectiveCeiling:
     def test_is_the_minimum_for_every_pair(self, listener: Sensitivity, token: Sensitivity) -> None:
         result = effective_ceiling(AccessCeiling(listener), AccessCeiling(token))
         assert result.level is min(listener, token)
+
+    @pytest.mark.parametrize(("listener", "token", "expected"), MIN_TABLE)
+    def test_matches_the_hand_written_table(
+        self, listener: Sensitivity, token: Sensitivity, expected: Sensitivity
+    ) -> None:
+        assert effective_ceiling(AccessCeiling(listener), AccessCeiling(token)).level is expected
+        assert effective_ceiling(AccessCeiling(token), AccessCeiling(listener)).level is expected
 
     def test_token_can_only_lower_the_listener_ceiling(self) -> None:
         public_listener = AccessCeiling(Sensitivity.INTERNAL)
@@ -127,12 +141,22 @@ class TestPrincipal:
             Agent(name)
         assert excinfo.value.field == "agent"
 
+    @pytest.mark.parametrize("name", ["owner", "owner@workstation"])
+    def test_agent_cannot_use_the_owner_name(self, name: str) -> None:
+        with pytest.raises(InvalidValueError) as excinfo:
+            Agent(name)
+        assert excinfo.value.field == "agent"
+
+    def test_names_merely_containing_owner_are_allowed(self) -> None:
+        assert Agent("owner-bot@box").name == "owner-bot@box"
+        assert Agent("codex@owner").name == "codex@owner"
+
     def test_agent_rejects_non_strings(self) -> None:
         with pytest.raises(InvalidValueError):
             Agent(cast(Any, None))
 
     def test_agent_and_owner_are_distinct(self) -> None:
-        assert cast(Any, Agent("owner")) != cast(Any, Owner())
+        assert cast(Any, Agent("owner-bot")) != cast(Any, Owner())
         assert Owner() == Owner()
 
 
@@ -183,6 +207,15 @@ class TestAccessContext:
             principal=Agent("a"), ceiling=AccessCeiling(Sensitivity.PUBLIC), scopes=frozenset({Scope.READ})
         )
         assert isinstance(ctx.scopes, frozenset)
+
+    def test_a_frozenset_subclass_cannot_grant_extra_scopes(self) -> None:
+        class Liar(frozenset[Scope]):
+            def __contains__(self, item: object) -> bool:
+                return True
+
+        ctx = AccessContext(principal=Agent("a"), ceiling=AccessCeiling(Sensitivity.PUBLIC), scopes=Liar({Scope.READ}))
+        assert type(ctx.scopes) is frozenset
+        assert ctx.can(Scope.PROPOSE) is False
 
 
 class TestScope:

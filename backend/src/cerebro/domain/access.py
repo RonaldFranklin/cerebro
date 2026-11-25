@@ -21,6 +21,9 @@ from cerebro.domain.errors import InvalidValueError
 
 _AGENT_NAME: Final = re.compile(r"[a-z0-9][a-z0-9._-]*(?:@[a-z0-9][a-z0-9._-]*)?")
 AGENT_NAME_MAX_LENGTH: Final = 64
+# The owner is recorded as ``owner`` in commit trailers (``Approved-by: owner``); an agent must never be able to
+# appear under that name in the audit trail, with or without a host part.
+_RESERVED_AGENT_NAMES: Final = frozenset({"owner"})
 
 
 @dataclass(frozen=True, slots=True)
@@ -95,6 +98,8 @@ def validate_agent_name(name: object) -> str:
             "agent",
             f"must be lowercase letters, digits, '.', '_', '-' and at most one '@' (max {AGENT_NAME_MAX_LENGTH})",
         )
+    if name.partition("@")[0] in _RESERVED_AGENT_NAMES:
+        raise InvalidValueError("agent", "this name is reserved for the owner")
     return name
 
 
@@ -135,6 +140,8 @@ class AccessContext:
         _require_ceiling(self.ceiling, "ceiling")
         if not isinstance(self.scopes, frozenset) or not all(isinstance(s, Scope) for s in self.scopes):
             raise InvalidValueError("scopes", "expected a frozenset of Scope")
+        # A frozenset subclass could override ``__contains__``; keep a plain copy so ``can`` sees the real members.
+        object.__setattr__(self, "scopes", frozenset(self.scopes))
 
     @classmethod
     def for_owner(cls, listener: AccessCeiling) -> Self:

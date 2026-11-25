@@ -174,7 +174,8 @@ effective_ceiling = min(listener_ceiling, token_ceiling)
   `ceiling` already the effective ceiling. `principal` is `Agent(name)` or `Owner`. Scopes are `read` and
   `propose`. The **owner has every scope** but is still limited by the **listener** ceiling (there is no token);
   owner-only actions (owner edit, review, maintenance) require the `Owner` principal, not a scope. An agent only
-  has the scopes of its token. Agent names are lowercase (`claude-code@workstation`, at most 64 characters).
+  has the scopes of its token. Agent names are lowercase (`claude-code@workstation`, at most 64 characters);
+  `owner` (with or without a host part) is reserved so an agent can never appear as the owner in trailers.
 - `restricted` notes are encrypted at rest in the content repository ([ADR-0008](adr/0008-encryption-of-restricted-notes.md)).
 
 ## 5. Status
