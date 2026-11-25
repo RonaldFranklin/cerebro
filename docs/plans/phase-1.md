@@ -20,7 +20,7 @@ Status legend: ⬜ not started · 🟦 PR open · ✅ merged
 | 7 | `phase-1/ports-and-fakes` | every port as a `Protocol`, in-memory fakes in `tests/fakes`, contract test suites in `tests/contract` parametrized by adapter factory (reused in Phase 2) | — | ✅ #11 |
 | 8 | `phase-1/read-use-cases` | `GetOverview`, `SearchNotes`, `ReadNote`, `GetNeighbors`, `GetGraph`; hub reads build the member list at read time, filtered by ceiling | A, C | ✅ #12 |
 | 9 | `phase-1/write-use-cases` | `SubmitProposal`, `ValidateProposal`, `CurateProposal` (with `NullCurator` / fake), `ReviewProposal`, `ApplyProposal`, `OwnerEditNote`; optimistic concurrency on apply and owner edit; authorization in the use cases | B, C, D | ✅ #13 |
-| 10 | `phase-1/maintenance-use-cases` | `RebuildIndex`, `HealthReport`, `IssueAgentToken`, `RevokeAgentToken`, `AuthenticateToken`; closes the phase (roadmap incl. the added use cases, `AGENTS.md`, coverage check) | C | 🟦 #14 |
+| 10 | `phase-1/maintenance-use-cases` | `RebuildIndex`, `HealthReport`, `IssueAgentToken`, `RevokeAgentToken`, `AuthenticateToken`; closes the phase (roadmap incl. the added use cases, `AGENTS.md`, coverage check) | C | ✅ #14 |
 
 **Phase 1 is complete** once PR 10 is merged. The human security checkpoint of section 5 (scanner, access
 ceiling, tokens) is **still pending** and gates Phase 3.

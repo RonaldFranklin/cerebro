@@ -68,6 +68,8 @@ ceiling and token handling has not happened yet. Nothing in Phase 1 runs exposed
   (CSPRNG, >= 256 bits; the in-memory fake is deterministic and must never be used outside tests).
 - `crypto` Fernet Cipher; encrypted file format for restricted notes.
 - Each adapter passes the same contract tests as its fake.
+- Do not persist rejected raw payloads: a proposal rejected by validation keeps its findings (codes, fields,
+  sizes), never the raw submitted text (it may contain the secret the scanner just caught).
 
 **Acceptance:** `RebuildIndex` over a sample content repo (fixtures, including an encrypted note) produces a
 correct index; contract tests green for fakes and real adapters.
@@ -78,6 +80,9 @@ correct index; contract tests green for fakes and real adapters.
 - MCP server with the read tools from [ADR-0014](adr/0014-mcp-tool-surface.md) over streamable HTTP
   (and stdio for local development), token auth, listener ceilings.
 - `docs/agent-integration.md` verified against real Claude Code and Codex configs.
+- Size limits in every inbound adapter (request body, query, proposal fields), enforced before any use case runs.
+- `ListAgentTokens` use case (owner only; never returns secrets or hashes) for `token list`.
+- MCP `cerebro_neighbors` caps `depth` at 2.
 
 **Acceptance:** Claude Code and Codex in WSL (dev) can call `cerebro_overview`, `cerebro_search`,
 `cerebro_read`, `cerebro_neighbors` against a dev instance; a token with ceiling `internal` never sees
