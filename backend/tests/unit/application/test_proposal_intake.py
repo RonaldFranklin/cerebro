@@ -99,12 +99,16 @@ def test_amend_validates_before_saving_and_preserves_provenance() -> None:
 
 
 @pytest.mark.parametrize("ref", ["vault-layout", "absent-note"])
-@pytest.mark.parametrize("field", ["body", "related", "hub"])
+@pytest.mark.parametrize("field", ["body", "related", "hub", "secret_related"])
 def test_hidden_and_missing_references_are_indistinguishable_before_admission(ref: str, field: str) -> None:
     k = Kit()
 
     values: dict[str, object] = {"body": f"See [[{ref}]].", "related": (NoteId(ref),), "hub": NoteId(ref)}
-    req = SubmitProposalRequest(kind=ProposalKind.CREATE, content=new_content(**{field: values[field]}))
+    if field == "secret_related":
+        content = new_content(related=(NoteId(ref),), rationale="-----BEGIN PRIVATE KEY-----")
+    else:
+        content = new_content(**{field: values[field]})
+    req = SubmitProposalRequest(kind=ProposalKind.CREATE, content=content)
     with pytest.raises(NoteNotFound, match=r"^note not found$"):
         intake(k).execute(req, AGENT)
     assert not k.store.find()

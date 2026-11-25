@@ -57,7 +57,7 @@ class SubmitProposal:
             return scrubbed(proposal).reject_invalid(report, now)
         return proposal
 
-    def check_references(self, proposal: Proposal, ctx: AccessContext) -> None:
+    def check_references(self, request: SubmitProposalRequest, ctx: AccessContext) -> None:
         """A reference outside the submitting ceiling has the same outcome as an absent reference."""
-        for ref in proposal_references(proposal):
+        for ref in proposal_references(request):
             visible_note(self._notes, ref, ctx, include_history=True)

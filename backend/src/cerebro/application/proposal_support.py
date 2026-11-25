@@ -9,6 +9,7 @@ import unicodedata
 from dataclasses import replace
 from datetime import date
 
+from cerebro.application.dto import SubmitProposalRequest
 from cerebro.application.errors import ProposalNotApplicable
 from cerebro.application.ports.notes import NoteRepository
 from cerebro.domain.budgets import core_budget_findings, word_count
@@ -209,7 +210,7 @@ def is_noop(candidate: Note, current: Note) -> bool:
     return replace(candidate, updated=current.updated, created=current.created) == current
 
 
-def proposal_references(proposal: Proposal) -> set[NoteId]:
+def proposal_references(proposal: Proposal | SubmitProposalRequest) -> set[NoteId]:
     """Every note referenced by proposed metadata and by text passed to a curator."""
     c = proposal.content
     refs = set(c.related)
