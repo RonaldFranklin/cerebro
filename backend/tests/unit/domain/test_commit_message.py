@@ -61,3 +61,17 @@ def test_bad_proposal_id(value: Any) -> None:
 
 def test_check_attribution() -> None:
     assert CommitMessage.check_attribution("owner", "approved_by") == "owner"
+
+
+def test_owner_edit_message() -> None:
+    message = CommitMessage.for_owner_edit(subject="Update note: server-ssh-access", edit_id="edit-1")
+    assert message.render() == (
+        "Update note: server-ssh-access\n\n"
+        "Proposed-by: owner\nCurated-by: owner\nApproved-by: owner\nProposal-Id: edit-1"
+    )
+
+
+@pytest.mark.parametrize(("curated_by", "approved_by"), [("curator/x", "owner"), ("owner", "someone"), ("x", "x")])
+def test_owner_as_proposer_only_when_the_owner_did_everything(curated_by: str, approved_by: str) -> None:
+    with pytest.raises(InvalidValueError):
+        make(proposed_by="owner", curated_by=curated_by, approved_by=approved_by)

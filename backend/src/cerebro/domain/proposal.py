@@ -93,11 +93,15 @@ class ProposedContent:
     rationale: str = ""
     related: tuple[NoteId, ...] = ()
     superseded_by: NoteId | None = None
+    summary: str | None = None
+    hub: NoteId | None = None
 
     def __post_init__(self) -> None:
         for name, value, expected in (
             ("title", self.title, str),
             ("body", self.body, str),
+            ("summary", self.summary, str),
+            ("hub", self.hub, NoteId),
             ("area", self.area, Area),
             ("type", self.type, NoteType),
             ("priority", self.priority, Priority),
@@ -271,6 +275,17 @@ class Proposal:
         if now < self.updated_at:
             raise InvalidValueError("now", "must not precede the last update")
         return replace(self, base_hash=new_base_hash, conflict=False, updated_at=now)
+
+    def override_decision(self, decision: Decision, now: datetime) -> Self:
+        """curated | needs_owner: the owner replaces the decision (status unchanged); approval comes after."""
+        if self.status not in (S.CURATED, S.NEEDS_OWNER):
+            raise InvalidTransition("override the decision of", self.status.value)
+        if not isinstance(decision, Decision):
+            raise InvalidValueError("decision", "expected a Decision")
+        _require_aware(now, "now")
+        if now < self.updated_at:
+            raise InvalidValueError("now", "must not precede the last update")
+        return replace(self, decision=decision, updated_at=now)
 
     def reject(self, reason: str, now: datetime) -> Self:
         """curated | needs_owner -> rejected. The reason is stored as a ``reject`` decision."""
