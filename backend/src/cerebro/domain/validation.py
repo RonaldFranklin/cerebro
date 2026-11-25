@@ -4,6 +4,7 @@ from cerebro.domain.budgets import body_budget_findings
 from cerebro.domain.enums import Priority, Sensitivity, Status
 from cerebro.domain.note import Note
 from cerebro.domain.report import Finding, SeverityPolicy, ValidationReport, ViolationCode
+from cerebro.domain.secrets import scan_note
 from cerebro.domain.vocabulary import CORE, HUB, NoteType, Vocabulary
 
 MAX_TITLE_LENGTH = 120
@@ -23,8 +24,8 @@ def allowed_priorities(note_type: NoteType) -> frozenset[Priority]:
 
 
 def validate_note(note: Note, vocabulary: Vocabulary, policy: SeverityPolicy) -> ValidationReport:
-    """Every per-note rule violation, including the body budget, with severities from ``policy``."""
-    return policy.report(note_findings(note, vocabulary) + body_budget_findings(note))
+    """Every per-note rule violation (fields, body budget, secret scan), with severities from ``policy``."""
+    return policy.report(note_findings(note, vocabulary) + body_budget_findings(note) + scan_note(note))
 
 
 def note_findings(note: Note, vocabulary: Vocabulary) -> tuple[Finding, ...]:
