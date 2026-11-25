@@ -1,0 +1,86 @@
+"""``SearchIndex``: full-text search and similarity over notes, returning summaries only (never bodies)."""
+
+from collections.abc import Iterable
+from dataclasses import dataclass
+from typing import Protocol
+
+from cerebro.domain.access import AccessCeiling
+from cerebro.domain.enums import Priority, Sensitivity, Status
+from cerebro.domain.errors import InvalidValueError
+from cerebro.domain.note import Note, NoteId
+from cerebro.domain.vocabulary import Area, NoteType
+
+MAX_LIMIT = 100
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class SearchQuery:
+    """A filtered search. ``ceiling`` is mandatory: the index never returns a note above it.
+
+    Empty ``text`` lists the matching notes (ordered by priority, then id). Empty filter sets mean "any".
+    ``include_history`` is needed to see ``superseded`` / ``archived`` notes.
+    """
+
+    ceiling: AccessCeiling
+    text: str = ""
+    areas: frozenset[Area] = frozenset()
+    types: frozenset[NoteType] = frozenset()
+    priorities: frozenset[Priority] = frozenset()
+    statuses: frozenset[Status] = frozenset()
+    include_history: bool = False
+    limit: int = 20
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.ceiling, AccessCeiling):
+            raise InvalidValueError("ceiling", "expected an AccessCeiling")
+        if not isinstance(self.text, str):
+            raise InvalidValueError("text", "expected a string")
+        if type(self.limit) is not int or not 1 <= self.limit <= MAX_LIMIT:
+            raise InvalidValueError("limit", f"expected an integer from 1 to {MAX_LIMIT}")
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class SearchHit:
+    """A note summary. ``score`` is higher for better matches (similarity hits: in the range (0, 1])."""
+
+    id: NoteId
+    title: str
+    summary: str
+    area: Area
+    type: NoteType
+    priority: Priority
+    sensitivity: Sensitivity
+    status: Status
+    score: float
+
+
+class SearchIndex(Protocol):
+    """Derived, rebuildable index. Never the source of truth."""
+
+    def upsert(self, note: Note) -> None:
+        """Index (or re-index) one note."""
+        ...
+
+    def remove(self, note_id: NoteId) -> None:
+        """Drop a note from the index; unknown ids are ignored."""
+        ...
+
+    def rebuild(self, notes: Iterable[Note]) -> None:
+        """Replace the whole index with ``notes`` atomically."""
+        ...
+
+    def search(self, query: SearchQuery) -> tuple[SearchHit, ...]:
+        """Matching visible notes, best first.
+
+        Ordering is fixed: ``score`` descending, then ``priority`` ascending (P0 first), then ``id``. A match in
+        the title outranks a match only in the body. Text matching is case-insensitive, any-term.
+        """
+        ...
+
+    def find_similar(self, text: str, *, ceiling: AccessCeiling, limit: int = 5) -> tuple[SearchHit, ...]:
+        """Current notes similar to ``text`` (duplicate detection), most similar first.
+
+        Only notes within ``ceiling`` and with a ``current`` status are considered; notes with no similarity
+        are not returned.
+        """
+        ...

@@ -51,7 +51,9 @@ all use cases runnable against fakes in tests.
   YAML 1.1 implicit booleans/numbers (`no`, `on`, `2026`, `0x1f`) as strings where the domain expects text, and
   dump such scalars quoted; contract-test it. Checks that `id` equals the file name.
 - `sqlite` SearchIndex (FTS5) + GraphIndex + ProposalStore + TokenStore.
-- `git` VersionControl via subprocess (commit with trailers, push).
+- `git` VersionControl (`push`) via subprocess; the filesystem `NoteRepository.apply` records the single commit with
+  trailers, all-or-nothing. Its contract test must also read the commit back (`git log`) and assert the trailers,
+  which the shared contract cannot observe.
 - `crypto` Fernet Cipher; encrypted file format for restricted notes.
 - Each adapter passes the same contract tests as its fake.
 
