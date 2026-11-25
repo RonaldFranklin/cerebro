@@ -203,7 +203,8 @@ class SqliteProposalStore:
             cutoff = utc_key(now - timedelta(hours=1))
             admitted = utc_key(now)
             recent = conn.execute(
-                "SELECT count(*) FROM proposals WHERE admission_token_id = ? AND admitted_key > ? AND admitted_key <= ?",
+                "SELECT count(*) FROM proposals WHERE admission_token_id = ? "
+                "AND admitted_key > ? AND admitted_key <= ?",
                 (token_id, cutoff, admitted),
             ).fetchone()[0]
             pending = conn.execute(
