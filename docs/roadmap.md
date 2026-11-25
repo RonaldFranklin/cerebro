@@ -38,7 +38,7 @@ Delivery plan, pull request status and design decisions: [plans/phase-1.md](plan
   superseded handling.
 - Ports as `Protocol`s; in-memory fakes; contract test suites for each port.
 - Use cases: `GetOverview`, `SearchNotes` (fake index), `ReadNote` (incl. section), `GetNeighbors`,
-  `SubmitProposal`, `ValidateProposal`, `ReviewProposal`, `ApplyProposal`, `OwnerEditNote`,
+  `SubmitProposal`, `ValidateProposal`, `CurateProposal`, `ReviewProposal`, `ApplyProposal`, `OwnerEditNote`,
   `RebuildIndex`, `HealthReport`.
 - Frontmatter is modeled as plain data in the domain; parsing YAML is **not** part of this phase.
 
