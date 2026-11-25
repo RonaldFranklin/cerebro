@@ -196,6 +196,17 @@ Workstation                                    Server (docker compose: cerebro-<
 | Proposals, decisions, tokens | state dir, `state.sqlite` | no | yes (file backup) |
 | Fernet key, admin password hash | secrets dir | no | owner keeps an offline copy of the key |
 
+Filesystem repository, operating notes (Phase 2):
+
+- `list_notes`/`list_refs` read the working tree while `head()` reports `HEAD`: the container must keep the content
+  tree clean. `apply` enforces it for writes (it refuses when anything is staged, or when a planned note is untracked,
+  has uncommitted edits, or a new note's path is already known to git) and commits only the planned paths.
+- `get` takes no lock (each file is replaced atomically); whole-tree listings take a shared lock.
+- Replacing an encrypted restricted file by a plaintext file declaring `internal` or `public` cannot be detected by
+  the adapter (the file is a valid plaintext note). Protect the working tree and review commits.
+- Directory components are walked with `openat`-style calls (no symlink swap between check and use) for reads and
+  writes; listing a folder by name still reads its entries by path (an attacker needs write access to the repository).
+
 `index.sqlite` is disposable and private (file 0600 in a 0700 directory, `secure_delete` on, symlinks refused). It
 carries an SQLite `application_id` marker and a schema version in `PRAGMA user_version`. A damaged file or a different
 schema version is deleted and recreated empty, but only if the file is clearly ours (zero-length or carrying the
@@ -225,7 +236,7 @@ Full policy in [ADR-0013](adr/0013-stack-and-dependency-policy.md). Summary:
 | Python | 3.14 (newest minor GA for ≥ 12 months at bootstrap) | `uv` for env + lockfile |
 | Core | standard library only | `dataclasses`, `enum`, `re`, `typing` |
 | Index | `sqlite3` (stdlib) with FTS5 | |
-| Frontmatter | PyYAML (`safe_load` / `safe_dump`) | adapter only |
+| Frontmatter | PyYAML (restricted `SafeLoader` / `SafeDumper` subclasses, never `yaml.load` with an unsafe loader) | adapter only (`cerebro.adapters.outbound.filesystem.yaml_io`) |
 | Git | `git` CLI via `subprocess` | no git library |
 | Crypto | `cryptography` (Fernet) | adapter only |
 | Password hashing | `hashlib.scrypt` (stdlib) | single admin user |
@@ -256,5 +267,7 @@ have been published at least 7 days earlier ([ADR-0013](adr/0013-stack-and-depen
 | mypy | 2.4.1 | type checking (`strict`) |
 | import-linter | 2.16 | import contracts (pulls grimp 3.20) |
 | cryptography | 50.0.2 (runtime, `==` pinned; pulls cffi 2.1.1, pycparser 3.12) | Fernet / `MultiFernet` behind the `Cipher` port; adapter only (`cerebro.adapters.outbound.crypto`) |
+| PyYAML | 6.0.3 (runtime, `==` pinned) | frontmatter and `schema/*.yaml` through a restricted `SafeLoader` (no anchors, aliases, tags, duplicate keys; everything but `null` stays text) and a quoting `SafeDumper`; adapter only (`cerebro.adapters.outbound.filesystem`) |
+| types-PyYAML | 6.0.12.20261113 (dev, `==` pinned) | type stubs so `mypy --strict` can check the PyYAML adapter |
 
-Runtime dependencies: `cryptography` (Phase 2). Frontend versions (Node, pnpm, packages) are added in Phase 5.
+Runtime dependencies: `cryptography`, `PyYAML` (Phase 2). Frontend versions (Node, pnpm, packages) are added in Phase 5.

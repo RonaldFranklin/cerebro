@@ -1,12 +1,14 @@
 """Contract for ``NoteRepository``. Phase 2 adapters subclass it and override the ``repo`` fixture."""
 
 from dataclasses import replace
+from datetime import date
 
 import pytest
 
 from cerebro.application.ports import NoteChange, NoteRepository
 from cerebro.domain.commit_message import CommitMessage
 from cerebro.domain.content_hash import content_hash
+from cerebro.domain.enums import Sensitivity
 from cerebro.domain.errors import ContentConflict, InvalidValueError
 from cerebro.domain.note import NoteId
 from cerebro.domain.note_ref import NoteRef
@@ -152,3 +154,90 @@ class NoteRepositoryContract:
             NoteChange(note="not a note")  # type: ignore[arg-type]
         with pytest.raises(InvalidValueError):
             NoteChange(note=make_note(), expected_hash=3)  # type: ignore[arg-type]
+
+    @pytest.mark.parametrize(
+        "text",
+        [
+            "no",
+            "yes",
+            "on",
+            "off",
+            "true",
+            "null",
+            "~",
+            "y",
+            "n",
+            "2026",
+            "0x1f",
+            "1e3",
+            "1_000",
+            "1:30",
+            ".inf",
+            "2026-11-24",
+            "2026-11-24 10:00:00",
+            "-1",
+            "+.5",
+            "=",
+            "<<",
+            "  padded  ",
+            "a: b",
+            "- item",
+            "# not a comment",
+            "line one\nline two",
+            "tab\tinside",
+            "quote ' and \" both",
+            "ünïcödé ✓ 日本語",
+            "---",
+            "...",
+            "&anchor",
+            "*alias",
+            "!tag",
+            "{flow}",
+            "[list]",
+            "@at",
+            "`tick`",
+            "%percent",
+            "trailing colon:",
+            "emoji \U0001f600",
+        ],
+    )
+    def test_tricky_text_roundtrips_exactly(self, repo: NoteRepository, text: str) -> None:
+        note = make_note(title=text, summary=text, lang=text, body=text)
+        repo.apply([NoteChange(note=note)], MESSAGE)
+        stored = repo.get(note.id)
+        assert stored == note
+        assert content_hash(stored) == content_hash(note)
+
+    @pytest.mark.parametrize(
+        "body",
+        [
+            "",
+            "no trailing newline",
+            "\n",
+            "\n\n\n",
+            "crlf\r\nlines\r\n",
+            "lone\rcr",
+            "---\nnot frontmatter\n---\n",
+            "\ufeffbom",
+        ],
+    )
+    def test_bodies_roundtrip_byte_for_byte(self, repo: NoteRepository, body: str) -> None:
+        note = make_note(body=body)
+        repo.apply([NoteChange(note=note)], MESSAGE)
+        assert repo.get(note.id) == note
+        assert repo.list_notes() == (note,)
+
+    def test_optional_fields_roundtrip(self, repo: NoteRepository) -> None:
+        note = make_note(review_by=date(2027, 5, 24), lang="pt-BR", related=())
+        repo.apply([NoteChange(note=note)], MESSAGE)
+        assert repo.get(note.id) == note
+
+    def test_sensitivity_changes_roundtrip_in_both_directions(self, repo: NoteRepository) -> None:
+        note = make_note(sensitivity=Sensitivity.PUBLIC)
+        repo.apply([NoteChange(note=note)], MESSAGE)
+        restricted = replace(note, sensitivity=Sensitivity.RESTRICTED)
+        repo.apply([NoteChange(note=restricted, expected_hash=content_hash(note))], MESSAGE)
+        assert repo.get(note.id) == restricted
+        internal = replace(note, sensitivity=Sensitivity.INTERNAL)
+        repo.apply([NoteChange(note=internal, expected_hash=content_hash(restricted))], MESSAGE)
+        assert repo.get(note.id) == internal
