@@ -69,9 +69,12 @@ def load_settings(file: Path | None, environment: Mapping[str, str]) -> Settings
 
     def path(key: str) -> Path:
         setting = Path(value(key))
-        if file is not None and "CEREBRO_" + key.upper() not in environment:
-            return file.absolute().parent / setting
-        return setting.absolute()
+        try:
+            if file is not None and "CEREBRO_" + key.upper() not in environment:
+                return file.absolute().parent / setting
+            return setting.absolute()
+        except OSError:
+            raise ConfigurationError("cannot resolve configuration paths") from None
 
     configuration = Settings(
         content_repo=path("content_dir"),

@@ -88,3 +88,15 @@ def test_check_config_rejects_invalid_git_settings(tmp_path: Path, field: str, v
     file.write_text(SAMPLE)
     with pytest.raises(ConfigurationError):
         load_settings(file, {field: value})
+
+
+def test_missing_working_directory_is_a_configuration_error(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    file = tmp_path / "settings.toml"
+    file.write_text(SAMPLE)
+    environment = {"CEREBRO_CONTENT_DIR": "relative-content"}
+    directory = tmp_path / "removed"
+    directory.mkdir()
+    monkeypatch.chdir(directory)
+    directory.rmdir()
+    with pytest.raises(ConfigurationError):
+        load_settings(file, environment)
