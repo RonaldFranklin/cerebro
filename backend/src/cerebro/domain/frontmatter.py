@@ -13,6 +13,7 @@ from cerebro.domain.enums import Priority, Sensitivity, Status
 from cerebro.domain.errors import InvalidValueError
 from cerebro.domain.note import Note, NoteId
 from cerebro.domain.report import Severity, ValidationReport, Violation, ViolationCode
+from cerebro.domain.secrets import scan_text
 from cerebro.domain.vocabulary import Area, NoteType
 
 FIELD_ORDER: Final = (
@@ -40,6 +41,8 @@ REQUIRED_FIELDS: Final = frozenset(
 DEFAULT_LANG: Final = "en"
 
 _ISO_DATE = re.compile(r"\d{4}-\d{2}-\d{2}")
+_REDACTED_VALUE: Final = "invalid value that looks like a secret (not shown); notes must never contain secrets"
+_REDACTED_KEY: Final = "unknown frontmatter key that looks like a secret (not shown); notes must never contain secrets"
 
 
 class _FieldFormatError(Exception):
@@ -68,7 +71,10 @@ def parse_note(raw: object, body: object) -> Note | ValidationReport:
 
     for key in raw:
         if not isinstance(key, str) or key not in FIELD_ORDER:
-            error(ViolationCode.UNKNOWN_FIELD, str(key), "unknown field")
+            if scan_text(str(key), field="frontmatter"):
+                error(ViolationCode.SECRET_DETECTED, None, _REDACTED_KEY)
+            else:
+                error(ViolationCode.UNKNOWN_FIELD, str(key), "unknown field")
 
     for field in FIELD_ORDER:
         value = raw.get(field)
@@ -81,7 +87,11 @@ def parse_note(raw: object, body: object) -> Note | ValidationReport:
         try:
             values[field] = _PARSERS[field](value)
         except (_FieldFormatError, InvalidValueError) as exc:
-            error(ViolationCode.INVALID_FIELD, field, exc.message)
+            # Messages may quote the rejected value: never echo one that looks like a secret.
+            if scan_text(exc.message, field=field):
+                error(ViolationCode.SECRET_DETECTED, field, _REDACTED_VALUE)
+            else:
+                error(ViolationCode.INVALID_FIELD, field, exc.message)
 
     if not isinstance(body, str):
         error(ViolationCode.INVALID_FIELD, "body", "body must be text")

@@ -184,9 +184,50 @@ tested*.
 ## 6. Secrets
 
 Notes must never contain secrets. They may say **where** a secret lives (e.g. "password manager, item X"),
-never its value. The domain has a secret scanner (regex patterns for private keys, common token formats,
-`password=`-style assignments, high-entropy strings) applied to every proposal and owner edit. A hit blocks the
-change.
+never its value. The domain has a secret scanner (`cerebro.domain.secrets`, pure standard library) that
+`validate_note` runs on every proposal and every owner edit. A hit is a `secret_detected` violation, an
+**error under both severity policies**.
+
+**What is scanned.** Every text field of the note: `title`, `summary`, `id`, `type`, `area`, `lang`, `hub`,
+`related`, `superseded_by` and the whole `body`, including fenced code blocks (no "example" exemption). Frontmatter
+keys outside the schema are rejected before a note exists, so their values never reach the scanner or a note.
+
+Each field is normalized before scanning (NFKC, so full-width look-alikes become ASCII; invisible format
+characters such as zero-width spaces and soft hyphens are removed). At most 20 findings are listed per field, plus
+one summary finding; every pattern runs in linear time on long lines.
+
+**Detectors** (line by line, first detector wins on overlapping text):
+
+- PEM / OpenSSH / PGP private key headers (`-----BEGIN ... PRIVATE KEY-----`);
+- token formats: AWS access key ids, GitHub (`ghp_`, `gho_`, `ghu_`, `ghs_`, `ghr_`, `github_pat_`), GitLab
+  (`glpat-`), Slack (`xox[abprs]-`), Stripe live keys (`sk_live_`, `rk_live_`), Google API keys (`AIza...`),
+  Anthropic / OpenAI keys, npm, SendGrid, JSON Web Tokens, `Bearer <token>` (must contain a digit);
+- passwords inside URLs (`scheme://user:secret@host`);
+- `password=` / `secret:` / `api_key=` / `token=` style assignments (also `DB_PASSWORD=`, `dbpassword=`, `senha:`,
+  JSON `"password": "..."`)
+  with a non-trivial value: at least 8 characters, not a placeholder (`<...>`, `${...}`, `xxx`, `changeme`,
+  `example`, references to a password manager or environment, ...). Unquoted values must also look like a credential
+  (digit, mixed case or symbol), so `secret: vaultwarden-item-name` is not flagged; quoted values are flagged
+  regardless;
+- high-entropy strings: a token of at least 32 characters from `[A-Za-z0-9+/_=-]` with letters and digits and
+  Shannon entropy of at least 4.3 bits per character. Hex-only strings (commit hashes, digests), UUIDs and
+  wikilinks are never flagged.
+
+**Reports never contain the secret.** A finding carries the detector kind, the field, the line number and, for
+secrets of 16 characters or more, the first two characters. Thresholds are constants in the module. `parse_note`
+does not echo a rejected frontmatter value (or unknown key) that the scanner flags: it reports `secret_detected`
+for that field instead of quoting the value. Exceptions raised when constructing value objects directly
+(`NoteId("...")`) still quote the value; adapters must not log them verbatim.
+
+**Known limits.** The scanner is best-effort, not a guarantee. It misses secrets split across lines (including
+YAML block values such as `password: |`) or encoded (base64, hex, reversed), short or purely lowercase unquoted
+passwords, low-entropy secrets, secrets in prose (`the password is hunter2`), test-mode keys (`sk_test_`), unknown
+token formats shorter than 32 characters, **hex-only keys** (many API keys are 32 or 40 hex characters; they are
+caught only inside a `key=`-style assignment) and a large share of random tokens drawn only from lowercase letters
+and digits (about half of such 32-character tokens, about one in seven at 40 characters, fall below the entropy
+threshold). It flags long random-looking identifiers that are not secrets, such as base64 digests (`sha256-...`
+integrity hashes) and SSH public keys; the owner then rewords the note. The owner
+review step remains the last line of defence.
 
 ## 7. Proposals
 

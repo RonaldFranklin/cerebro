@@ -41,6 +41,8 @@ class ViolationCode(StrEnum):
     SELF_REFERENCE = "self_reference"
     DUPLICATE_RELATED = "duplicate_related"
     DATES_OUT_OF_ORDER = "dates_out_of_order"
+    # secrets (secrets.py)
+    SECRET_DETECTED = "secret_detected"
     # cross-note rules (links.py / cross_note.py)
     BROKEN_LINK = "broken_link"
     HUB_NOT_FOUND = "hub_not_found"
