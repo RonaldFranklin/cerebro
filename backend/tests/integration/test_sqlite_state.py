@@ -10,6 +10,7 @@ from contextlib import closing
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta, timezone
 from pathlib import Path
+from threading import Barrier
 
 import pytest
 
@@ -21,21 +22,28 @@ from cerebro.adapters.outbound.sqlite import (
     StateFileError,
     StateSchemaError,
 )
-from cerebro.adapters.outbound.sqlite._state_db import is_unique_violation
-from cerebro.adapters.outbound.sqlite.proposals import seal_payload
+from cerebro.adapters.outbound.sqlite._state_db import _SCHEMA_V1, SCHEMA_VERSION, is_unique_violation
+from cerebro.adapters.outbound.sqlite.proposals import seal_payload, utc_key
 from cerebro.application.dto import SubmitProposalRequest
-from cerebro.application.errors import DecryptionError, ProposalConflict
+from cerebro.application.errors import DecryptionError, ProposalConflict, ProposalLimitReached
 from cerebro.application.ports import ProposalStore, TokenStore
 from cerebro.domain.access import AccessCeiling, Scope
 from cerebro.domain.agent_token import AgentToken
 from cerebro.domain.decision import Decision
 from cerebro.domain.enums import Priority, Sensitivity
 from cerebro.domain.note import NoteId
-from cerebro.domain.proposal import Proposal, ProposalKind, ProposalStatus, ProposedContent
+from cerebro.domain.proposal import Proposal, ProposalKind, ProposalLimits, ProposalStatus, ProposedContent
 from cerebro.domain.report import Severity, ValidationReport, Violation, ViolationCode
 from cerebro.domain.token_hash import TokenHash
 from cerebro.domain.vocabulary import Area, NoteType
-from tests.contract.stores_contract import ProposalStoreContract, TokenStoreContract, make_proposal, make_token
+from tests.contract.stores_contract import (
+    ProposalStoreContract,
+    TokenStoreContract,
+    make_proposal,
+    make_reviewable,
+    make_token,
+)
+from tests.fakes.system import FixedClock
 from tests.unit.application.write_kit import Kit, new_content
 from tests.unit.domain.test_proposal import BAD, HASH, NOTE, OK, T0, WARN, at, make_update
 from tests.unit.domain.test_proposal import make_proposal as build_proposal
@@ -312,7 +320,7 @@ def test_wal_and_foreign_keys_and_secure_delete(state_path: Path, cipher: Fernet
     SqliteProposalStore(state_path, cipher)
     with closing(sqlite3.connect(state_path)) as conn:
         assert conn.execute("PRAGMA journal_mode").fetchone()[0] == "wal"
-        assert conn.execute("PRAGMA user_version").fetchone()[0] == 1
+        assert conn.execute("PRAGMA user_version").fetchone()[0] == SCHEMA_VERSION
 
 
 def test_an_unknown_schema_version_is_refused_and_the_file_is_kept(state_path: Path, cipher: FernetCipher) -> None:
@@ -320,7 +328,7 @@ def test_an_unknown_schema_version_is_refused_and_the_file_is_kept(state_path: P
     _sql(state_path, "PRAGMA user_version = 99")
     with pytest.raises(StateSchemaError):
         SqliteProposalStore(state_path, cipher)
-    _sql(state_path, "PRAGMA user_version = 1")
+    _sql(state_path, f"PRAGMA user_version = {SCHEMA_VERSION}")
     assert SqliteProposalStore(state_path, cipher).get("proposal-0001") is not None
 
 
@@ -531,3 +539,89 @@ def test_token_digest_roundtrips_and_a_damaged_row_fails_the_hash_lookup(state_p
     _sql(state_path, "UPDATE tokens SET scopes = 'not json'")
     with pytest.raises(StateCorruptionError):
         store.find_by_hash(token.token_hash)
+
+
+def test_concurrent_admission_on_distinct_connections_survives_restart(state_path: Path, cipher: FernetCipher) -> None:
+    clock = FixedClock(T0)
+    limits = ProposalLimits(per_hour=1, pending=2)
+    ready = Barrier(2)
+    stores = [SqliteProposalStore(state_path, cipher) for _ in range(2)]
+
+    def run(index: int) -> bool:
+        ready.wait(timeout=5)
+        try:
+            stores[index].admit(make_reviewable(f"p-{index}"), token_id="credential", limits=limits, clock=clock)
+        except ProposalLimitReached:
+            return False
+        return True
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        assert sorted(pool.map(run, range(2))) == [False, True]
+    restarted = SqliteProposalStore(state_path, cipher)
+    assert len(restarted.find()) == 1
+    with pytest.raises(ProposalLimitReached):
+        restarted.admit(make_reviewable("another"), token_id="credential", limits=limits, clock=clock)
+    assert restarted.get("another") is None
+
+
+def test_v1_state_upgrade_preserves_unattributed_proposals_and_existing_credentials(
+    state_path: Path, cipher: FernetCipher
+) -> None:
+    # Reproduce the schema and on-disk values written by the Phase 3 state adapters.
+    state_path.parent.mkdir(mode=0o700)
+    state_path.touch(mode=0o600)
+    old = make_reviewable("legacy")
+    token = make_token()
+    with closing(sqlite3.connect(state_path)) as conn, conn:
+        conn.executescript(_SCHEMA_V1)
+        conn.execute("PRAGMA user_version = 1")
+        conn.execute(
+            "INSERT INTO proposals VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                old.id,
+                old.kind.value,
+                old.status.value,
+                0,
+                old.source_agent,
+                utc_key(old.created_at),
+                utc_key(old.updated_at),
+                old.curated_by,
+                None,
+                cipher.encrypt(seal_payload(old)),
+            ),
+        )
+        conn.execute(
+            "INSERT INTO tokens VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                token.id,
+                token.token_hash.hexdigest,
+                token.agent,
+                "internal",
+                '["read"]',
+                token.created_at.isoformat(),
+                utc_key(token.created_at),
+                None,
+                None,
+            ),
+        )
+    store = SqliteProposalStore(state_path, cipher)
+    assert store.get(old.id) == old
+    assert SqliteTokenStore(state_path).get(token.id) == token
+    store.admit(
+        make_reviewable("new"), token_id=token.id, limits=ProposalLimits(per_hour=1, pending=1), clock=FixedClock()
+    )
+    assert len(store.find(source_agent=old.source_agent)) == 2
+
+
+def test_unrecognized_v1_file_is_left_intact(state_path: Path, cipher: FernetCipher) -> None:
+    state_path.parent.mkdir(mode=0o700)
+    state_path.touch(mode=0o600)
+    with closing(sqlite3.connect(state_path)) as db, db:
+        db.execute("CREATE TABLE unrelated (value TEXT)")
+        db.execute("INSERT INTO unrelated VALUES ('fixture')")
+        db.execute("PRAGMA user_version = 1")
+    with pytest.raises(StateSchemaError):
+        SqliteProposalStore(state_path, cipher)
+    with closing(sqlite3.connect(state_path)) as db:
+        assert db.execute("PRAGMA user_version").fetchone() == (1,)
+        assert db.execute("SELECT * FROM unrelated").fetchall() == [("fixture",)]

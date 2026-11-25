@@ -21,10 +21,10 @@ from contextlib import closing, contextmanager, suppress
 from pathlib import Path
 from typing import Final
 
-SCHEMA_VERSION: Final = 1
+SCHEMA_VERSION: Final = 2
 BUSY_TIMEOUT_MS: Final = 5000
 
-_SCHEMA: Final = """
+_SCHEMA_V1: Final = """
 CREATE TABLE proposals (
     id           TEXT PRIMARY KEY,
     kind         TEXT NOT NULL,
@@ -60,7 +60,7 @@ class StateStoreError(RuntimeError):
 
 
 class StateSchemaError(StateStoreError):
-    """The file has a schema version this build does not know. It is never migrated or deleted automatically."""
+    """The file has a schema version this build does not know. Only the known v1 to v2 upgrade is supported."""
 
 
 class StateCorruptionError(StateStoreError):
@@ -181,24 +181,40 @@ class StateDatabase:
         version = int(conn.execute("PRAGMA user_version").fetchone()[0])
         if version == SCHEMA_VERSION:
             return
-        if version != 0:
+        if version not in (0, 1):
             raise StateSchemaError(
                 f"{self._path} has schema version {version}; this build understands {SCHEMA_VERSION}"
             )
         conn.execute("BEGIN IMMEDIATE")
         try:
-            if int(conn.execute("PRAGMA user_version").fetchone()[0]) == 0:  # lost the race otherwise
+            version = int(conn.execute("PRAGMA user_version").fetchone()[0])
+            if version == SCHEMA_VERSION:  # another process finished the migration
+                conn.execute("COMMIT")
+                return
+            if version == 0:
                 if conn.execute("SELECT count(*) FROM sqlite_master").fetchone()[0] != 0:
                     raise StateSchemaError(f"{self._path} holds tables but no schema version; refusing to touch it")
-                self._create(conn)
+                for statement in _SCHEMA_V1.split(";"):
+                    if statement.strip():
+                        conn.execute(statement)
+            elif version != 1 or not self._matches_v1(conn):
+                raise StateSchemaError("unexpected state schema during migration")
+            conn.execute("ALTER TABLE proposals ADD COLUMN admission_token_id TEXT")
+            conn.execute("ALTER TABLE proposals ADD COLUMN admitted_key TEXT")
+            conn.execute("CREATE INDEX proposals_by_admission ON proposals(admission_token_id, admitted_key)")
+            conn.execute(
+                "CREATE INDEX pending_by_token ON proposals(admission_token_id) "
+                "WHERE status NOT IN ('rejected','applied')"
+            )
+            conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
         except BaseException:
             conn.execute("ROLLBACK")
             raise
         conn.execute("COMMIT")
 
     @staticmethod
-    def _create(conn: sqlite3.Connection) -> None:
-        for statement in _SCHEMA.split(";"):
-            if statement.strip():
-                conn.execute(statement)
-        conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
+    def _matches_v1(conn: sqlite3.Connection) -> bool:
+        """Only upgrade the schema this application created. SQLite normalizes the CREATE statement prefix."""
+        expected = {statement.strip() for statement in _SCHEMA_V1.split(";") if statement.strip()}
+        actual = {row[0] for row in conn.execute("SELECT sql FROM sqlite_schema WHERE sql IS NOT NULL")}
+        return expected == actual

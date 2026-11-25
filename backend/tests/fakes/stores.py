@@ -1,19 +1,31 @@
 """In-memory ``ProposalStore`` and ``TokenStore``, and a scriptable ``Curator``."""
 
 from dataclasses import replace
+from datetime import datetime, timedelta
+from threading import RLock
 
-from cerebro.application.errors import AlreadyExists, ProposalConflict, ProposalNotFound, TokenNotFound
+from cerebro.application.errors import (
+    AlreadyExists,
+    ProposalConflict,
+    ProposalLimitReached,
+    ProposalNotFound,
+    TokenNotFound,
+)
 from cerebro.application.ports.curator import CurationRequest
+from cerebro.application.ports.system import Clock
+from cerebro.domain.access import validate_token_id
 from cerebro.domain.agent_token import AgentToken
 from cerebro.domain.decision import Decision
 from cerebro.domain.errors import InvalidValueError
-from cerebro.domain.proposal import Proposal, ProposalStatus
+from cerebro.domain.proposal import Proposal, ProposalLimits, ProposalStatus
 from cerebro.domain.token_hash import TokenHash
 
 
 class InMemoryProposalStore:
     def __init__(self) -> None:
         self._items: dict[str, Proposal] = {}
+        self._admissions: dict[str, tuple[str, datetime]] = {}
+        self._lock = RLock()
 
     def add(self, proposal: Proposal) -> None:
         if proposal.revision != 0:
@@ -21,6 +33,20 @@ class InMemoryProposalStore:
         if proposal.id in self._items:
             raise AlreadyExists("proposal", proposal.id)
         self._items[proposal.id] = proposal
+
+    def admit(self, proposal: Proposal, *, token_id: str, limits: ProposalLimits, clock: Clock) -> None:
+        validate_token_id(token_id)
+        with self._lock:
+            now = clock.now()
+            cutoff = now - timedelta(hours=1)
+            admitted = [(pid, at) for pid, (token, at) in self._admissions.items() if token == token_id]
+            if (
+                sum(at > cutoff for _, at in admitted) >= limits.per_hour
+                or sum(not self._items[pid].status.is_terminal for pid, _ in admitted) >= limits.pending
+            ):
+                raise ProposalLimitReached
+            self.add(proposal)
+            self._admissions[proposal.id] = (token_id, now)
 
     def get(self, proposal_id: str) -> Proposal | None:
         return self._items.get(proposal_id)

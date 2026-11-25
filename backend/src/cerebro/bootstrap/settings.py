@@ -8,6 +8,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from cerebro.adapters.outbound.git import GitError, GitIdentity, validate_branch, validate_remote
+from cerebro.domain.proposal import ProposalLimits
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -22,6 +23,7 @@ class Settings:
     """Fernet key file (``0600``, in a ``0700`` directory), see ADR-0008."""
     git_name: str
     git_email: str
+    proposal_limits: ProposalLimits = field(default_factory=ProposalLimits)
     git_remote: str | None = field(default=None, repr=False)
     """Backup remote for ``VersionControl.push``; ``None`` disables publishing. Hidden from ``repr``: a remote
     URL may carry credentials."""
@@ -35,6 +37,7 @@ class ConfigurationError(Exception):
 
 
 _CONFIG_KEYS = frozenset({"content_dir", "state_dir", "key_file", "git_name", "git_email", "git_remote", "git_branch"})
+_LIMIT_KEYS = frozenset({"proposals_per_hour", "proposals_pending"})
 _MAX_CONFIG_BYTES = 65536
 
 
@@ -49,8 +52,15 @@ def _read_config(path: Path) -> dict[str, str]:
         data = tomllib.loads(raw.decode("utf-8"))
     except OSError, UnicodeError, tomllib.TOMLDecodeError, RecursionError, ValueError:
         raise ConfigurationError("cannot read configuration as UTF-8 TOML") from None
-    if data.keys() - _CONFIG_KEYS or any(type(value) is not str for value in data.values()):
+    if data.keys() - (_CONFIG_KEYS | _LIMIT_KEYS):
         raise ConfigurationError("configuration contains an unknown key or invalid value")
+    for key, entry in data.items():
+        if key in _LIMIT_KEYS:
+            if type(entry) is not int or entry <= 0:
+                raise ConfigurationError("quota settings must be positive integers")
+            data[key] = str(entry)
+        elif type(entry) is not str:
+            raise ConfigurationError("configuration contains an invalid value")
     return data
 
 
@@ -76,7 +86,24 @@ def load_settings(file: Path | None, environment: Mapping[str, str]) -> Settings
         except OSError:
             raise ConfigurationError("cannot resolve configuration paths") from None
 
+    def limit(key: str, default: int) -> int:
+        text = value(key, str(default))
+        if not (text.isascii() and text.isdecimal()):
+            raise ConfigurationError("quota settings must be positive integers")
+        try:
+            number = int(text)
+        except ValueError:
+            raise ConfigurationError("quota setting exceeds integer size") from None
+        if number <= 0:
+            raise ConfigurationError("quota settings must be positive integers")
+        return number
+
+    defaults = ProposalLimits()
     configuration = Settings(
+        proposal_limits=ProposalLimits(
+            per_hour=limit("proposals_per_hour", defaults.per_hour),
+            pending=limit("proposals_pending", defaults.pending),
+        ),
         content_repo=path("content_dir"),
         state_dir=path("state_dir"),
         key_file=path("key_file"),

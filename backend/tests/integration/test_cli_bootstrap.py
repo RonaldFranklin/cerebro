@@ -100,3 +100,29 @@ def test_missing_working_directory_is_a_configuration_error(tmp_path: Path, monk
     directory.rmdir()
     with pytest.raises(ConfigurationError):
         load_settings(file, environment)
+
+
+def test_quota_configuration(tmp_path: Path) -> None:
+    file = tmp_path / "settings.toml"
+    file.write_text(SAMPLE)
+    limits = load_settings(file, {}).proposal_limits
+    assert (limits.per_hour, limits.pending) == (20, 10)
+    file.write_text(SAMPLE + "proposals_per_hour = 7\nproposals_pending = 4\n")
+    limits = load_settings(file, {"CEREBRO_PROPOSALS_PENDING": "3"}).proposal_limits
+    assert (limits.per_hour, limits.pending) == (7, 3)
+
+
+@pytest.mark.parametrize("value", ["0", "-1", "true", "2.5", '"3"'])
+def test_invalid_toml_quota(tmp_path: Path, value: str) -> None:
+    file = tmp_path / "settings.toml"
+    file.write_text(SAMPLE + "proposals_per_hour = " + value)
+    with pytest.raises(ConfigurationError):
+        load_settings(file, {})
+
+
+@pytest.mark.parametrize("value", ["0", "-1", "yes", "\u0661", " "])
+def test_invalid_environment_quota(tmp_path: Path, value: str) -> None:
+    file = tmp_path / "settings.toml"
+    file.write_text(SAMPLE)
+    with pytest.raises(ConfigurationError):
+        load_settings(file, {"CEREBRO_PROPOSALS_PENDING": value})

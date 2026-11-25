@@ -194,6 +194,7 @@ class TestContextFromToken:
         ctx = token.to_context(AccessCeiling(Sensitivity.INTERNAL), T0)
         assert ctx.ceiling == AccessCeiling(Sensitivity.INTERNAL)
         assert ctx.principal == Agent("claude-code@workstation")
+        assert ctx.token_id == token.id
         assert ctx.scopes == frozenset({Scope.READ, Scope.PROPOSE})
         assert ctx.can(Scope.PROPOSE)
 

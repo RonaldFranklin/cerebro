@@ -2,13 +2,21 @@
 
 from typing import Protocol
 
-from cerebro.domain.proposal import Proposal, ProposalStatus
+from cerebro.application.ports.system import Clock
+from cerebro.domain.proposal import Proposal, ProposalLimits, ProposalStatus
 
 
 class ProposalStore(Protocol):
     def add(self, proposal: Proposal) -> None:
         """Store a new proposal. Raises ``InvalidValueError`` if ``revision`` is not 0 and ``AlreadyExists`` if the
         id is taken."""
+        ...
+
+    def admit(self, proposal: Proposal, *, token_id: str, limits: ProposalLimits, clock: Clock) -> None:
+        """Insert the first durable row, charging the verified public token id at admission time.
+        Check hourly and outstanding counts atomically with insertion. At either limit raise
+        ProposalLimitReached without writing. Later status transitions retain the original attribution and time.
+        """
         ...
 
     def get(self, proposal_id: str) -> Proposal | None: ...

@@ -1,11 +1,11 @@
 """``AgentToken``: the stored record of an agent credential. Never holds the plaintext secret."""
 
-import re
 from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta
 from typing import Final, Self
 
 from cerebro.domain.access import AccessCeiling, AccessContext, Agent, Scope, effective_ceiling, validate_agent_name
+from cerebro.domain.access import validate_token_id as validate_token_id
 from cerebro.domain.errors import DomainError, InvalidValueError
 from cerebro.domain.token_hash import TokenHash
 
@@ -14,17 +14,9 @@ CLOCK_SKEW_TOLERANCE: Final = timedelta(minutes=5)
 the machine that issued it and the one that checks it). Beyond that the token is not valid: a record dated in the
 future is either forged or the clock is wrong, and a wrong clock must not stretch a token's life."""
 
-_TOKEN_ID: Final = re.compile(r"[A-Za-z0-9_-]{1,64}")
-
 
 class TokenNotValidError(DomainError):
     """The token is expired, revoked or not yet valid and must not authenticate anything."""
-
-
-def validate_token_id(value: object) -> str:
-    if not isinstance(value, str) or _TOKEN_ID.fullmatch(value) is None:
-        raise InvalidValueError("id", "must be 1-64 characters of letters, digits, '_' or '-'")
-    return value
 
 
 def _require_aware(value: object, field_name: str) -> datetime:
@@ -93,6 +85,7 @@ class AgentToken:
             raise TokenNotValidError("token is expired, revoked or not yet valid")
         return AccessContext(
             principal=Agent(self.agent),
+            token_id=self.id,
             ceiling=effective_ceiling(listener, self.ceiling),
             scopes=self.scopes,
         )

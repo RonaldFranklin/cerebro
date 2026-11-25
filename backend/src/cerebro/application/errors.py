@@ -28,6 +28,11 @@ class ProposalNotFound(ApplicationError):  # noqa: N818
         self.proposal_id = proposal_id
 
 
+class ProposalLimitReached(ApplicationError):  # noqa: N818
+    def __init__(self) -> None:
+        super().__init__("Proposal limit reached.")
+
+
 class ProposalConflict(ApplicationError):  # noqa: N818
     """The stored proposal changed since it was loaded (its revision is not the expected one).
 

@@ -18,18 +18,25 @@ import json
 import sqlite3
 from collections.abc import Callable
 from dataclasses import replace
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
 from cerebro.adapters.outbound.sqlite._state_db import StateCorruptionError, StateDatabase, is_unique_violation
-from cerebro.application.errors import AlreadyExists, DecryptionError, ProposalConflict, ProposalNotFound
-from cerebro.application.ports.system import Cipher
+from cerebro.application.errors import (
+    AlreadyExists,
+    DecryptionError,
+    ProposalConflict,
+    ProposalLimitReached,
+    ProposalNotFound,
+)
+from cerebro.application.ports.system import Cipher, Clock
+from cerebro.domain.access import validate_token_id
 from cerebro.domain.decision import Decision, DecisionKind
 from cerebro.domain.enums import Priority, Sensitivity
 from cerebro.domain.errors import DomainError, InvalidValueError
 from cerebro.domain.note import NoteId
-from cerebro.domain.proposal import Proposal, ProposalKind, ProposalStatus, ProposedContent
+from cerebro.domain.proposal import Proposal, ProposalKind, ProposalLimits, ProposalStatus, ProposedContent
 from cerebro.domain.report import Severity, ValidationReport, Violation, ViolationCode
 from cerebro.domain.vocabulary import Area, NoteType
 
@@ -183,12 +190,36 @@ class SqliteProposalStore:
         return f"SqliteProposalStore({self._db!r})"
 
     def add(self, proposal: Proposal) -> None:
+        with self._db.write() as conn:
+            self._insert(conn, proposal, None, None)
+
+    def admit(self, proposal: Proposal, *, token_id: str, limits: ProposalLimits, clock: Clock) -> None:
+        validate_token_id(token_id)
+        # BEGIN IMMEDIATE protects the counts through insertion, including against other server processes.
+        with self._db.write() as conn:
+            now = clock.now()
+            cutoff = utc_key(now - timedelta(hours=1))
+            recent = conn.execute(
+                "SELECT count(*) FROM proposals WHERE admission_token_id = ? AND admitted_key > ?",
+                (token_id, cutoff),
+            ).fetchone()[0]
+            pending = conn.execute(
+                "SELECT count(*) FROM proposals WHERE admission_token_id = ? AND status NOT IN ('rejected','applied')",
+                (token_id,),
+            ).fetchone()[0]
+            if recent >= limits.per_hour or pending >= limits.pending:
+                raise ProposalLimitReached
+            self._insert(conn, proposal, token_id, utc_key(now))
+
+    def _insert(self, conn: sqlite3.Connection, proposal: Proposal, token_id: str | None, admitted: str | None) -> None:
         if proposal.revision != 0:
             raise InvalidValueError("revision", "a new proposal starts at revision 0")
-        row = self._row(proposal)
         try:
-            with self._db.write() as conn:
-                conn.execute(f"INSERT INTO proposals ({_COLUMNS}) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", row)
+            conn.execute(
+                f"INSERT INTO proposals ({_COLUMNS}, admission_token_id, admitted_key) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (*self._row(proposal), token_id, admitted),
+            )
         except sqlite3.IntegrityError as error:
             if not is_unique_violation(error):
                 raise
