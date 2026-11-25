@@ -17,7 +17,7 @@ Status legend: ⬜ not started · 🟦 PR open · ✅ merged.
 | 5 | `phase-3/token-management` | Implement owner-only ListAgentTokens over TokenStore.all(), then wire token issue, list and revoke. Test owner/agent authorization, one-time secret output and the metadata allowlist. | 2 | ⬜ |
 | 6 | `phase-3/inbox-review` | Add owner-only ListProposals over ProposalStore.find(). Wire inbox list, approve and reject against seeded proposals. Test invalid transitions, conflicts, rejection and retry after approval. | 2, 3 | ⬜ |
 | 7 | `phase-3/mcp-dependency` | Pin the approved SDK and any approved direct server dependency, commit the lock and update the architecture version table. Verify imports and both transport entry points with the locked environment. | 1 | ⬜ |
-| 8 | `phase-3/mcp-read-tools` | Implement the four ADR-0014 schemas, handlers and explicit output projections. Carry NoteRef.summary through the application graph DTO. Test discovery, defaults, visible relations and denied reads with injected use cases. | 7 | ⬜ |
+| 8 | `phase-3/mcp-read-tools` | Implement the four ADR-0014 schemas, handlers and explicit output projections. Add summary to NoteRef, the graph index and the application graph DTO. Test discovery, defaults, visible relations and denied reads with injected use cases. | 7 | ⬜ |
 | 9 | `phase-3/mcp-transports` | Wire authenticated Streamable HTTP and local dev stdio, with transport byte limits. Run the same tool and authorization contract through both, plus socket-specific ceiling and oversized-stream tests. | 2, 5, 8 | ⬜ |
 | 10 | `docs/phase-3-acceptance` | Run both real clients in WSL, verify agent-integration.md, record the security checkpoint, then update this plan, roadmap and AGENTS.md with the observed results. | 3–9 | ⬜ |
 
@@ -38,14 +38,19 @@ Pending phase approval. Record each adjustment here with the affected PR numbers
    Keep the Fernet key outside the content repo and document provisioning it before normal startup.
 2. **Token and inbox administration.** Print an issued secret once on deliberate issue output. List only id, agent
    name, scopes, ceiling, creation, expiry and revocation metadata. Use an explicit projection even for owner
-   output. Keep inbox listing to review metadata and require the full owner ceiling for a cross-sensitivity list.
+   output. Default inbox listing to review metadata. Require the full owner ceiling for listing and detail.
+   Provide an owner-only preview via inbox list --id for curated and needs_owner proposals, showing the
+   candidate change, target, decision and revision. Test that the reviewed revision is the one approved and
+   that a stale preview prompts a fresh review. Hide raw unvalidated and rejected payloads.
    Approve a reviewable decision via ReviewProposal (including an explicit owner override when required), then use
    the serialized ApplyProposal. An already approved proposal resumes at apply. Report actual status, conflicts
    and restricted-history warnings. Reject calls ReviewProposal only. Phase 4 adds proposal intake and the complete
    submission-to-commit workflow. Seed Phase 3 tests through the existing lifecycle.
 3. **MCP contract.** Register only the following tools with short descriptions and read scope. Keep the full graph
-   and owner commands off MCP. Project from ceiling-filtered DTOs. The graph index already returns NoteRefs with
-   summaries and directed edges, so neighbors needs neither a new port nor a body read per result.
+   and owner commands off MCP. Project from ceiling-filtered DTOs. GraphSlice already carries directed edges, but NoteRef and the SQLite graph nodes lack summaries.
+   Populate summary from the note on rebuild and incremental writes, bump the disposable index schema, and
+   contract-test fake and SQLite results plus automatic rebuild from a Phase 2 index. This keeps the adapter
+   independent of storage and avoids loading a note body for each neighbor.
    [ADR-0014](../adr/0014-mcp-tool-surface.md)
 
    | Tool | Input and result |
@@ -97,6 +102,8 @@ owner review before merge. [ADR-0013](../adr/0013-stack-and-dependency-policy.md
 - In WSL dev, issue separate internal tokens for Claude Code and Codex. Register the dev endpoint in both real
   clients, list the four tools and call each against known fixtures. Record client versions, transport, expected
   and observed visible results, and the hidden-id check for each client. Exercise stdio separately in dev.
-  Verify offline guidance and use placeholders for credentials and endpoints in the published instructions.
+  Stop the dev server and repeat a call in each client. Record whether it reports “Cérebro offline” and
+  continues, then restart and confirm recovery. Update the global instructions to refer only to available tools
+  until Phase 4 enables cerebro_propose. Publish credentials and endpoints as placeholders.
 - Close only after both client runs and the owner's security checkpoint. Record merged PRs, coverage, review
   decisions and any accepted residual risks. A missing client run remains an open acceptance item.
