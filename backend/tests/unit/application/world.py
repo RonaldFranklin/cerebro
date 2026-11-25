@@ -45,9 +45,11 @@ class World:
     def add(self, **overrides: Any) -> Note:
         defaults: dict[str, Any] = {"related": (), "hub": None, "sensitivity": Sensitivity.PUBLIC}
         note = make_note(**{**defaults, **overrides})
-        self.notes.apply([NoteChange(note=note)], MESSAGE)
+        revision = self.notes.apply([NoteChange(note=note)], MESSAGE)
         self.search.upsert(note)
         self.graph.upsert(NoteRef.from_note(note))
+        self.search.set_revision(revision)
+        self.graph.set_revision(revision)
         return note
 
 

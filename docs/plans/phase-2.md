@@ -15,13 +15,13 @@ Status legend: ⬜ not started · 🟦 PR open · ✅ merged
 | # | Branch | Content | Dependency | Status |
 |---|---|---|---|---|
 | 1 | `phase-2/system-adapters` | `UtcClock`, `SystemIdGenerator` (`uuid.uuid7()`, `secrets.token_urlsafe(32)`), stdlib only. Creates `adapters/outbound/` and `tests/integration/`; contract tests parametrized by adapter factory (fake and real) | — | ⬜ |
-| 2 | `phase-2/index-revision` | Port change: `NoteRepository.head()` (content revision) and `SearchIndex`/`GraphIndex` record and expose the revision they were built from; `RebuildIndex` records it; `HealthReport` flags a stale index; fakes and contract tests | — | ⬜ |
+| 2 | `phase-2/index-revision` | Port change: `NoteRepository.head()` (content revision) and `SearchIndex`/`GraphIndex` record and expose the revision they were built from; `RebuildIndex` records it; `HealthReport` flags a stale index; fakes and contract tests | — | 🟦 #26 |
 | 3 | `phase-2/crypto` | `FernetCipher` over `MultiFernet` (key list: the first encrypts, all decrypt); key loading refuses a file or directory more open than 0600/0700; encrypted restricted-note file format (ADR-0008); `DecryptionError` on tampering | `cryptography` | ⬜ |
 | 4 | `phase-2/sqlite-state` | `state.sqlite`: `ProposalStore` (content and decision always encrypted with the `Cipher`; metadata in clear; compare-and-swap on `revision`) and `TokenStore`. Rejected proposals keep findings only, never the raw payload | — | ⬜ |
 | 5 | `phase-2/sqlite-index` | `index.sqlite`: `SearchIndex` (FTS5, tokenizer `porter unicode61`) and `GraphIndex`; stores the revision it was built from; ceiling applied in SQL; user text never reaches `MATCH` unescaped | — | ⬜ |
 | 6 | `phase-2/git` | `VersionControl.push` and the git subprocess helper (no shell, fixed environment, hooks off, `--` before paths, message from stdin with trailers, timeouts) | — | ⬜ |
 | 7 | `phase-2/filesystem-repo` | `NoteRepository` over files: PyYAML with a restricted loader, `id` equals file name, atomic writes, all-or-nothing `apply` with one commit and trailers, single-writer lock, encrypted restricted notes, `head()`. Contract test reads the commit back | `PyYAML` | ⬜ |
-| 8 | `phase-2/rebuild-acceptance` | Minimal `bootstrap/container.py`; at start-up it compares the index revision with the repository `HEAD` and reindexes when they differ; fixture content repo with an encrypted note; end-to-end `RebuildIndex` test (acceptance) | — | ⬜ |
+| 8 | `phase-2/rebuild-acceptance` | Minimal `bootstrap/container.py`, which holds ONE writer lock around read-head/`apply`/advance-revision (serialized writers, required by the index revision protocol of PR 2); at start-up it compares the index revision with the repository `HEAD` and reindexes when they differ; fixture content repo with an encrypted note; end-to-end `RebuildIndex` test (acceptance) | — | ⬜ |
 | 9 | `docs/phase-2-close` | Roadmap, `AGENTS.md` section 3, this file, `docs/architecture.md` dependency table | — | ⬜ |
 
 Order: 1 and 2 first; 3 before 4 and 7; 5 and 6 are independent; 7 needs 3 and 6; 8 needs everything.

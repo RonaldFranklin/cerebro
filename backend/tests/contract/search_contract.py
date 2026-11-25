@@ -126,6 +126,23 @@ class SearchIndexContract:
         index.rebuild([note("fresh-note")])
         assert ids(index.search(SearchQuery(ceiling=RESTRICTED))) == ["fresh-note"]
 
+    def test_a_new_index_was_built_from_nothing(self, index: SearchIndex) -> None:
+        assert index.built_from() is None
+
+    def test_rebuild_records_the_revision_and_set_revision_replaces_it(self, index: SearchIndex) -> None:
+        index.rebuild([note("a-note")], revision="rev-1")
+        assert index.built_from() == "rev-1"
+        index.set_revision("rev-2")
+        assert index.built_from() == "rev-2"
+        index.rebuild([note("a-note")])
+        assert index.built_from() is None
+
+    def test_upsert_and_remove_keep_the_recorded_revision(self, index: SearchIndex) -> None:
+        index.rebuild([], revision="rev-1")
+        index.upsert(note("a-note"))
+        index.remove(NoteId("a-note"))
+        assert index.built_from() == "rev-1"
+
     def test_find_similar_ranks_near_duplicates_first(self, index: SearchIndex) -> None:
         index.upsert(
             note(
@@ -258,6 +275,23 @@ class GraphIndexContract:
         full = graph.graph(ceiling=RESTRICTED, include_history=True)
         assert [n.id.value for n in full.nodes] == ["live-note", "old-note"]
         assert edge_set(full.edges) == {("live-note", "old-note", "body")}
+
+    def test_a_new_graph_was_built_from_nothing(self, graph: GraphIndex) -> None:
+        assert graph.built_from() is None
+
+    def test_rebuild_records_the_revision_and_set_revision_replaces_it(self, graph: GraphIndex) -> None:
+        graph.rebuild([ref("a-note")], revision="rev-1")
+        assert graph.built_from() == "rev-1"
+        graph.set_revision("rev-2")
+        assert graph.built_from() == "rev-2"
+        graph.rebuild([ref("a-note")])
+        assert graph.built_from() is None
+
+    def test_upsert_and_remove_keep_the_recorded_revision(self, graph: GraphIndex) -> None:
+        graph.rebuild([], revision="rev-1")
+        graph.upsert(ref("a-note"))
+        graph.remove(NoteId("a-note"))
+        assert graph.built_from() == "rev-1"
 
     def test_upsert_remove_and_rebuild(self, graph: GraphIndex) -> None:
         graph.upsert(ref("a-note", body="[[b-note]]\n"))

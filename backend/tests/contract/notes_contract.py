@@ -42,6 +42,25 @@ class NoteRepositoryContract:
         second = repo.apply([NoteChange(note=make_note(id=NoteId("note-b")))], MESSAGE)
         assert first != second
 
+    def test_head_is_none_for_an_empty_repository(self, repo: NoteRepository) -> None:
+        assert repo.head() is None
+
+    def test_head_is_the_revision_apply_returned_and_changes_with_each_commit(self, repo: NoteRepository) -> None:
+        first = repo.apply([NoteChange(note=make_note(id=NoteId("note-a")))], MESSAGE)
+        assert repo.head() == first
+        second = repo.apply([NoteChange(note=make_note(id=NoteId("note-b")))], MESSAGE)
+        assert repo.head() == second != first
+
+    def test_head_is_stable_across_reads_and_failed_applies(self, repo: NoteRepository) -> None:
+        revision = repo.apply([NoteChange(note=make_note())], MESSAGE)
+        repo.list_notes()
+        repo.list_refs()
+        repo.get(make_note().id)
+        assert repo.head() == revision
+        with pytest.raises(ContentConflict):
+            repo.apply([NoteChange(note=make_note())], MESSAGE)  # already exists
+        assert repo.head() == revision
+
     def test_listings_are_ordered_by_id_and_refs_match_notes(self, repo: NoteRepository) -> None:
         for name in ("zeta-note", "alpha-note", "mid-note"):
             repo.apply([NoteChange(note=make_note(id=NoteId(name)))], MESSAGE)

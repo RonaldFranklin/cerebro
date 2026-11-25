@@ -65,8 +65,20 @@ class SearchIndex(Protocol):
         """Drop a note from the index; unknown ids are ignored."""
         ...
 
-    def rebuild(self, notes: Iterable[Note]) -> None:
-        """Replace the whole index with ``notes`` atomically."""
+    def rebuild(self, notes: Iterable[Note], *, revision: str | None = None) -> None:
+        """Replace the whole index with ``notes`` atomically and record ``revision`` (the content revision the
+        notes were read at; ``None`` if unknown) as the one the index was built from.
+        The revision is stored atomically with the rows: a reader never sees new rows with the old revision or
+        the reverse."""
+        ...
+
+    def built_from(self) -> str | None:
+        """The content revision recorded by the last ``rebuild`` / ``set_revision``; ``None`` if none (a new
+        index). ``upsert`` and ``remove`` never change it."""
+        ...
+
+    def set_revision(self, revision: str | None) -> None:
+        """Record that the index now reflects ``revision`` (used after an incremental update)."""
         ...
 
     def search(self, query: SearchQuery) -> tuple[SearchHit, ...]:

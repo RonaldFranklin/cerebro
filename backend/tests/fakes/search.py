@@ -38,6 +38,13 @@ class InMemorySearchIndex:
 
     def __init__(self) -> None:
         self._notes: dict[NoteId, Note] = {}
+        self._revision: str | None = None
+
+    def built_from(self) -> str | None:
+        return self._revision
+
+    def set_revision(self, revision: str | None) -> None:
+        self._revision = revision
 
     def upsert(self, note: Note) -> None:
         self._notes[note.id] = note
@@ -45,8 +52,9 @@ class InMemorySearchIndex:
     def remove(self, note_id: NoteId) -> None:
         self._notes.pop(note_id, None)
 
-    def rebuild(self, notes: Iterable[Note]) -> None:
+    def rebuild(self, notes: Iterable[Note], *, revision: str | None = None) -> None:
         self._notes = {n.id: n for n in notes}
+        self._revision = revision
 
     def search(self, query: SearchQuery) -> tuple[SearchHit, ...]:
         terms = _terms(query.text)
@@ -97,6 +105,13 @@ def _edge_key(link: Link) -> tuple[str, str, str, str]:
 class InMemoryGraphIndex:
     def __init__(self) -> None:
         self._refs: dict[NoteId, NoteRef] = {}
+        self._revision: str | None = None
+
+    def built_from(self) -> str | None:
+        return self._revision
+
+    def set_revision(self, revision: str | None) -> None:
+        self._revision = revision
 
     def upsert(self, ref: NoteRef) -> None:
         self._refs[ref.id] = ref
@@ -104,8 +119,9 @@ class InMemoryGraphIndex:
     def remove(self, note_id: NoteId) -> None:
         self._refs.pop(note_id, None)
 
-    def rebuild(self, refs: Iterable[NoteRef]) -> None:
+    def rebuild(self, refs: Iterable[NoteRef], *, revision: str | None = None) -> None:
         self._refs = {r.id: r for r in refs}
+        self._revision = revision
 
     def _visible(self, ceiling: AccessCeiling, include_history: bool) -> dict[NoteId, NoteRef]:
         return {
