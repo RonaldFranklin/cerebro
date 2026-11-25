@@ -402,14 +402,19 @@ class GitRepo:
         code, _ = self._run(["diff", "--cached", "--quiet"], ok=(0, 1))
         return code == 1
 
-    def matches_head(self, path: str | PurePath) -> bool:
-        """True when ``path`` is tracked in ``HEAD`` and its working-tree bytes equal the committed ones."""
+    def tracked_in_head(self, path: str | PurePath) -> bool:
+        """Check the committed tree independently of changes staged or edited by the owner."""
         checked = self._check_path(path, allow_final_symlink=True)
         if self.head() is None:
             return False
         _, listing = self._run(["ls-tree", "-z", "HEAD", "--", checked], redact=self._names([checked]))
-        if not listing:
+        return bool(listing)
+
+    def matches_head(self, path: str | PurePath) -> bool:
+        """True when ``path`` is tracked in ``HEAD`` and its working-tree bytes equal the committed ones."""
+        if not self.tracked_in_head(path):
             return False
+        checked = self._check_path(path, allow_final_symlink=True)
         code, _ = self._run(["diff", "--quiet", "HEAD", "--", checked], ok=(0, 1), redact=self._names([checked]))
         return code == 0
 

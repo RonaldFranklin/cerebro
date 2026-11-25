@@ -84,3 +84,35 @@ def test_failed_initialization_can_be_retried(tmp_path: Path, monkeypatch: pytes
     assert not list(tmp_path.glob(".cerebro-init-*"))
     initialize_content(settings)
     assert load_vocabulary(settings.content_repo).areas == frozenset()
+
+
+def test_racing_empty_directory_survives(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from cerebro.bootstrap.init_content import InitializationError, initialize_content
+
+    config = tmp_path / "settings.toml"
+    config.write_text(SAMPLE)
+    settings = load_settings(config, {})
+    commit = GitRepo.commit
+
+    def race(repo: GitRepo, message: str, paths: tuple[str, ...]) -> str:
+        settings.content_repo.mkdir(mode=0o700)
+        return commit(repo, message, paths)
+
+    monkeypatch.setattr(GitRepo, "commit", race)
+    with pytest.raises(InitializationError):
+        initialize_content(settings)
+    assert list(settings.content_repo.iterdir()) == []
+
+
+def test_untracked_schema_is_refused(tmp_path: Path) -> None:
+    from tests.integration.test_git import raw_git
+
+    config = tmp_path / "settings.toml"
+    config.write_text(SAMPLE)
+    assert invoke("--config", str(config), "init-content").returncode == 0
+    root = tmp_path / "content"
+    raw_git(root, "rm", "--cached", "schema/types.yaml")
+    repo = GitRepo(root, identity=GitIdentity(name="Fixture", email="fixture@example.invalid"))
+    repo.commit("Remove types from history")
+    assert invoke("--config", str(config), "init-content").returncode != 0
+    assert (root / "schema/types.yaml").is_file()

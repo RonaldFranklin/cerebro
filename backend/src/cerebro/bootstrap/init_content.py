@@ -1,5 +1,6 @@
 """Create the owner's initial content repository before the container needs a vocabulary."""
 
+import ctypes
 import errno
 import os
 import stat
@@ -26,8 +27,22 @@ def _check_existing(root: Path, identity: GitIdentity) -> None:
     if not all(stat.S_ISDIR((root / name).lstat().st_mode) for name in (".git", *_DIRECTORIES)):
         raise InitializationError("incomplete content repository")
     load_vocabulary(root)
-    if GitRepo(root, identity=identity).head() is None:
+    git = GitRepo(root, identity=identity)
+    if not all(git.tracked_in_head(path) for path in _SCHEMA):
         raise InitializationError("content repository has no schema commit")
+
+
+def _publish(checkout: Path, root: Path) -> None:
+    """Atomically publish on Linux/WSL without replacing even an empty directory created by a racing owner."""
+    libc = ctypes.CDLL(None, use_errno=True)
+    try:
+        rename = libc.renameat2
+    except AttributeError:
+        raise InitializationError("the filesystem requires atomic no-replace rename support") from None
+    # Linux renameat2(AT_FDCWD, old, AT_FDCWD, new, RENAME_NOREPLACE).
+    if rename(-100, os.fsencode(checkout), -100, os.fsencode(root), 1) != 0:
+        number = ctypes.get_errno()
+        raise OSError(number, os.strerror(number))
 
 
 def initialize_content(settings: Settings) -> None:
@@ -58,7 +73,7 @@ def initialize_content(settings: Settings) -> None:
             git.stage(_SCHEMA)
             git.commit("Initialize content schema", paths=_SCHEMA)
             try:
-                checkout.rename(root)
+                _publish(checkout, root)
             except OSError as error:
                 if error.errno not in {errno.ENOTEMPTY, errno.EEXIST}:
                     raise
