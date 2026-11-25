@@ -1,6 +1,6 @@
 # Phase 3 plan — CLI and read-only MCP
 
-Proposed for owner approval. All delivery PRs below are planned. The phase starts after approval of the plan and dependencies.
+Approved by the owner on 2026-11-25 with the adjustments below. Phase 3 is in progress.
 [Roadmap and acceptance criteria](../roadmap.md#-phase-3--cli-and-read-only-mcp)
 
 ## 1. Pull requests
@@ -10,7 +10,7 @@ Status legend: ⬜ not started · 🟦 PR open · ✅ merged.
 
 | # | Branch | Content and verification | Depends on | Status |
 |---|---|---|---|---|
-| 1 | `docs/phase-3-start` | Record owner adjustments and the CLI, transport and dependency decisions in an ADR. Mark the roadmap and hand-off in progress. | Owner approval | ⬜ |
+| 1 | `docs/phase-3-start` | Record owner adjustments and the CLI, transport and dependency decisions in an ADR. Mark the roadmap and hand-off in progress. | Owner approval | 🟦 this PR |
 | 2 | `phase-3/cli-bootstrap` | Add the console entry point, configuration loading and argument limits. Exercise help, invalid arguments and missing configuration through the installed command. | 1 | ⬜ |
 | 3 | `phase-3/init-content` | Initialize a private git working copy with core, hubs, notes and schema, an empty area list and the domain's seven initial user types. Test first run, safe repeat, partial initialization and refusal to overwrite an unrelated directory. | 2 | ⬜ |
 | 4 | `phase-3/cli-read-maintenance` | Wire search, read (including section), reindex and health to the Phase 2 container. Exercise the installed commands against a temporary content repo and state directory. | 2, 3 | ⬜ |
@@ -19,16 +19,23 @@ Status legend: ⬜ not started · 🟦 PR open · ✅ merged.
 | 7 | `phase-3/mcp-dependency` | Pin the approved SDK and any approved direct server dependency, commit the lock and update the architecture version table. Verify imports and both transport entry points with the locked environment. | 1 | ⬜ |
 | 8 | `phase-3/mcp-read-tools` | Implement the four ADR-0014 schemas, handlers and explicit output projections. Add summary to NoteRef, the graph index and the application graph DTO. Test discovery, defaults, visible relations and denied reads with injected use cases. | 7 | ⬜ |
 | 9 | `phase-3/mcp-transports` | Wire authenticated Streamable HTTP and local dev stdio, with transport byte limits. Run the same tool and authorization contract through both, plus socket-specific ceiling and oversized-stream tests. | 2, 5, 8 | ⬜ |
-| 10 | `docs/phase-3-acceptance` | Run both real clients in WSL, verify agent-integration.md, record the security checkpoint, then update this plan, roadmap and AGENTS.md with the observed results. | 3–9 | ⬜ |
+| 10 | `docs/phase-3-acceptance` | Run SDK client acceptance against a sample dev instance, write the owner’s manual client runbook, update this plan, roadmap and AGENTS.md, and hand over the security checkpoint. | 3–9 | ⬜ |
 
-Follow AGENTS.md §5 for independent diff review, security review, owner-held PRs and green CI.
-Use scripts/merge-pr.sh for each authorized merge. The Phase 2 merge authorization was phase-specific.
+The owner authorized autonomous merges for all ten PRs, including security and dependency changes, after
+independent review, resolution of findings and completed green CI. Use scripts/merge-pr.sh for every merge.
 
 ## 2. Owner adjustments
 
-Pending phase approval. Record each adjustment here with the affected PR numbers before implementation.
+| Adjustment approved on 2026-11-25 | PRs |
+|---|---|
+| Bind both sockets to 127.0.0.1 by default. Expose the private service with Tailscale Serve. | 2, 9 |
+| Use distinct ports with fixed startup ceilings (private restricted and public internal). Disable public by default. Only the accepting port identifies the listener. | 2, 9 |
+| Accept tokens only through Authorization: Bearer. Reject query credentials. Exclude tokens, note bodies and proposal payloads from logs. | 2–10 |
+| Automate acceptance with the SDK client, sample dev content, a restricted note and an internal token. Document exact commands for the owner to test both real clients. Preserve all global configuration, including ~/.claude and ~/.codex. | 10 |
 
-## 3. Design decisions proposed for approval
+[ADR-0017](../adr/0017-cli-and-mcp-transports.md) records these decisions.
+
+## 3. Approved design decisions
 
 1. **Local owner CLI.** Use argparse subcommands. Bootstrap reads an explicit TOML file with tomllib and applies
    environment overrides, documents placeholders in .env.example and passes Settings to the existing container.
@@ -63,8 +70,8 @@ Pending phase approval. Record each adjustment here with the affected PR numbers
 4. **Transport identity.** Serve /mcp on a private loopback socket for local dev or same-host tailscale serve HTTPS.
    Bootstrap binds the listener and supplies its immutable ceiling (private restricted, public internal).
    Keep the public listener disabled. Exercise its ceiling on a second test socket. Derive no authority from
-   forwarding headers or tool arguments. Accept HTTP bearer credentials and a separately provisioned dev token
-   from the stdio process environment. Reserve stdout for the stdio protocol. Treat stdio as a private dev
+   forwarding headers or tool arguments. Accept only HTTP bearer credentials. The bounded dev stdio bridge reads its credential
+   from the process environment and sends the bearer header to the private loopback endpoint with redirects disabled. Reserve stdout for the stdio protocol. Treat stdio as a private dev
    entry point. Choose stateless HTTP with event replay disabled. Authenticate every HTTP request and
    reauthenticate each tool call with AuthenticateToken, including on established stdio connections. Require
    read scope. Test that reconnecting with a different or revoked credential cannot retrieve earlier results. The resulting context uses min(listener, token). Phase 6 handles deployment and Phase 8 handles
@@ -79,17 +86,16 @@ Pending phase approval. Record each adjustment here with the affected PR numbers
    malformed input and spies showing zero use-case calls, including authentication, for oversized requests.
    Use fixed errors that omit submitted values, tokens and note text.
 
-## 4. Dependencies proposed for approval
+## 4. Approved dependencies
 
 | Choice | Reason and cost |
 |---|---|
 | argparse and tomllib (standard library) | The command tree and static settings fit these modules. No CLI framework, configuration package or additional dev dependency is required. |
 | Official Python mcp SDK (runtime) | Owns protocol negotiation, tool discovery, serialization and the two transports. Use the base distribution and review the resolved transitive dependency diff. |
-| Uvicorn (runtime, if imported directly) | Approve an explicit pin if the HTTP entry point must serve the SDK's ASGI app with the request limiter wrapped around it. Verify the bounded path with the chosen SDK before pinning. |
+| Uvicorn (runtime) | Serve the SDK's ASGI app with the request limiter wrapped around it. Verify the bounded path with the chosen SDK before pinning. |
 
 At PR 7 select compatible, stable releases aged at least seven days under the existing uv cutoff. Pin direct
-dependencies exactly and check uv sync --locked. Present exact versions, release dates and lockfile delta for
-owner review before merge. [ADR-0013](../adr/0013-stack-and-dependency-policy.md)
+dependencies exactly and check uv sync --locked. Record exact versions and release dates, including transitive packages, and the lockfile delta in PR 7. [ADR-0013](../adr/0013-stack-and-dependency-policy.md)
 
 ## 5. Acceptance and security checkpoint
 
@@ -100,11 +106,9 @@ owner review before merge. [ADR-0013](../adr/0013-stack-and-dependency-policy.md
   directions. Check overview, search, direct and section reads, hub membership and two-hop relations for hidden
   identifiers and content. Cover missing, malformed, expired and revoked tokens, propose-only scope, spoofed
   headers and revocation between calls. Inspect protocol errors and captured logs for disclosure.
-- In WSL dev, issue separate internal tokens for Claude Code and Codex. Register the dev endpoint in both real
-  clients, list the four tools and call each against known fixtures. Record client versions, transport, expected
-  and observed visible results, and the hidden-id check for each client. Exercise stdio separately in dev.
-  Stop the dev server and repeat a call in each client. Record whether it reports “Cérebro offline” and
-  continues, then restart and confirm recovery. Update the global instructions to refer only to available tools
-  until Phase 4 enables cerebro_propose. Publish credentials and endpoints as placeholders.
-- Close only after both client runs and the owner's security checkpoint. Record merged PRs, coverage, review
-  decisions and any accepted residual risks. A missing client run remains an open acceptance item.
+- Run an SDK test client against a dev instance with sample content, including a restricted note. Authenticate
+  with an internal token and call all four tools. Check the visible fixture and the hidden-id result. Exercise
+  connection loss, recovery and dev stdio. Record automated results and versions.
+- In docs/agent-integration.md provide exact commands for the owner to repeat the four calls, offline check and
+  recovery in real Claude Code and Codex. Use isolated project or process configuration and synthetic examples.
+- Record merged PRs, coverage, review decisions and residual risks. Hand the Phase 3 security checkpoint to the owner.
