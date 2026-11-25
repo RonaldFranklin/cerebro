@@ -17,6 +17,7 @@ from cerebro.bootstrap.container import build_container
 from cerebro.domain.access import AccessCeiling, AccessContext, Scope
 from cerebro.domain.content_hash import content_hash
 from cerebro.domain.enums import Sensitivity
+from cerebro.domain.note import NoteId
 from tests.integration.content_kit import BROKEN_ID, GHOST_ID, HUB_ID, SSH_ID, VAULT_ID, make_sample_repo, sample_notes
 from tests.integration.test_cli_bootstrap import SAMPLE, invoke
 from tests.integration.test_mcp_transports import BRIDGE, call, free_port, post, serving
@@ -210,7 +211,8 @@ def test_full_projected_hash_depends_only_on_visible_fields(tmp_path: Path) -> N
     assert projected[0] == projected[1]
 
 
-def test_combined_token_can_use_read_digest_to_propose_an_update(tmp_path: Path) -> None:
+@pytest.mark.parametrize(("note_id", "applies"), [(SSH_ID, True), (BROKEN_ID, False)])
+def test_full_read_to_proposal_apply_checks_the_stored_digest(tmp_path: Path, note_id: NoteId, applies: bool) -> None:
     app = build_container(make_sample_repo(tmp_path).settings)
     config = tmp_path / "instance.toml"
     config.write_text(SAMPLE.replace("keys/fernet.key", "secrets/cerebro.key"))
@@ -237,13 +239,13 @@ def test_combined_token_can_use_read_digest_to_propose_an_update(tmp_path: Path)
             ) as http,
             Client(streamable_http_client(f"http://127.0.0.1:{port}/mcp", http_client=http)) as client,
         ):
-            view = (await client.call_tool("cerebro_read", {"id": SSH_ID.value})).structured_content
+            view = (await client.call_tool("cerebro_read", {"id": note_id.value})).structured_content
             outcome = (
                 await client.call_tool(
                     PROPOSE,
                     {
                         "kind": "update",
-                        "target": SSH_ID.value,
+                        "target": note_id.value,
                         "base_hash": view["base_hash"],
                         "body": "Updated work instructions.",
                     },
@@ -256,6 +258,15 @@ def test_combined_token_can_use_read_digest_to_propose_an_update(tmp_path: Path)
         pid = asyncio.run(update())
     row = app.proposals.get(pid)
     assert row is not None
+    original_head = app.notes.head()
     approval = invoke("--config", str(config), "inbox", "approve", pid, "--revision", str(row.revision))
-    assert approval.returncode == 0
-    assert json.loads(approval.stdout)["status"] == "applied"
+    result = json.loads(approval.stdout)
+    if applies:
+        assert approval.returncode == 0
+        assert result["status"] == "applied"
+        assert app.notes.head() != original_head
+    else:
+        assert approval.returncode == 1
+        assert result["status"] == "needs_owner"
+        assert result["outcome"] == "conflict"
+        assert app.notes.head() == original_head
