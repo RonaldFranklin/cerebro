@@ -64,7 +64,8 @@ Inbox, which are validated, curated and approved before becoming notes.
   `refactor:`), one commit per step plus review fixes. For every pull request:
   1. open it with `gh pr create` and wait for CI with `gh pr checks <n> --watch`; it must be green;
   2. run a review with a **fresh** sub-agent (or a separate session) that reads only the diff and the relevant
-     docs/ADRs and reports problems;
+     docs/ADRs and reports problems. Reviewer sub-agents use **Sonnet**, except for pull requests that touch
+     security (access ceiling, tokens, encryption, the secret scanner), which use **Opus**;
   3. fix what the review reports, push, and wait for CI again;
   4. merge with `gh pr merge <n> --squash --delete-branch`.
 - **Do not merge — stop and hand over to the owner** when the pull request:
