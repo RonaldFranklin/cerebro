@@ -7,7 +7,9 @@ from datetime import datetime
 from pathlib import Path
 from typing import Never
 
-from cerebro.adapters.inbound.cli_views import health_view, note_view, search_view
+from cerebro.adapters.inbound.cli_views import health_view, note_view
+from cerebro.adapters.inbound.input_limits import MAX_FIELD_BYTES, MAX_INPUT_BYTES, MAX_QUERY_BYTES, bounded_text
+from cerebro.adapters.inbound.read_views import search_view
 from cerebro.application.dto import (
     HealthReportRequest,
     HealthReportResult,
@@ -34,16 +36,6 @@ from cerebro.domain.errors import DomainError
 from cerebro.domain.note import NoteId
 from cerebro.domain.proposal import validate_proposal_id
 from cerebro.domain.vocabulary import Area, NoteType
-
-MAX_INPUT_BYTES = 65536
-MAX_QUERY_BYTES = 1024
-MAX_FIELD_BYTES = 256
-
-
-def bounded_text(text: str, maximum: int) -> str:
-    if len(text.encode("utf-8")) > maximum:
-        raise ValueError("field exceeds byte limit")
-    return text
 
 
 def short_field(text: str) -> str:

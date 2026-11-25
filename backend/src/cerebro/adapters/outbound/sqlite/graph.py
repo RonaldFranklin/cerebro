@@ -18,16 +18,31 @@ from cerebro.domain.vocabulary import NoteType
 
 _REVISION_KEY: Final = "graph_revision"
 _NODE_COLUMNS: Final = (
-    "note_id, title, type, priority, sensitivity, status, hub, superseded_by, related, body_links, loose_body_targets"
+    "note_id, title, summary, type, priority, sensitivity, status, hub, superseded_by, "
+    "related, body_links, loose_body_targets"
 )
 _EDGE_ORDER: Final = "ORDER BY e.source, e.target, e.kind, e.section"
 
 
 def _ref(row: tuple[object, ...]) -> NoteRef:
-    note_id, title, note_type, priority, sensitivity, status, hub, superseded_by, related, body_links, loose = row
+    (
+        note_id,
+        title,
+        summary,
+        note_type,
+        priority,
+        sensitivity,
+        status,
+        hub,
+        superseded_by,
+        related,
+        body_links,
+        loose,
+    ) = row
     return NoteRef(
         id=NoteId(str(note_id)),
         title=str(title),
+        summary=str(summary),
         type=NoteType(str(note_type)),
         priority=Priority(str(priority)),
         sensitivity=Sensitivity(str(sensitivity)),
@@ -57,10 +72,11 @@ def _delete(connection: sqlite3.Connection, note_id: str) -> None:
 def _store(connection: sqlite3.Connection, ref: NoteRef) -> None:
     _delete(connection, ref.id.value)
     connection.execute(
-        f"INSERT INTO graph_nodes ({_NODE_COLUMNS}, sens_rank) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        f"INSERT INTO graph_nodes ({_NODE_COLUMNS}, sens_rank) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (
             ref.id.value,
             ref.title,
+            ref.summary,
             ref.type.value,
             ref.priority.value,
             ref.sensitivity.value,

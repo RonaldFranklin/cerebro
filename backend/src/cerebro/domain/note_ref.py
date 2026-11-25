@@ -17,6 +17,7 @@ class NoteRef:
 
     id: NoteId
     title: str
+    summary: str
     type: NoteType
     priority: Priority
     sensitivity: Sensitivity
@@ -33,6 +34,7 @@ class NoteRef:
         return cls(
             id=note.id,
             title=note.title,
+            summary=note.summary,
             type=note.type,
             priority=note.priority,
             sensitivity=note.sensitivity,

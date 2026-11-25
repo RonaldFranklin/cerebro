@@ -232,6 +232,20 @@ class GraphIndexContract:
         assert graph.backlinks(NoteId("island-note"), ceiling=RESTRICTED) == ()
         assert graph.backlinks(NoteId("nobody"), ceiling=RESTRICTED) == ()
 
+    def test_neighbor_summary_tracks_rebuild_and_update(self, graph: GraphIndex) -> None:
+        graph.rebuild([ref("a-note", related=(NoteId("b-note"),)), ref("b-note", summary="First summary.")])
+
+        def summary() -> str:
+            return next(
+                n.summary
+                for n in graph.neighbors(NoteId("a-note"), hops=1, ceiling=RESTRICTED).nodes
+                if n.id == NoteId("b-note")
+            )
+
+        assert summary() == "First summary."
+        graph.upsert(ref("b-note", summary="Updated summary."))
+        assert summary() == "Updated summary."
+
     def test_neighbors_by_hops_in_both_directions(self, graph: GraphIndex) -> None:
         self.seed(graph)
         one = graph.neighbors(NoteId("b-note"), hops=1, ceiling=RESTRICTED)
