@@ -19,12 +19,15 @@ the known ``encryption`` value, ASCII only. Anything else raises ``RestrictedFor
 never echoes file content. Input is capped at ``MAX_RESTRICTED_BYTES`` before any parsing.
 """
 
+import re
+
 from cerebro.adapters.outbound.crypto.errors import RestrictedFormatError
 from cerebro.application.errors import DecryptionError
 from cerebro.application.ports import Cipher
 from cerebro.domain.errors import InvalidValueError
 from cerebro.domain.note import NoteId
 
+_TOKEN = re.compile(rb"[A-Za-z0-9_-]+={0,2}")
 ENCRYPTION_SCHEME = "fernet-v1"
 MAX_RESTRICTED_BYTES = 2 * 1024 * 1024
 _DELIMITER = b"---"
@@ -75,8 +78,8 @@ def decode_restricted(data: bytes, cipher: Cipher) -> tuple[NoteId, bytes]:
     except InvalidValueError:
         raise RestrictedFormatError("restricted note header has an invalid id") from None
     token = rest.removesuffix(b"\n")
-    if not token or b"\n" in token or b"\r" in token:
-        raise RestrictedFormatError("restricted note must contain exactly one encrypted token")
+    if _TOKEN.fullmatch(token) is None:
+        raise RestrictedFormatError("restricted note must contain exactly one urlsafe-base64 encrypted token")
     payload = cipher.decrypt(token)
     prefix = header_id.value.encode("ascii") + b"\n"
     if not payload.startswith(prefix):

@@ -1,6 +1,7 @@
 """Integration tests of the crypto adapter: ``FernetCipher``, key files and the restricted-note format."""
 
 import os
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
@@ -62,6 +63,11 @@ class TestFernetCipher:
         token = FernetCipher([old]).encrypt(b"payload")
         rotated = FernetCipher([new, old]).rotate(token)
         assert FernetCipher([new]).decrypt(rotated) == b"payload"
+
+    def test_rotate_rejects_token_under_an_unknown_key(self) -> None:
+        token = FernetCipher([generate_key()]).encrypt(b"payload")
+        with pytest.raises(DecryptionError):
+            FernetCipher([generate_key()]).rotate(token)
 
     def test_rotate_rejects_tampered_token(self) -> None:
         cipher = FernetCipher([generate_key()])
@@ -197,6 +203,61 @@ class TestLoadKeys:
             load_keys(path)
 
 
+class TestKeyLineStrictness:
+    @pytest.fixture
+    def directory(self, tmp_path: Path) -> Path:
+        secrets = tmp_path / "secrets"
+        secrets.mkdir(mode=0o700)
+        secrets.chmod(0o700)
+        return secrets
+
+    @pytest.mark.parametrize(
+        "mutate",
+        [
+            lambda k: k[:10] + "!" + k[10:],
+            lambda k: k[:10] + " " + k[10:],
+            lambda k: k[:10] + "\x00" + k[10:],
+            lambda k: k[:10] + "\u00e7" + k[10:],
+            lambda k: k[:10] + "\t" + k[10:],
+            lambda k: k + "=",
+        ],
+    )
+    def test_junk_in_a_key_line_is_refused(self, directory: Path, mutate: Callable[[str], str]) -> None:
+        bad = mutate(generate_key().decode())
+        path = directory / "keys"
+        path.write_text(bad + "\n", encoding="utf-8")
+        path.chmod(0o600)
+        with pytest.raises(KeyFileError) as raised:
+            load_keys(path)
+        assert "line 1" in str(raised.value)
+        assert bad not in str(raised.value)
+
+    def test_foreign_owner_is_refused(self, directory: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        path = directory / "keys"
+        path.write_text(generate_key().decode() + "\n")
+        path.chmod(0o600)
+        monkeypatch.setattr(os, "geteuid", lambda: os.stat(path).st_uid + 4242)
+        if os.stat(path).st_uid == 0:
+            pytest.skip("running as root")
+        with pytest.raises(KeyFileError, match="not owned"):
+            load_keys(path)
+
+    def test_root_owned_is_accepted(self, directory: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        key = generate_key()
+        path = directory / "keys"
+        path.write_text(key.decode() + "\n")
+        path.chmod(0o600)
+        real = os.fstat
+        monkeypatch.setattr(os, "geteuid", lambda: 4242)
+
+        class Root:
+            def __init__(self, info: os.stat_result) -> None:
+                self.st_mode, self.st_size, self.st_uid = info.st_mode, info.st_size, 0
+
+        monkeypatch.setattr(os, "fstat", lambda fd: Root(real(fd)))
+        assert load_keys(path) == (key,)
+
+
 class TestRestrictedFormat:
     @pytest.fixture
     def cipher(self) -> FernetCipher:
@@ -265,7 +326,11 @@ class TestRestrictedFormat:
         data = self._valid(cipher).replace(old, new, 1)
         with pytest.raises(RestrictedFormatError) as raised:
             decode_restricted(data, cipher)
-        assert "a" * 81 not in str(raised.value)
+        message = str(raised.value)
+        assert "a" * 81 not in message
+        for fragment in ("Bad_Id", "fernet-v2", "extra", "servidor", "public"):
+            assert fragment not in message
+        assert "server-ssh-access" not in message
 
     @pytest.mark.parametrize("data", [b"", b"---\n", b"plain markdown\n", b"---\nid: a\n---\n"])
     def test_incomplete_files_are_rejected(self, cipher: FernetCipher, data: bytes) -> None:
@@ -279,6 +344,40 @@ class TestRestrictedFormat:
         header = data[: len(data) - len(data.split(b"---\n", 2)[2])]
         with pytest.raises(RestrictedFormatError):
             decode_restricted(header, cipher)
+
+    @pytest.mark.parametrize(
+        "mutate",
+        [
+            lambda t: t + b" ",
+            lambda t: t[:20] + b" " + t[20:],
+            lambda t: t[:20] + b"\x00" + t[20:],
+            lambda t: t[:20] + "ç".encode() + t[20:],
+            lambda t: t[:20] + b"\xff" + t[20:],
+            lambda t: t[:20] + b"\t" + t[20:],
+            lambda t: t + b"===",
+        ],
+    )
+    def test_token_must_be_strict_urlsafe_base64(self, cipher: FernetCipher, mutate: Callable[[bytes], bytes]) -> None:
+        data = self._valid(cipher)
+        header, token = data.split(b"---\n", 2)[:2], data.split(b"---\n", 2)[2].rstrip(b"\n")
+        prefix = b"---\n".join([b"", header[1]]) + b"---\n"
+        with pytest.raises(RestrictedFormatError):
+            decode_restricted(prefix + mutate(token) + b"\n", cipher)
+
+    def test_decode_with_rotated_key_list_and_reencode_keeps_binding(self) -> None:
+        old, new = generate_key(), generate_key()
+        data = encode_restricted(self.NOTE, b"body", FernetCipher([old]))
+        rotated_cipher = FernetCipher([new, old])
+        assert decode_restricted(data, rotated_cipher) == (self.NOTE, b"body")
+        assert decode_restricted(data, FernetCipher([new, old])) == (self.NOTE, b"body")
+        with pytest.raises(DecryptionError):
+            decode_restricted(data, FernetCipher([new]))
+        header, token = data.rsplit(b"---\n", 1)
+        rotated = header + b"---\n" + rotated_cipher.rotate(token.rstrip(b"\n")) + b"\n"
+        assert decode_restricted(rotated, FernetCipher([new])) == (self.NOTE, b"body")
+        swapped = rotated.replace(b"server-ssh-access", b"other-note")
+        with pytest.raises(DecryptionError):
+            decode_restricted(swapped, FernetCipher([new]))
 
     def test_oversize_is_rejected_both_ways(self, cipher: FernetCipher) -> None:
         with pytest.raises(RestrictedFormatError, match="larger"):
