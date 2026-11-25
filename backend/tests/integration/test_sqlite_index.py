@@ -118,17 +118,6 @@ def test_graph_round_trips_the_note_ref(path: Path) -> None:
     assert restored == original
 
 
-@pytest.mark.parametrize("content", [b"this is not a database at all" * 50, b"SQLite format 3\x00" + b"\xff" * 200])
-def test_a_corrupt_file_is_recreated_empty(path: Path, content: bytes) -> None:
-    path.parent.mkdir(parents=True)
-    path.write_bytes(content)
-    index = SqliteSearchIndex(path)
-    assert index.built_from() is None
-    assert index.search(SearchQuery(ceiling=RESTRICTED)) == ()
-    index.upsert(note("a-note"))
-    assert mode(path) == 0o600
-
-
 def test_a_different_schema_version_is_recreated_empty(path: Path) -> None:
     SqliteSearchIndex(path).rebuild([note("a-note")], revision="rev-1")
     with sqlite3.connect(path) as connection:

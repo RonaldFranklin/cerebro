@@ -163,3 +163,49 @@ def test_an_open_directory_owned_by_someone_else_is_refused(path: Path, monkeypa
     monkeypatch.setattr(os, "geteuid", lambda: owner + 1)
     with pytest.raises(IndexUnavailableError, match="not owned"):
         SqliteSearchIndex(path)
+
+
+def test_a_non_sqlite_file_is_refused_and_left_untouched(path: Path) -> None:
+    path.parent.mkdir(parents=True)
+    content = b"this is somebody's notes, not a database" * 50
+    path.write_bytes(content)
+    path.chmod(0o644)
+    with pytest.raises(IndexUnavailableError, match="not a Cérebro index"):
+        SqliteSearchIndex(path)
+    assert path.read_bytes() == content
+    assert mode(path) == 0o644
+
+
+@pytest.mark.parametrize("user_version", [0, 3])
+def test_a_foreign_sqlite_database_is_refused_and_left_untouched(path: Path, user_version: int) -> None:
+    path.parent.mkdir(parents=True)
+    with sqlite3.connect(path) as connection:
+        connection.execute("CREATE TABLE precious (x TEXT)")
+        connection.execute("INSERT INTO precious VALUES ('keep me')")
+        connection.execute(f"PRAGMA user_version = {user_version}")
+    connection.close()
+    path.chmod(0o644)
+    before = path.read_bytes()
+    with pytest.raises(IndexUnavailableError):
+        SqliteSearchIndex(path)
+    with pytest.raises(IndexUnavailableError):
+        SqliteGraphIndex(path)
+    assert path.read_bytes() == before
+    assert mode(path) == 0o644
+
+
+def test_an_empty_file_we_created_is_adopted(path: Path) -> None:
+    path.parent.mkdir(parents=True)
+    path.touch()
+    assert SqliteSearchIndex(path).built_from() is None
+
+
+def test_recreating_after_corruption_empties_both_indexes(path: Path) -> None:
+    SqliteSearchIndex(path).rebuild([note(f"n{i:03d}-note", body="word " * 200) for i in range(30)], revision="rs")
+    SqliteGraphIndex(path).rebuild([ref("a-note")], revision="rg")
+    _scribble_over_data_pages(path)
+    search = SqliteSearchIndex(path)
+    graph = SqliteGraphIndex(path)
+    assert search.built_from() is None
+    assert graph.built_from() is None
+    assert graph.graph(ceiling=RESTRICTED).nodes == ()

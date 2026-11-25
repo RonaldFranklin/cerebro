@@ -10,7 +10,13 @@ Rules (``docs/plans/phase-2.md`` section 3):
   failing ``quick_check``) or has a different schema version is deleted and recreated empty (the recorded revision
   is then ``None``, which makes the container reindex). There are no migrations. Busy/locked/I/O errors never
   trigger a recreation.
-* Search and graph share the file, so recreating it empties both.
+* Only a file that is clearly ours is ever deleted: zero-length, or an SQLite file whose header carries
+  ``APPLICATION_ID``. Anything else (not SQLite, or a foreign SQLite database) raises ``IndexUnavailableError`` and is
+  left untouched, not even ``chmod``-ed.
+* Search and graph share the file, so recreating it empties **both** (every ``built_from()`` becomes ``None``):
+  the bootstrap must check both revisions. Recreating is not coordinated with other open connections or processes,
+  so a rolling deploy with different ``SCHEMA_VERSION`` values is unsupported: stop the old process first.
+* ``secure_delete`` and the WAL checkpoints are best effort while another connection holds a read open.
 """
 
 import contextlib
@@ -27,6 +33,9 @@ from cerebro.domain.enums import Sensitivity, Status
 from cerebro.domain.errors import InvalidValueError
 
 SCHEMA_VERSION: Final = 1
+APPLICATION_ID: Final = 0x43524252  # "CRBR": marks an SQLite file as a Cérebro index (``PRAGMA application_id``)
+_SQLITE_MAGIC: Final = b"SQLite format 3\x00"
+_APPLICATION_ID_OFFSET: Final = 68
 _BUSY_TIMEOUT_MS: Final = 5000
 
 TIERS: Final = tuple(Sensitivity)
@@ -116,6 +125,33 @@ def _prepare_directory(directory: Path) -> None:
     directory.chmod(0o700)
 
 
+def _require_ours(path: Path) -> None:
+    """Raise unless ``path`` is absent, zero-length or an SQLite file carrying our ``application_id``.
+
+    Read-only, from the raw header, so a foreign file is never opened by SQLite, modified or ``chmod``-ed.
+    """
+    try:
+        descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
+    except FileNotFoundError:
+        return
+    except OSError as error:
+        raise IndexUnavailableError(f"cannot open the index file safely (symlinks are refused): {error}") from error
+    try:
+        header = os.read(descriptor, _APPLICATION_ID_OFFSET + 4)
+    finally:
+        os.close(descriptor)
+    if not header:
+        return
+    if (
+        len(header) < _APPLICATION_ID_OFFSET + 4
+        or not header.startswith(_SQLITE_MAGIC)
+        or int.from_bytes(header[_APPLICATION_ID_OFFSET:], "big") != APPLICATION_ID
+    ):
+        raise IndexUnavailableError(
+            f"{path} exists but is not a Cérebro index file: refusing to touch it (move or delete it yourself)"
+        )
+
+
 def _create_private_file(path: Path) -> None:
     """Create ``path`` (empty) as ``0600`` if absent; repair a looser mode; refuse a symlink."""
     try:
@@ -157,14 +193,27 @@ def _enable_wal(connection: sqlite3.Connection) -> None:
             time.sleep(0.01)
 
 
+def _has_content(connection: sqlite3.Connection) -> bool:
+    return bool(connection.execute("SELECT count(*) FROM sqlite_master").fetchone()[0] > 0) or bool(
+        connection.execute("PRAGMA user_version").fetchone()[0]
+    )
+
+
 def _initialise(path: Path) -> None:
     connection = _open(path)
     try:
+        # Claim an empty database first (in rollback-journal mode, so the marker is in the main file's header).
+        with transaction(connection):
+            claimed = connection.execute("PRAGMA application_id").fetchone()[0]
+            if claimed == 0 and not _has_content(connection):
+                connection.execute(f"PRAGMA application_id = {APPLICATION_ID}")
+            elif claimed != APPLICATION_ID:
+                raise IndexUnavailableError("the index file is a foreign SQLite database: refusing to touch it")
         _enable_wal(connection)
         # Decided under the write lock, so two processes opening the same new file cannot both create the schema.
         with transaction(connection):
             version = connection.execute("PRAGMA user_version").fetchone()[0]
-            has_tables = connection.execute("SELECT count(*) FROM sqlite_master").fetchone()[0] > 0
+            has_tables = _has_content(connection)
             if version == 0 and not has_tables:
                 for statement in _SCHEMA:
                     connection.execute(statement)
@@ -181,6 +230,7 @@ def prepare(path: Path) -> None:
     """Make ``path`` a usable, current-version index file (creating or recreating it as needed)."""
     _require_fts5()
     _prepare_directory(path.parent)
+    _require_ours(path)
     _create_private_file(path)
     try:
         _initialise(path)
@@ -193,7 +243,12 @@ def prepare(path: Path) -> None:
 
 
 def recreate(path: Path) -> None:
-    """Throw the file away and start an empty current-version one (the recovery for a damaged index)."""
+    """Throw the file away and start an empty current-version one (the recovery for a damaged index).
+
+    Not coordinated with other connections or processes using the file. Refuses (``IndexUnavailableError``) a file
+    that is not clearly ours.
+    """
+    _require_ours(path)
     _delete_files(path)
     _create_private_file(path)
     _initialise(path)
@@ -222,7 +277,10 @@ def transaction(connection: sqlite3.Connection) -> Iterator[None]:
 
 
 def checkpoint(connection: sqlite3.Connection) -> None:
-    """Fold the WAL into the main file and truncate it, so deleted text does not linger in the ``-wal`` file."""
+    """Fold the WAL into the main file and truncate it, so deleted text does not linger in the ``-wal`` file.
+
+    Best effort: while another connection holds a read open the checkpoint cannot truncate, and the text stays in the
+    WAL until a later checkpoint."""
     with contextlib.suppress(sqlite3.OperationalError):  # busy (a reader is open): best effort
         connection.execute("PRAGMA wal_checkpoint(TRUNCATE)")
 

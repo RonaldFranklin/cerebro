@@ -88,12 +88,16 @@ class SqliteGraphIndex:
         _db.prepare(self._path)
 
     def upsert(self, ref: NoteRef) -> None:
-        with _db.connect(self._path) as connection, _db.transaction(connection):
-            _store(connection, ref)
+        with _db.connect(self._path) as connection:
+            with _db.transaction(connection):
+                _store(connection, ref)
+            _db.checkpoint(connection)
 
     def remove(self, note_id: NoteId) -> None:
-        with _db.connect(self._path) as connection, _db.transaction(connection):
-            _delete(connection, note_id.value)
+        with _db.connect(self._path) as connection:
+            with _db.transaction(connection):
+                _delete(connection, note_id.value)
+            _db.checkpoint(connection)
 
     def rebuild(self, refs: Iterable[NoteRef], *, revision: str | None = None) -> None:
         """Rows and revision are replaced in one transaction (see ``SqliteSearchIndex.rebuild``, including the
