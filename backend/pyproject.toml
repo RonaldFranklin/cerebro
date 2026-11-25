@@ -1,0 +1,54 @@
+[project]
+name = "cerebro"
+version = "0.0.0"
+description = "Self-hosted, single-user knowledge base that gives AI agents curated context through MCP."
+license = "Apache-2.0"
+requires-python = "==3.14.*"
+dependencies = []
+
+[dependency-groups]
+dev = [
+    "import-linter==2.17",
+    "mypy==2.4.1",
+    "pytest==9.2.0",
+    "ruff==0.17.6",
+]
+
+[build-system]
+requires = ["uv_build==0.13.10"]
+build-backend = "uv_build"
+
+[tool.uv]
+required-version = ">=0.13.10"
+
+[tool.pytest.ini_options]
+minversion = "9.0"
+testpaths = ["tests"]
+addopts = ["--strict-markers", "--strict-config", "-ra"]
+xfail_strict = true
+
+[tool.ruff]
+line-length = 120
+target-version = "py314"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = [
+    "E", "W",  # pycodestyle
+    "F",       # pyflakes
+    "I",       # isort
+    "N",       # pep8-naming
+    "UP",      # pyupgrade
+    "B",       # bugbear
+    "C4",      # comprehensions
+    "SIM",     # simplify
+    "PT",      # pytest style
+    "RUF",     # ruff-specific
+]
+
+[tool.mypy]
+python_version = "3.14"
+strict = true
+files = ["src", "tests"]
+mypy_path = "src"
+warn_unreachable = true
