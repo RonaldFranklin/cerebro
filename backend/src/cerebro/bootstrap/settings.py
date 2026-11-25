@@ -1,7 +1,13 @@
-"""Explicit settings of one Cérebro process. Parsing them from the environment or a file is Phase 3."""
+"""Explicit settings of one Cérebro process. Environment overrides take precedence over an explicit TOML file."""
 
+import os
+import stat
+import tomllib
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
+
+from cerebro.adapters.outbound.git import GitError, GitIdentity, validate_branch, validate_remote
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -22,3 +28,65 @@ class Settings:
     git_branch: str = "main"
     writer_lock_timeout: float = 30.0
     """Seconds a writer waits for the process-wide and cross-process writer lock."""
+
+
+class ConfigurationError(Exception):
+    """A safe diagnostic that can be printed without disclosing configuration values."""
+
+
+_CONFIG_KEYS = frozenset({"content_dir", "state_dir", "key_file", "git_name", "git_email", "git_remote", "git_branch"})
+_MAX_CONFIG_BYTES = 65536
+
+
+def _read_config(path: Path) -> dict[str, str]:
+    try:
+        with open(path, "rb", opener=lambda name, flags: os.open(name, flags | os.O_NONBLOCK)) as stream:
+            if not stat.S_ISREG(os.fstat(stream.fileno()).st_mode):
+                raise ConfigurationError("configuration must be a regular TOML file")
+            raw = stream.read(_MAX_CONFIG_BYTES + 1)
+        if len(raw) > _MAX_CONFIG_BYTES:
+            raise ConfigurationError("configuration exceeds the byte limit")
+        data = tomllib.loads(raw.decode("utf-8"))
+    except OSError, UnicodeError, tomllib.TOMLDecodeError, RecursionError, ValueError:
+        raise ConfigurationError("cannot read configuration as UTF-8 TOML") from None
+    if data.keys() - _CONFIG_KEYS or any(type(value) is not str for value in data.values()):
+        raise ConfigurationError("configuration contains an unknown key or invalid value")
+    return data
+
+
+def load_settings(file: Path | None, environment: Mapping[str, str]) -> Settings:
+    """File paths in TOML are relative to the file. Environment paths are relative to the working directory."""
+    config = _read_config(file) if file is not None else {}
+
+    def value(key: str, default: str | None = None) -> str:
+        name = "CEREBRO_" + key.upper()
+        text = environment.get(name, config.get(key, default))
+        if text is None or not text.strip():
+            raise ConfigurationError(f"missing configuration for {name}")
+        if any(ord(char) < 32 or ord(char) == 127 for char in text):
+            raise ConfigurationError(f"invalid configuration for {name}")
+        return text
+
+    def path(key: str) -> Path:
+        setting = Path(value(key))
+        if file is not None and "CEREBRO_" + key.upper() not in environment:
+            return file.absolute().parent / setting
+        return setting.absolute()
+
+    configuration = Settings(
+        content_repo=path("content_dir"),
+        state_dir=path("state_dir"),
+        key_file=path("key_file"),
+        git_name=value("git_name"),
+        git_email=value("git_email"),
+        git_remote=value("git_remote") if "git_remote" in config or "CEREBRO_GIT_REMOTE" in environment else None,
+        git_branch=value("git_branch", "main"),
+    )
+    try:
+        GitIdentity(name=configuration.git_name, email=configuration.git_email)
+        validate_branch(configuration.git_branch)
+        if configuration.git_remote is not None:
+            validate_remote(configuration.git_remote)
+    except GitError:
+        raise ConfigurationError("invalid git configuration") from None
+    return configuration
