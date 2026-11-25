@@ -1,6 +1,7 @@
 # Phase 1 plan — Domain and application core
 
-Approved by the owner on 2026-11-24. Scope and acceptance criteria: [roadmap](../roadmap.md#-phase-1--domain-and-application-core).
+Approved by the owner on 2026-11-24.
+Scope and acceptance criteria: [roadmap](../roadmap.md#-phase-1--domain-and-application-core).
 This file records **how** the phase is delivered: one pull request per step, in order, plus the cross-cutting
 design decisions every step follows. Update the status column when a pull request is opened or merged.
 
@@ -11,7 +12,7 @@ Status legend: ⬜ not started · 🟦 PR open · ✅ merged
 | # | Branch | Content | Owner adjustments | Status |
 |---|---|---|---|---|
 | 1 | `phase-1/value-objects` | `NoteId`, `Priority`, `Sensitivity`, `Status`, `Area`, `NoteType`, `Vocabulary` (built-in `core`/`hub`), `Note`, domain errors; pytest-cov gate (≥ 90 %) | — | ✅ #3 |
-| 2 | `phase-1/validation-and-budgets` | `parse_note` / `note_to_raw`, `validate_note`, `ValidationReport` + severity policy, word count, per-note and combined P0 budgets | D (snapshot uses `NoteRef` counts) | 🟦 #4 |
+| 2 | `phase-1/validation-and-budgets` | `parse_note` / `note_to_raw`, `validate_note`, `ValidationReport` + severity policy, word count, per-note and combined P0 budgets | D (combined budget takes per-note word counts, `Mapping[NoteId, int]`; `NoteRef` arrives in PR 3) | 🟦 #4 |
 | 3 | `phase-1/links-and-sections` | wikilink extraction (`[[id]]`, `[[id#Section]]`) plus `hub` / `related` / `superseded_by`; section extraction for `ReadNote`; cross-note rules: broken links (warning for owner edits, error for proposals), missing hub, `superseded_by` cycles, **hub chains acyclic and ≤ 3 hubs deep** | A (hub chain rules, [ADR-0015](../adr/0015-hub-membership-computed-at-read-time.md)), D | ⬜ |
 | 4 | `phase-1/secret-scanner` | private keys, common token formats, `password=`-style assignments, high-entropy strings; scans **frontmatter (title, summary, …) and body**, for proposals **and** owner edits; negative tests (commit hashes, UUIDs) | D | ⬜ |
 | 5 | `phase-1/access` | `AccessCeiling`, `effective_ceiling(listener, token)` (no defaults), visibility filter, `include_history`, `AgentToken`; `AccessContext(principal, ceiling, scopes)` with `principal = Agent(name) \| Owner` | C | ⬜ |
@@ -21,8 +22,8 @@ Status legend: ⬜ not started · 🟦 PR open · ✅ merged
 | 9 | `phase-1/write-use-cases` | `SubmitProposal`, `ValidateProposal`, `CurateProposal` (with `NullCurator` / fake), `ReviewProposal`, `ApplyProposal`, `OwnerEditNote`; optimistic concurrency on apply and owner edit; authorization in the use cases | B, C, D | ⬜ |
 | 10 | `phase-1/maintenance-use-cases` | `RebuildIndex`, `HealthReport`, `IssueAgentToken`, `RevokeAgentToken`; closes the phase (roadmap incl. the added use cases, `AGENTS.md`, coverage check) | C | ⬜ |
 
-Related docs pull request: [ADR-0015](../adr/0015-hub-membership-computed-at-read-time.md) (#2) — hub membership
-computed at read time.
+Related docs pull request: [ADR-0015](../adr/0015-hub-membership-computed-at-read-time.md) (#2, open) — hub
+membership computed at read time. Links to ADR-0015 resolve once #2 is merged.
 
 ## 2. Cross-cutting design decisions
 
@@ -50,8 +51,8 @@ computed at read time.
    `frozenset`, never `list`. Changes produce new instances (e.g. `proposal.mark_validated(...)`); ports
    persist them.
 5. **Cross-note validation snapshot.** Rules that need other notes are pure domain functions over a snapshot
-   (`Mapping[NoteId, NoteRef]`) built by the application from the ports. `NoteRef` is light: id, type,
-   priority, status, sensitivity, hub, links, word count — **no body**. Duplicate detection (FTS similarity)
+   (`Mapping[NoteId, NoteRef]`) built by the application from the ports. `NoteRef` is a light view of each
+   note's metadata — **no body**; its exact fields are defined in PR 3. Duplicate detection (FTS similarity)
    lives in `ValidateProposal`, through the `SearchIndex` port.
 6. **Word count.** Whitespace-separated tokens of the body (frontmatter excluded; Markdown syntax and code
    blocks count). The combined P0 budget counts only current P0 notes.
