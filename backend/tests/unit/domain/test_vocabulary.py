@@ -11,10 +11,10 @@ def test_area_and_type_are_kebab_case_values() -> None:
 
 
 @pytest.mark.parametrize(("cls", "field"), [(Area, "area"), (NoteType, "type")])
-@pytest.mark.parametrize("value", ["", "Infra", "infra_structure", "-infra"])
-def test_rejects_non_kebab_case(cls: type[Area] | type[NoteType], field: str, value: str) -> None:
+@pytest.mark.parametrize("value", ["", "Infra", "infra_structure", "-infra", 7, None])
+def test_rejects_non_kebab_case(cls: type[Area] | type[NoteType], field: str, value: object) -> None:
     with pytest.raises(InvalidValueError) as excinfo:
-        cls(value)
+        cls(value)  # type: ignore[arg-type]
     assert excinfo.value.field == field
 
 
@@ -47,3 +47,16 @@ def test_vocabulary_must_contain_the_types_the_domain_relies_on(missing: str) ->
     with pytest.raises(InvalidValueError) as excinfo:
         Vocabulary(areas=frozenset(), types=types)
     assert excinfo.value.field == "types"
+
+
+def test_area_and_type_with_the_same_text_are_different_values() -> None:
+    assert NoteType("core") != Area("core")  # type: ignore[comparison-overlap]
+
+
+def test_area_and_type_sort_by_value() -> None:
+    assert sorted([Area("b"), Area("a")]) == [Area("a"), Area("b")]
+    assert sorted([NoteType("b"), NoteType("a")]) == [NoteType("a"), NoteType("b")]
+
+
+def test_empty_vocabulary_of_areas_has_no_area() -> None:
+    assert not Vocabulary(areas=frozenset(), types=DEFAULT_NOTE_TYPES).has_area(Area("infrastructure"))

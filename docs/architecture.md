@@ -48,7 +48,7 @@ backend/
 ├── uv.lock
 ├── src/cerebro/
 │   ├── domain/
-│   │   ├── note.py            # Note, NoteId, Frontmatter value objects
+│   │   ├── note.py            # Note (typed frontmatter fields + body), NoteId
 │   │   ├── links.py           # wikilink extraction [[id]] / [[id#Section]]
 │   │   ├── enums.py           # Priority, Sensitivity, Status
 │   │   ├── vocabulary.py      # Area, NoteType, Vocabulary (controlled lists from schema/*.yaml)

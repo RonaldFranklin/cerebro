@@ -7,32 +7,48 @@ from cerebro.domain.errors import InvalidValueError
 
 
 class _OrderedStrEnum(StrEnum):
-    """String enum ordered by declaration order; members of different enums are not comparable."""
+    """String enum ordered by declaration order.
 
-    def _ranks(self, other: object) -> tuple[int, int] | None:
+    Comparing with anything that is not a member of the same enum raises ``TypeError``, including plain
+    strings: falling back to ``str`` ordering would silently sort alphabetically (e.g. a raw ``"public"``
+    would rank above ``internal``).
+    """
+
+    def _ranks(self, other: object) -> tuple[int, int]:
         if type(other) is not type(self):
-            return None
+            raise TypeError(f"cannot order {type(self).__name__} against {type(other).__name__}")
         members = list(type(self))
         return members.index(self), members.index(other)
 
     def __lt__(self, other: object) -> bool:
-        ranks = self._ranks(other)
-        return NotImplemented if ranks is None else ranks[0] < ranks[1]
+        mine, theirs = self._ranks(other)
+        return mine < theirs
 
     def __le__(self, other: object) -> bool:
-        ranks = self._ranks(other)
-        return NotImplemented if ranks is None else ranks[0] <= ranks[1]
+        mine, theirs = self._ranks(other)
+        return mine <= theirs
 
     def __gt__(self, other: object) -> bool:
-        ranks = self._ranks(other)
-        return NotImplemented if ranks is None else ranks[0] > ranks[1]
+        mine, theirs = self._ranks(other)
+        return mine > theirs
 
     def __ge__(self, other: object) -> bool:
-        ranks = self._ranks(other)
-        return NotImplemented if ranks is None else ranks[0] >= ranks[1]
+        mine, theirs = self._ranks(other)
+        return mine >= theirs
+
+
+class _UnorderedStrEnum(StrEnum):
+    """String enum without an order: ``<``, ``<=``, ``>`` and ``>=`` raise ``TypeError``."""
+
+    def _no_order(self, other: object) -> bool:
+        raise TypeError(f"{type(self).__name__} has no order")
+
+    __lt__ = __le__ = __gt__ = __ge__ = _no_order
 
 
 def _parse[E: StrEnum](enum: type[E], value: str, field: str) -> E:
+    if not isinstance(value, str):
+        raise InvalidValueError(field, f"expected a string, got {type(value).__name__}")
     try:
         return enum(value)
     except ValueError:
@@ -65,7 +81,7 @@ class Sensitivity(_OrderedStrEnum):
         return _parse(cls, value, "sensitivity")
 
 
-class Status(StrEnum):
+class Status(_UnorderedStrEnum):
     """Lifecycle of the knowledge in a note. Only ``superseded`` and ``archived`` are history."""
 
     CURRENT = "current"

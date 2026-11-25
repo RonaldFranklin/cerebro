@@ -22,7 +22,7 @@ The owner wants mature libraries in stable versions, used only where needed.
 
 **Backend:** Python, uv, FastAPI + Uvicorn, official `mcp` SDK, PyYAML, `cryptography`, stdlib `sqlite3`
 (FTS5), stdlib `hashlib.scrypt`, git CLI via `subprocess`, Typer or argparse for CLI.
-Quality: pytest, ruff, mypy (strict), import-linter.
+Quality: pytest, pytest-cov (coverage gate), ruff, mypy (strict), import-linter.
 
 **Frontend:** React, TypeScript, Vite, pnpm, TanStack Query, Sigma.js + graphology (+ ForceAtlas2 layout in a
 web worker), CodeMirror 6.

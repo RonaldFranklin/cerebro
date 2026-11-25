@@ -1,9 +1,10 @@
 import dataclasses
-from datetime import date
+from datetime import date, datetime
 
 import pytest
 
 from cerebro.domain.enums import Priority, Sensitivity, Status
+from cerebro.domain.errors import InvalidValueError
 from cerebro.domain.note import Note, NoteId
 from cerebro.domain.vocabulary import Area, NoteType
 
@@ -56,9 +57,40 @@ def test_changes_produce_a_new_instance() -> None:
     assert changed.status is Status.SUPERSEDED
 
 
-def test_related_must_be_a_tuple() -> None:
-    with pytest.raises(TypeError):
-        make_note(related=[NoteId("a")])
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("id", "server-ssh-access"),
+        ("title", None),
+        ("type", "runbook"),
+        ("area", "infrastructure"),
+        ("priority", "P2"),
+        ("sensitivity", "restricted"),
+        ("status", "verified"),
+        ("summary", 42),
+        ("hub", "infrastructure"),
+        ("related", [NoteId("a")]),
+        ("related", ("a",)),
+        ("superseded_by", "other"),
+        ("lang", None),
+        ("created", "2026-11-24"),
+        ("created", datetime(2026, 11, 24, 10, 0)),
+        ("updated", datetime(2026, 11, 24, 10, 0)),
+        ("review_by", datetime(2027, 5, 24, 0, 0)),
+        ("body", None),
+    ],
+)
+def test_rejects_wrongly_typed_fields(field: str, value: object) -> None:
+    with pytest.raises(InvalidValueError) as excinfo:
+        make_note(**{field: value})
+    assert excinfo.value.field == field
+
+
+def test_optional_fields_accept_none() -> None:
+    note = make_note(hub=None, superseded_by=None, review_by=None, related=())
+
+    assert note.hub is None
+    assert note.related == ()
 
 
 @pytest.mark.parametrize(

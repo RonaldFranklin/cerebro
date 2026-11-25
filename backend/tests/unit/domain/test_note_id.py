@@ -32,3 +32,10 @@ def test_is_immutable() -> None:
     note_id = NoteId("a")
     with pytest.raises(AttributeError):
         note_id.value = "b"  # type: ignore[misc]
+
+
+@pytest.mark.parametrize("value", [2024, None, b"abc"])
+def test_rejects_non_string_values_with_a_domain_error(value: object) -> None:
+    with pytest.raises(InvalidValueError) as excinfo:
+        NoteId(value)  # type: ignore[arg-type]
+    assert excinfo.value.field == "id"

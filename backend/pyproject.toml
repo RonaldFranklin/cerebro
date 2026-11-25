@@ -25,7 +25,7 @@ required-version = ">=0.13.10"
 [tool.pytest.ini_options]
 minversion = "9.0"
 testpaths = ["tests"]
-addopts = ["--strict-markers", "--strict-config", "-ra", "--cov", "--cov-report=term-missing:skip-covered"]
+addopts = ["--strict-markers", "--strict-config", "-ra"]
 xfail_strict = true
 
 [tool.coverage.run]
@@ -35,7 +35,8 @@ branch = true
 [tool.coverage.report]
 fail_under = 90
 show_missing = true
-exclude_also = ["if TYPE_CHECKING:", "raise NotImplementedError", "\\.\\.\\."]
+skip_covered = true
+exclude_also = ["if TYPE_CHECKING:", "raise NotImplementedError", "^\\s*\\.\\.\\.\\s*$"]
 
 [tool.ruff]
 line-length = 120

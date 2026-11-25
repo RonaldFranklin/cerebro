@@ -75,6 +75,7 @@ Inbox, which are validated, curated and approved before becoming notes.
 # backend (from backend/)
 uv sync                                         # create .venv from uv.lock
 uv run pytest                                   # tests (incl. import-contract canaries)
+uv run pytest --cov                             # + coverage gate: domain + application >= 90% (as in CI)
 uv run ruff check . && uv run ruff format --check .
 uv run mypy                                     # strict, covers src/, tests/, devtools/
 uv run lint-imports                             # import contracts
