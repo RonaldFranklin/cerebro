@@ -25,12 +25,12 @@ Inbox, which are validated, curated and approved before becoming notes.
 
 - Phase 0 (bootstrap) is **done**: `backend/` skeleton with uv (Python 3.14), pytest, ruff, mypy `--strict`,
   import-linter (layers + custom `stdlib_only` contract type, with canary tests) and GitHub Actions CI.
-- Phase 1 (domain and application core) is **in progress**, delivered as a series of pull requests
-  (`phase-1/*` branches). Done so far: value objects, validation, frontmatter boundary and budgets (PRs 1–2),
-  links, sections and cross-note rules (PR 3), secret scanner (PR 4), access ceiling, visibility and agent
-  tokens (PR 5), proposals, decisions, commit trailers and the content hash (PR 6),
-  ports, application errors, in-memory fakes and shared contract tests (PR 7),
-  read use cases and their DTOs (PR 8), write use cases: submit, validate, curate, review, apply, owner edit (PR 9).
+- Phase 1 (domain and application core) is **done** (PRs 1-10): value objects, validation, budgets, links and
+  cross-note rules, secret scanner, access ceiling and agent tokens, proposals and commit trailers, ports with
+  in-memory fakes and shared contract tests, and every use case (read, write, maintenance, token authentication)
+  running against the fakes. **Next: Phase 2 (outbound adapters).** A human security review of the scanner, the
+  access ceiling and the token handling is **pending**, and must happen before Phase 3 exposes anything
+  (see `docs/plans/phase-1.md` section 5).
 - Update this section and `docs/roadmap.md` whenever a phase starts or finishes.
 - Phase 1 plan (pull requests, status, design decisions): [`docs/plans/phase-1.md`](docs/plans/phase-1.md).
 

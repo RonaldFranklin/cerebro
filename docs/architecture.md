@@ -137,9 +137,12 @@ served as written.
 - `OwnerEditNote` — owner edits directly (still validated, committed with owner as author).
 
 **Maintenance**
-- `RebuildIndex` — re-read the content repo, decrypt restricted notes in memory, rebuild the index.
-- `HealthReport` — orphans, broken links, overdue `review_by`, budget violations.
-- `IssueAgentToken` / `RevokeAgentToken`.
+- `RebuildIndex` — re-read the content repo, decrypt restricted notes in memory, rebuild the index (owner only; also
+  the recovery path when an index update failed after a commit).
+- `HealthReport` — orphans, broken links, hub chains, overdue `review_by`, budget violations, secrets in existing
+  notes (never echoed), stale or orphaned proposals, stale indexes (owner only, restricted ceiling).
+- `IssueAgentToken` / `RevokeAgentToken` — owner only; only the SHA-256 hash is stored, the secret is shown once.
+- `AuthenticateToken` — presented secret + listener ceiling -> `AccessContext` (used by every inbound adapter).
 
 ## 5. Runtime topology
 

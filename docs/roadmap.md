@@ -26,7 +26,7 @@ import-linter fail.
 `backend/tests/architecture/test_import_contracts.py`. Built-in import-linter contracts cannot express
 "standard library only", so a small custom contract type lives in `backend/devtools/import_contracts.py`.
 
-## 🟨 Phase 1 — Domain and application core
+## ✅ Phase 1 — Domain and application core
 
 Everything in `docs/domain-model.md` implemented in pure Python, plus the use cases with in-memory fakes.
 
@@ -37,13 +37,23 @@ Delivery plan, pull request status and design decisions: [plans/phase-1.md](plan
 - Rules: field validation, budgets, link extraction, secret scanner, visibility by ceiling,
   superseded handling.
 - Ports as `Protocol`s; in-memory fakes; contract test suites for each port.
-- Use cases: `GetOverview`, `SearchNotes` (fake index), `ReadNote` (incl. section), `GetNeighbors`,
-  `SubmitProposal`, `ValidateProposal`, `CurateProposal`, `ReviewProposal`, `ApplyProposal`, `OwnerEditNote`,
-  `RebuildIndex`, `HealthReport`.
+- Use cases: `GetOverview`, `SearchNotes` (fake index), `ReadNote` (incl. section), `GetNeighbors`, `GetGraph`,
+  `SubmitProposal`, `ValidateProposal`, `CurateProposal` (with `NullCurator`), `ReviewProposal`, `ApplyProposal`,
+  `OwnerEditNote`, `RebuildIndex`, `HealthReport`, `IssueAgentToken`, `RevokeAgentToken`, and `AuthenticateToken`
+  (turns a presented token secret plus the listener ceiling into an `AccessContext`; added because every inbound
+  adapter needs it).
 - Frontmatter is modeled as plain data in the domain; parsing YAML is **not** part of this phase.
 
 **Acceptance:** high coverage on domain/application (target ≥ 90%); zero third-party imports in core;
 all use cases runnable against fakes in tests.
+
+*Done 2026-11-25.* Status of each criterion: coverage of domain + application is 100 % (gate ≥ 90 % in CI); the
+`stdlib_only` import contract keeps `domain` and `application` free of third-party imports; every use case has
+tests against the in-memory fakes, including denial and no-leak tests. Delivery record:
+[plans/phase-1.md](plans/phase-1.md).
+
+**Pending before Phase 3:** the human security checkpoint (plan section 5) over the secret scanner, the access
+ceiling and token handling has not happened yet. Nothing in Phase 1 runs exposed.
 
 ## ⬜ Phase 2 — Outbound adapters
 
