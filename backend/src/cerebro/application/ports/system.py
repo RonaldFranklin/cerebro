@@ -20,7 +20,9 @@ class IdGenerator(Protocol):
         ...
 
     def new_token_secret(self) -> str:
-        """A new unguessable token secret. Shown once at issue time; only its SHA-256 hash is stored."""
+        """A new unguessable token secret: at least 256 bits from a CSPRNG (the real adapter uses
+        ``secrets.token_urlsafe(32)``), never time- or counter-derived. Shown once at issue time; only its SHA-256
+        hash is stored. ``IssueAgentToken`` rejects anything shorter than 32 characters but cannot measure entropy."""
         ...
 
 

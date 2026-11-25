@@ -1,0 +1,189 @@
+"""``HealthReport``: everything wrong with the knowledge base, for the owner."""
+
+from collections.abc import Iterable, Mapping
+from datetime import datetime, timedelta
+
+from cerebro.application.access import require_owner
+from cerebro.application.dto import HealthCode, HealthIssue, HealthReportRequest, HealthReportResult
+from cerebro.application.errors import PermissionDenied
+from cerebro.application.ports.graph import GraphIndex
+from cerebro.application.ports.notes import NoteRepository
+from cerebro.application.ports.proposals import ProposalStore
+from cerebro.application.ports.search import MAX_LIMIT, SearchIndex, SearchQuery
+from cerebro.application.ports.system import Clock
+from cerebro.domain.access import AccessCeiling, AccessContext
+from cerebro.domain.budgets import core_budget_findings, word_count
+from cerebro.domain.cross_note import cross_note_findings
+from cerebro.domain.enums import Priority, Sensitivity
+from cerebro.domain.note import Note, NoteId
+from cerebro.domain.note_ref import NoteRef
+from cerebro.domain.report import OWNER_EDIT_POLICY, Finding, Severity, ViolationCode
+from cerebro.domain.validation import validate_note
+from cerebro.domain.vocabulary import Vocabulary
+
+STALE_PROPOSAL_AFTER = timedelta(days=30)
+"""A proposal still waiting (not applied or rejected) this long after its last change is reported."""
+
+FULL_VIEW = AccessCeiling(Sensitivity.RESTRICTED)
+
+
+class HealthReport:
+    """Owner only, and only on a listener that may see every note (ceiling ``restricted``): the report names notes,
+    hub chains and index differences, so on a lower ceiling it would reveal what the ceiling hides.
+
+    It runs the **same domain rules** as the write paths over every stored note, with the owner-edit severity
+    policy (broken links warn): per-note rules, budgets, cross-note rules (broken links, hubs, ``superseded_by``
+    cycles, hub chains), the combined P0 budget. It adds orphan notes and overdue ``review_by`` dates, stale and
+    orphaned proposals, and compares both indexes with the repository (a stale index is an error: run
+    ``RebuildIndex``).
+
+    Secrets in existing notes are reported as ``secret_detected`` with the field and line only: the detector's
+    short preview is removed, so the report never carries any part of a secret.
+    """
+
+    def __init__(
+        self,
+        notes: NoteRepository,
+        proposals: ProposalStore,
+        search: SearchIndex,
+        graph: GraphIndex,
+        clock: Clock,
+        vocabulary: Vocabulary,
+    ) -> None:
+        self._notes = notes
+        self._proposals = proposals
+        self._search = search
+        self._graph = graph
+        self._clock = clock
+        self._vocabulary = vocabulary
+
+    def execute(self, request: HealthReportRequest, ctx: AccessContext) -> HealthReportResult:
+        require_owner(ctx, "read the health report")
+        if ctx.ceiling.level is not Sensitivity.RESTRICTED:
+            raise PermissionDenied("read the health report below the restricted ceiling")
+        notes = self._notes.list_notes()
+        now = self._clock.now()
+        issues: list[HealthIssue] = []
+        issues.extend(self._note_issues(notes))
+        issues.extend(
+            HealthIssue(
+                subject=str(note_id),
+                code=HealthCode.ORPHAN_NOTE,
+                severity=Severity.WARNING,
+                field=None,
+                message="no links to or from any other note",
+            )
+            for note_id in self._graph.orphans(ceiling=FULL_VIEW)
+        )
+        issues.extend(
+            HealthIssue(
+                subject=str(n.id),
+                code=HealthCode.REVIEW_OVERDUE,
+                severity=Severity.WARNING,
+                field="review_by",
+                message=f"review was due on {n.review_by}",
+            )
+            for n in notes
+            if n.is_current and n.review_by is not None and n.review_by < now.date()
+        )
+        issues.extend(self._proposal_issues(notes, now))
+        search_checked = len(notes) <= MAX_LIMIT
+        issues.extend(self._index_issues(notes, search_checked=search_checked))
+        proposals = self._proposals.find()
+        return HealthReportResult(
+            issues=tuple(issues),
+            notes_checked=len(notes),
+            proposals_checked=len(proposals),
+            search_index_checked=search_checked,
+        )
+
+    def _note_issues(self, notes: tuple[Note, ...]) -> Iterable[HealthIssue]:
+        snapshot = {ref.id: ref for ref in (NoteRef.from_note(n) for n in notes)}
+        for note in notes:
+            findings = [*cross_note_findings(snapshot[note.id], snapshot)]
+            report = validate_note(note, self._vocabulary, OWNER_EDIT_POLICY) + OWNER_EDIT_POLICY.report(findings)
+            yield from (
+                HealthIssue(
+                    subject=str(note.id),
+                    code=v.code,
+                    severity=v.severity,
+                    field=v.field,
+                    message=_safe_message(v.code, v.message),
+                )
+                for v in report.violations
+            )
+        words = {n.id: word_count(n.body) for n in notes if n.priority is Priority.P0 and n.is_current}
+        yield from (_finding_issue("core-budget", f) for f in core_budget_findings(words))
+
+    def _proposal_issues(self, notes: tuple[Note, ...], now: datetime) -> Iterable[HealthIssue]:
+        existing = {n.id for n in notes}
+        for proposal in self._proposals.find():
+            if proposal.status.is_terminal:
+                continue
+            if proposal.target is not None and proposal.target not in existing:
+                yield HealthIssue(
+                    subject=proposal.id,
+                    code=HealthCode.ORPHAN_PROPOSAL,
+                    severity=Severity.WARNING,
+                    field="target",
+                    message=f"targets {proposal.target}, which does not exist",
+                )
+            if now - proposal.updated_at > STALE_PROPOSAL_AFTER:
+                yield HealthIssue(
+                    subject=proposal.id,
+                    code=HealthCode.STALE_PROPOSAL,
+                    severity=Severity.WARNING,
+                    field=None,
+                    message=f"still {proposal.status.value} after more than {STALE_PROPOSAL_AFTER.days} days",
+                )
+
+    def _index_issues(self, notes: tuple[Note, ...], *, search_checked: bool) -> Iterable[HealthIssue]:
+        by_id = {n.id: n for n in notes}
+        stored_refs = {n.id: NoteRef.from_note(n) for n in notes}
+        indexed_refs = {r.id: r for r in self._graph.graph(ceiling=FULL_VIEW, include_history=True).nodes}
+        yield from _differences("graph index", HealthCode.GRAPH_INDEX_STALE, stored_refs, indexed_refs)
+        if not search_checked:
+            return
+        hits = self._search.search(SearchQuery(ceiling=FULL_VIEW, include_history=True, limit=MAX_LIMIT))
+        stored = {i: _search_view(n) for i, n in by_id.items()}
+        indexed = {h.id: (h.title, h.summary, h.area, h.type, h.priority, h.sensitivity, h.status) for h in hits}
+        yield from _differences("search index", HealthCode.SEARCH_INDEX_STALE, stored, indexed)
+
+
+def _search_view(n: Note) -> tuple[object, ...]:
+    return (n.title, n.summary, n.area, n.type, n.priority, n.sensitivity, n.status)
+
+
+def _differences(
+    name: str, code: HealthCode, stored: Mapping[NoteId, object], indexed: Mapping[NoteId, object]
+) -> Iterable[HealthIssue]:
+    for note_id in sorted(set(stored) | set(indexed), key=str):
+        if note_id not in indexed:
+            reason = "missing from the index"
+        elif note_id not in stored:
+            reason = "in the index but not in the repository"
+        elif stored[note_id] != indexed[note_id]:
+            reason = "out of date in the index"
+        else:
+            continue
+        yield HealthIssue(
+            subject=str(note_id), code=code, severity=Severity.ERROR, field=None, message=f"{name}: {reason}"
+        )
+
+
+def _finding_issue(subject: str, finding: Finding) -> HealthIssue:
+    severity = OWNER_EDIT_POLICY.severity(finding.code)
+    return HealthIssue(
+        subject=subject,
+        code=finding.code,
+        severity=severity,
+        field=finding.field,
+        message=_safe_message(finding.code, finding.message),
+    )
+
+
+def _safe_message(code: ViolationCode, message: str) -> str:
+    """Secret findings lose the scanner's preview (its first characters of the value)."""
+    if code is ViolationCode.SECRET_DETECTED:
+        return message.partition(", starts with ")[0].partition("; notes must")[0]
+    return message

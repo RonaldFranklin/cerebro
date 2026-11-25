@@ -4,14 +4,14 @@ Requests carry domain types (built by the inbound adapter). Responses are dedica
 note is read on purpose: they are never the ``Note`` entity, so a field added to ``Note`` cannot leak by accident.
 """
 
-from dataclasses import dataclass
-from datetime import date
+from dataclasses import dataclass, field
+from datetime import date, datetime
 from enum import StrEnum
 from typing import Final
 
 from cerebro.application.ports.graph import GraphSlice
 from cerebro.application.ports.search import MAX_LIMIT, SearchHit
-from cerebro.domain.access import AccessCeiling, is_visible
+from cerebro.domain.access import AccessCeiling, Scope, is_visible, validate_agent_name
 from cerebro.domain.content_hash import content_hash
 from cerebro.domain.decision import Decision
 from cerebro.domain.enums import Priority, Sensitivity, Status
@@ -19,7 +19,7 @@ from cerebro.domain.errors import InvalidValueError
 from cerebro.domain.links import LinkKind
 from cerebro.domain.note import Note, NoteId
 from cerebro.domain.proposal import MAX_TEXT_LENGTH, ProposalKind, ProposalStatus, ProposedContent
-from cerebro.domain.report import ValidationReport
+from cerebro.domain.report import Severity, ValidationReport, ViolationCode
 from cerebro.domain.vocabulary import Area, NoteType
 
 MAX_HOPS: Final = 5
@@ -446,3 +446,134 @@ class OwnerEditNoteResult:
     validation: ValidationReport
     revision: str | None = None
     content_hash: str | None = None
+
+
+# --- maintenance: indexes, health, tokens -----------------------------------------------------------------------
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class RebuildIndexRequest:
+    """No parameters: the whole content repository is re-read."""
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class RebuildIndexResult:
+    notes_indexed: int
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class HealthReportRequest:
+    """No parameters: the report always covers every note, proposal and index."""
+
+
+class HealthCode(StrEnum):
+    """Checks of the health report that are not note validation rules (those use ``ViolationCode``)."""
+
+    ORPHAN_NOTE = "orphan_note"
+    REVIEW_OVERDUE = "review_overdue"
+    STALE_PROPOSAL = "stale_proposal"
+    ORPHAN_PROPOSAL = "orphan_proposal"
+    SEARCH_INDEX_STALE = "search_index_stale"
+    GRAPH_INDEX_STALE = "graph_index_stale"
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class HealthIssue:
+    """One problem. ``subject`` is a note id, a proposal id or the name of an index. ``message`` never contains
+    note text or a secret value (secret findings keep the detector, the field and the line only).
+    """
+
+    subject: str
+    code: ViolationCode | HealthCode
+    severity: Severity
+    field: str | None
+    message: str
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class HealthReportResult:
+    issues: tuple[HealthIssue, ...]
+    notes_checked: int
+    proposals_checked: int
+    search_index_checked: bool
+    """False when the repository has more notes than one search page can list: only the graph index was compared."""
+
+    @property
+    def errors(self) -> tuple[HealthIssue, ...]:
+        return tuple(i for i in self.issues if i.severity is Severity.ERROR)
+
+    @property
+    def warnings(self) -> tuple[HealthIssue, ...]:
+        return tuple(i for i in self.issues if i.severity is Severity.WARNING)
+
+    @property
+    def ok(self) -> bool:
+        """True when there are no errors (warnings are allowed)."""
+        return not self.errors
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class IssueAgentTokenRequest:
+    """``expires_at`` is optional (``None``: the token does not expire); it must be after the issue time."""
+
+    agent: str
+    ceiling: AccessCeiling
+    scopes: frozenset[Scope]
+    expires_at: datetime | None = None
+
+    def __post_init__(self) -> None:
+        validate_agent_name(self.agent)
+        if not isinstance(self.ceiling, AccessCeiling):
+            raise InvalidValueError("ceiling", "expected an AccessCeiling")
+        if (
+            not isinstance(self.scopes, frozenset)
+            or not self.scopes
+            or not all(isinstance(s, Scope) for s in self.scopes)
+        ):
+            raise InvalidValueError("scopes", "expected a non-empty frozenset of Scope")
+        expires = self.expires_at
+        if expires is not None and (not isinstance(expires, datetime) or expires.tzinfo is None):
+            raise InvalidValueError("expires_at", "expected a timezone-aware datetime")
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class IssuedToken:
+    """The only place the plaintext secret ever appears, once. ``secret`` is excluded from ``repr``."""
+
+    token_id: str
+    agent: str
+    ceiling: AccessCeiling
+    scopes: frozenset[Scope]
+    created_at: datetime
+    expires_at: datetime | None
+    secret: str = field(repr=False)
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class RevokeAgentTokenRequest:
+    token_id: str
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.token_id, str) or not self.token_id:
+            raise InvalidValueError("token_id", "expected a non-empty string")
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class RevokedToken:
+    token_id: str
+    revoked_at: datetime
+    already_revoked: bool
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class AuthenticateTokenRequest:
+    """What an inbound adapter knows: the presented secret and the ceiling of the listener the socket belongs to
+    (never read from request data). ``secret`` is excluded from ``repr``.
+    """
+
+    secret: str = field(repr=False)
+    listener: AccessCeiling
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.listener, AccessCeiling):
+            raise InvalidValueError("listener", "expected an AccessCeiling")
