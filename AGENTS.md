@@ -29,7 +29,8 @@ Inbox, which are validated, curated and approved before becoming notes.
   (`phase-1/*` branches). Done so far: value objects, validation, frontmatter boundary and budgets (PRs 1–2),
   links, sections and cross-note rules (PR 3), secret scanner (PR 4), access ceiling, visibility and agent
   tokens (PR 5), proposals, decisions, commit trailers and the content hash (PR 6),
-  ports, application errors, in-memory fakes and shared contract tests (PR 7).
+  ports, application errors, in-memory fakes and shared contract tests (PR 7),
+  read use cases and their DTOs (PR 8).
 - Update this section and `docs/roadmap.md` whenever a phase starts or finishes.
 - Phase 1 plan (pull requests, status, design decisions): [`docs/plans/phase-1.md`](docs/plans/phase-1.md).
 

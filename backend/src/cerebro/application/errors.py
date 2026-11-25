@@ -53,3 +53,14 @@ class PermissionDenied(ApplicationError):  # noqa: N818
 
 class DecryptionError(ApplicationError):
     """A payload could not be decrypted (wrong key or tampered data)."""
+
+
+class SectionNotFound(ApplicationError):  # noqa: N818
+    """A **visible** note has no heading with this title. Only raised after the visibility check, so it never
+    reveals anything about hidden notes.
+    """
+
+    def __init__(self, note_id: NoteId, section: str) -> None:
+        super().__init__(f"section not found in {note_id.value}: {section}")
+        self.note_id = note_id
+        self.section = section
