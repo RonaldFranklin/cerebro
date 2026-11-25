@@ -28,11 +28,15 @@ Reads of whole listings take a shared lock so they never see half of an ``apply`
 ``apply`` refuses to run on unclean state (``NoteWriteError``): anything staged, a note to update that is untracked or
 differs from ``HEAD``, a note to create whose path exists or is known to git. The commit uses ``--only`` with the
 planned paths, so nothing else can ever be committed. If a failure happens after the commit exists (``HEAD`` moved),
-nothing is rolled back: ``apply`` returns the new revision, or raises ``NoteCommittedError`` when it cannot be read.
+nothing is rolled back: ``apply`` returns the revision when ``HEAD`` is a commit with our message whose parent is the
+previous ``HEAD``, and raises ``NoteWriteError`` (state unknown) when ``HEAD`` moved to anything else.
 After a rollback, restored encrypted files get mode 0600 again. Leftover ``.<id>.md.<hex>.tmp`` files older than an
 hour are deleted at the start of each ``apply``.
 
-Residual risks: ``get`` takes no lock; ``list_*`` read the working tree while ``head()`` reports ``HEAD`` (keep the
+Residual risks: writers outside this class that change the tree between the clean-state check and the write are
+overwritten (the lock covers only our writers); a killed ``git`` can leave a stale ``.git/index.lock`` that makes later
+applies fail until the owner removes it; ``get`` takes no lock; ``list_*`` read the working tree while ``head()``
+reports ``HEAD`` (keep the
 tree clean); replacing an encrypted file by a plaintext one declaring ``internal`` is indistinguishable from a normal
 note; listing a folder reads its entries by path (an attacker would need write access to the repository directory).
 """
@@ -46,10 +50,11 @@ from typing import Final
 
 from cerebro.adapters.outbound.crypto import RestrictedFormatError, decode_restricted, encode_restricted
 from cerebro.adapters.outbound.filesystem.codec import NoteFormatError, parse_note_bytes, render_note
-from cerebro.adapters.outbound.filesystem.errors import NoteCommittedError, NoteFileError, NoteWriteError
+from cerebro.adapters.outbound.filesystem.errors import NoteFileError, NoteWriteError
 from cerebro.adapters.outbound.filesystem.lock import file_lock
 from cerebro.adapters.outbound.filesystem.safeio import (
     read_regular_file,
+    remove_file,
     remove_stale_temp_files,
     set_mode,
     write_file_atomic,
@@ -325,39 +330,48 @@ class FilesystemNoteRepository:
             head_before = self._git.head()
         except GitError:
             raise NoteWriteError("could not inspect the content repository; nothing was written") from None
-        committed = False
+        rendered = message.render()
         try:
             for item in prepared:
                 write_file_atomic(self._root, item.relative, item.data, mode=item.mode)
             self._git.stage(planned)
-            self._git.commit(message.render(), planned)
-            committed = True
-            revision = self._git.head()
+            return self._git.commit(rendered, planned)
         except BaseException as failure:
             try:
-                moved_to = self._git.head()
+                now = self._git.head()
             except GitError:
-                if committed:
-                    raise NoteCommittedError("the commit succeeded but its revision could not be read") from None
                 raise NoteWriteError("the change failed and the repository state is unknown: inspect it") from None
-            if moved_to != head_before:  # the commit exists: never roll it back
-                if isinstance(failure, Exception):
-                    return moved_to or ""
+            if now == head_before:  # nothing was committed: restore the planned paths
+                self._rollback(created, modified, before, failure)
+                if isinstance(failure, OSError | GitError):
+                    raise NoteWriteError("the change could not be written or committed; nothing was kept") from None
                 raise
-            self._rollback(created, modified, before)
-            if isinstance(failure, OSError | GitError):
-                raise NoteWriteError("the change could not be written or committed; nothing was kept") from None
-            raise
-        if revision is None:  # pragma: no cover - a successful commit always creates HEAD
-            raise NoteCommittedError("the commit succeeded but left no readable HEAD")
-        return revision
+            if now is not None and self._is_our_commit(now, head_before, rendered):
+                if isinstance(failure, Exception):
+                    return now  # the commit exists and is ours: never roll it back
+                raise
+            raise NoteWriteError("the repository HEAD moved by someone else: state unknown, inspect it") from None
 
-    def _rollback(self, created: list[str], modified: list[str], before: frozenset[str]) -> None:
+    def _is_our_commit(self, revision: str, parent: str | None, rendered: str) -> bool:
+        try:
+            parents, text = self._git.describe_commit(revision)
+        except GitError:
+            return False
+        return parents == (() if parent is None else (parent,)) and text == rendered
+
+    def _rollback(
+        self, created: list[str], modified: list[str], before: frozenset[str], failure: BaseException
+    ) -> None:
         try:
             self._git.discard_changes(created=created, modified=modified, preexisting=before)
+            for relative in created:  # ``git clean`` skips ignored paths: remove what we created ourselves
+                if relative not in before:
+                    remove_file(self._root, relative)
             for relative in modified:
                 self._restore_mode(relative)
         except GitError, OSError:
+            if not isinstance(failure, Exception):
+                raise failure from None  # an interrupt is never replaced by a different error
             raise NoteWriteError(
                 "the change failed and the rollback was incomplete: inspect the content repository"
             ) from None

@@ -386,6 +386,14 @@ class GitRepo:
             raise GitError("commit left no HEAD")
         return commit_id
 
+    def describe_commit(self, revision: str) -> tuple[tuple[str, ...], str]:
+        """``(parent ids, message)`` of a commit; the message without its trailing newline."""
+        if not re.fullmatch(r"[0-9a-f]{40,64}", revision):
+            raise GitError("invalid revision")
+        _, out = self._run(["log", "-1", "--format=%P%x00%B", revision, "--"])
+        parents, _, text = out.partition("\x00")
+        return tuple(parents.split()), text.strip("\n")
+
     def has_staged_changes(self) -> bool:
         """True when the index differs from ``HEAD`` (or, before the first commit, is not empty)."""
         if self.head() is None:

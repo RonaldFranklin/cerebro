@@ -14,7 +14,6 @@ import pytest
 from cerebro.adapters.outbound.crypto import FernetCipher, generate_key
 from cerebro.adapters.outbound.filesystem import (
     FilesystemNoteRepository,
-    NoteCommittedError,
     NoteFileError,
     NoteWriteError,
     VocabularyError,
@@ -31,7 +30,7 @@ from cerebro.domain.errors import ContentConflict, InvalidValueError
 from cerebro.domain.note import Note, NoteId
 from cerebro.domain.vocabulary import CORE, HUB, Area, NoteType
 from tests.contract.notes_contract import MESSAGE, NoteRepositoryContract
-from tests.integration.test_git import make_repo
+from tests.integration.test_git import make_repo, raw_git
 from tests.unit.domain.builders import make_note
 
 pytestmark = pytest.mark.skipif(shutil.which("git") is None, reason="the git executable is not installed")
@@ -720,7 +719,7 @@ def test_a_failure_after_the_commit_does_not_roll_back_and_returns_the_revision(
     assert git.is_clean()
 
 
-def test_a_failure_after_the_commit_with_an_unreadable_head_raises_note_committed(
+def test_a_failure_after_the_commit_with_an_unreadable_head_reports_unknown_state(
     repo: FilesystemNoteRepository, git: GitRepo, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     committed_base(repo, git)
@@ -728,9 +727,9 @@ def test_a_failure_after_the_commit_with_an_unreadable_head_raises_note_committe
     state = {"after_commit": False}
 
     def commit(self: GitRepo, *args: Any, **kwargs: Any) -> str:
-        result = real_commit(self, *args, **kwargs)
+        real_commit(self, *args, **kwargs)
         state["after_commit"] = True
-        return result
+        raise GitError("raised after the commit")
 
     def head(self: GitRepo) -> str | None:
         if state["after_commit"]:
@@ -739,10 +738,91 @@ def test_a_failure_after_the_commit_with_an_unreadable_head_raises_note_committe
 
     monkeypatch.setattr(GitRepo, "commit", commit)
     monkeypatch.setattr(GitRepo, "head", head)
-    with pytest.raises(NoteCommittedError, match="succeeded"):
+    with pytest.raises(NoteWriteError, match="unknown"):
         repo.apply([NoteChange(note=plain(id=NoteId("after-commit")))], MESSAGE)
     monkeypatch.undo()
-    assert repo.get(NoteId("after-commit")) is not None
+    assert repo.get(NoteId("after-commit")) is not None  # committed, and never rolled back
+
+
+def outside_commit(root: Path, name: str = "outside.txt") -> None:
+    (root / name).write_text("made by someone else\n")
+    raw_git(root, "add", name)
+    raw_git(root, "-c", "user.name=t", "-c", "user.email=t@example.invalid", "commit", "-q", "-m", "outside commit")
+
+
+def test_a_foreign_commit_during_a_failed_stage_is_never_returned_as_ours(
+    repo: FilesystemNoteRepository, git: GitRepo, root: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    committed_base(repo, git)
+
+    def stage_then_fail(self: GitRepo, paths: Any) -> None:
+        outside_commit(root)
+        raise GitError("stage failed")
+
+    monkeypatch.setattr(GitRepo, "stage", stage_then_fail)
+    with pytest.raises(NoteWriteError, match="moved by someone else"):
+        repo.apply([NoteChange(note=plain(id=NoteId("mine-note")))], MESSAGE)
+    monkeypatch.undo()
+    assert git.log(1) == ["outside commit"]
+
+
+def test_a_foreign_commit_while_commit_fails_is_never_returned_as_ours(
+    repo: FilesystemNoteRepository, git: GitRepo, root: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    committed_base(repo, git)
+
+    def commit_fails_after_outsider(self: GitRepo, *args: Any, **kwargs: Any) -> str:
+        outside_commit(root)
+        raise GitError("commit failed")
+
+    monkeypatch.setattr(GitRepo, "commit", commit_fails_after_outsider)
+    with pytest.raises(NoteWriteError, match="moved by someone else"):
+        repo.apply([NoteChange(note=plain(id=NoteId("mine-note")))], MESSAGE)
+
+
+def committed_gitignore(git: GitRepo, root: Path, pattern: str) -> None:
+    (root / ".gitignore").write_text(pattern + "\n")
+    raw_git(root, "add", ".gitignore")
+    raw_git(root, "-c", "user.name=t", "-c", "user.email=t@example.invalid", "commit", "-q", "-m", "ignore")
+
+
+@pytest.mark.parametrize("note", [plain(), make_note()], ids=["plain", "restricted"])
+def test_a_created_file_at_an_ignored_path_is_removed_on_failure(
+    repo: FilesystemNoteRepository, git: GitRepo, root: Path, note: Note
+) -> None:
+    committed_gitignore(git, root, "notes/*")
+    head = git.head()
+    with pytest.raises(NoteWriteError):  # ``git add`` refuses ignored paths
+        repo.apply([NoteChange(note=note)], MESSAGE)
+    assert git.head() == head
+    assert not (root / f"notes/{note.id.value}.md").exists()
+    assert not (root / "notes").exists() or not list((root / "notes").iterdir())
+
+
+def test_an_interrupt_is_not_replaced_when_the_rollback_also_fails(
+    repo: FilesystemNoteRepository, git: GitRepo, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    committed_base(repo, git)
+
+    def interrupted(self: GitRepo, *args: Any, **kwargs: Any) -> Any:
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(GitRepo, "commit", interrupted)
+    monkeypatch.setattr(GitRepo, "discard_changes", fail_commit)
+    with pytest.raises(KeyboardInterrupt):
+        repo.apply([NoteChange(note=plain(id=NoteId("mine-note")))], MESSAGE)
+
+
+def test_stale_temp_files_of_another_user_are_not_removed(
+    repo: FilesystemNoteRepository, root: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    (root / "notes").mkdir()
+    old = root / "notes/.a-note.md.0123456789abcdef.tmp"
+    old.write_text("x")
+    os.utime(old, (1, 1))
+    monkeypatch.setattr(os, "getuid", lambda: os.stat(old).st_uid + 1)
+    repo.apply([NoteChange(note=plain())], MESSAGE)
+    assert old.exists()
 
 
 def test_a_rollback_puts_restricted_files_back_to_0600(

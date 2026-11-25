@@ -130,5 +130,15 @@ def remove_stale_temp_files(root: Path, folder: str, *, older_than: float, now: 
                 continue
             with contextlib.suppress(OSError):
                 info = os.stat(name, dir_fd=directory, follow_symlinks=False)
-                if stat.S_ISREG(info.st_mode) and now - info.st_mtime > older_than:
+                if stat.S_ISREG(info.st_mode) and info.st_uid == os.getuid() and now - info.st_mtime > older_than:
                     os.unlink(name, dir_fd=directory)
+
+
+def remove_file(root: Path, relative: str) -> None:
+    """Delete a file (never following a symlink at the end); a missing file is fine."""
+    *folders, name = relative.split("/")
+    try:
+        with open_directory(root, tuple(folders)) as directory:
+            os.unlink(name, dir_fd=directory)
+    except FileNotFoundError:
+        return
