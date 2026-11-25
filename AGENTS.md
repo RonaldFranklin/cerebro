@@ -28,9 +28,8 @@ Inbox, which are validated, curated and approved before becoming notes.
 - Phase 1 (domain and application core) is **done** (PRs 1-10): value objects, validation, budgets, links and
   cross-note rules, secret scanner, access ceiling and agent tokens, proposals and commit trailers, ports with
   in-memory fakes and shared contract tests, and every use case (read, write, maintenance, token authentication)
-  running against the fakes. **Next: Phase 2 (outbound adapters).** A human security review of the scanner, the
-  access ceiling and the token handling is **pending**, and must happen before Phase 3 exposes anything
-  (see `docs/plans/phase-1.md` section 5).
+  running against the fakes. **Next: Phase 2 (outbound adapters).** The human security checkpoint was approved on
+  2026-11-25 after a batch of follow-up PRs (see `docs/plans/phase-1.md` section 7).
 - Update this section and `docs/roadmap.md` whenever a phase starts or finishes.
 - Phase 1 plan (pull requests, status, design decisions): [`docs/plans/phase-1.md`](docs/plans/phase-1.md).
 

@@ -23,7 +23,7 @@ Status legend: ⬜ not started · 🟦 PR open · ✅ merged
 | 10 | `phase-1/maintenance-use-cases` | `RebuildIndex`, `HealthReport`, `IssueAgentToken`, `RevokeAgentToken`, `AuthenticateToken`; closes the phase (roadmap incl. the added use cases, `AGENTS.md`, coverage check) | C | ✅ #14 |
 
 **Phase 1 is complete** once PR 10 is merged. The human security checkpoint of section 5 (scanner, access
-ceiling, tokens) is **still pending** and gates Phase 3.
+ceiling, tokens) is **done** (section 7).
 
 Related docs pull request: [ADR-0015](../adr/0015-hub-membership-computed-at-read-time.md) (#2, merged) — hub
 membership computed at read time.
@@ -99,3 +99,18 @@ Applies to PRs 3–10 and to future sessions continuing this phase.
 4. Strict frontmatter: unknown keys are errors, `null` is missing, timestamps rejected, non-mapping reported.
 5. Title single line ≤ 120 chars after trimming; word count = whitespace tokens; hub intro > 800 words is an error;
    the core budget counts current P0 notes only.
+
+## 7. Security checkpoint follow-ups (approved by the owner 2026-11-25)
+
+| PR | Content |
+|---|---|
+| #15 | ADR-0016: the curator never receives restricted notes; ADR-0007 references it |
+| #16 | Roadmap notes for Phases 2 and 3; AGENTS.md: never merge with CI pending |
+| #17 | Links to higher sensitivity are errors (proposal and owner edit, outbound and inbound); wikilinks to unseen notes are redacted on read and in the overview; `[[` forbidden in title and summary |
+| #18 | import-linter contract: `adapters.inbound` may not import `application.ports` or `adapters.outbound` |
+| #19 | `Proposal.revision`; `ProposalStore.save(expected_revision)` compare-and-swap; `ProposalConflict` |
+| #20 | No raw values in errors and report messages; `TokenHash` (redacted, outside `__eq__`) |
+| #21 | Token `created_at` skew check (5 min); `Curated-by` requires `curator/`; structured scanner findings; `approved_by` pinned to `owner` |
+| #22 | `CurateProposal` caps the curator context at `internal` and skips the curator for proposals touching restricted notes |
+
+Every security PR was reviewed by a fresh Opus sub-agent; the findings were fixed before merge.
