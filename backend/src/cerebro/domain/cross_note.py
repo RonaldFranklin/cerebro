@@ -26,6 +26,7 @@ def cross_note_findings(ref: NoteRef, snapshot: Snapshot) -> tuple[Finding, ...]
     """
     return (
         *broken_link_findings(ref, snapshot),
+        *link_sensitivity_findings(ref, snapshot),
         *hub_findings(ref, snapshot),
         *superseded_by_cycle_findings(ref, snapshot),
         *hub_chain_findings(ref, snapshot),
@@ -49,6 +50,30 @@ def broken_link_findings(ref: NoteRef, snapshot: Snapshot) -> tuple[Finding, ...
             )
         )
     return tuple(found)
+
+
+def link_sensitivity_findings(ref: NoteRef, snapshot: Snapshot) -> tuple[Finding, ...]:
+    """A note may not link (body, ``hub``, ``related``, ``superseded_by``) to a note of higher sensitivity.
+
+    Bodies are served as written, so such a link would leak the existence and id of the target to readers whose
+    ceiling covers ``ref`` but not the target. Missing targets are ``broken_link``s, not reported here. The message
+    carries only the target id as the author wrote it, never its title or sensitivity.
+    """
+    found: dict[tuple[str, NoteId], Finding] = {}
+    for link in ref.links:
+        target = snapshot.get(link.target)
+        if link.target == ref.id or target is None or target.sensitivity <= ref.sensitivity:
+            continue
+        field = "body" if link.kind is LinkKind.BODY else link.kind.value
+        found.setdefault(
+            (field, link.target),
+            Finding(
+                code=ViolationCode.LINK_TO_HIGHER_SENSITIVITY,
+                field=field,
+                message=f"{link.target} may not be linked from this note",
+            ),
+        )
+    return tuple(found.values())
 
 
 def hub_findings(ref: NoteRef, snapshot: Snapshot) -> tuple[Finding, ...]:

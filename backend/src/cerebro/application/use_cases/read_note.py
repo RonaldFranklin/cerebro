@@ -6,12 +6,15 @@ from cerebro.application.errors import SectionNotFound
 from cerebro.application.ports.graph import GraphIndex
 from cerebro.application.ports.notes import NoteRepository
 from cerebro.domain.access import AccessContext, Scope, is_visible
-from cerebro.domain.links import LinkKind
+from cerebro.domain.links import LinkKind, redact_wikilinks
 from cerebro.domain.note import Note, NoteId
 from cerebro.domain.sections import extract_section
 
 
 class ReadNote:
+    """Reads one visible note. Wikilinks in the served body (whole or one section) whose target is hidden or missing
+    for the reader become `REDACTED_LINK`; `hub`, `related` and `superseded_by` are filtered the same way."""
+
     def __init__(self, notes: NoteRepository, graph: GraphIndex) -> None:
         self._notes = notes
         self._graph = graph
@@ -25,6 +28,7 @@ class ReadNote:
             if found is None:
                 raise SectionNotFound(note.id, request.section)
             body = found
+        body = redact_wikilinks(body, lambda target: self._visible_id(target, ctx, request.include_history) is not None)
         members = self._members(note, ctx, request.include_history) if note.is_hub else None
         return NoteView.from_note(
             note,

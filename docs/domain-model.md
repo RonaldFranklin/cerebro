@@ -101,8 +101,22 @@ Structure and rule details enforced by the domain:
   valid note ids. The `[[id|alias]]` form is not supported. Duplicate links are collapsed.
 - A link (body, `related`, `superseded_by`) to a missing id is a **broken link** (`broken_link`: warning for
   owner edits, error for proposals). Section anchors are not checked against the target (that needs its body).
+- **No link to a higher sensitivity.** A note may not link to a note of **higher** sensitivity than its own, through
+  body wikilinks, `hub`, `related` or `superseded_by` (`link_to_higher_sensitivity`). Bodies are served as written,
+  so such a link would hand the id of a restricted note to every reader whose ceiling covers the source but not the
+  target. It is an **error on every write path**: unlike `broken_link` it is never a warning, not even for owner
+  edits (it is in no severity policy's warning set). Equal or lower sensitivity is fine. A missing target is a
+  `broken_link`, not this. The message names only the target id as the author wrote it (never its title or
+  sensitivity); the report goes to the owner and the curator, never to the submitting agent. The health report runs
+  the rule too, so legacy leaks are listed as errors.
 - A `hub` that does not exist (`hub_not_found`) or whose type is not `hub` (`hub_not_a_hub`) is always an error.
 - `superseded_by` chains that lead back to the note are a `superseded_by_cycle` error.
+- **Redaction on read (defense in depth).** `ReadNote` replaces every `[[...]]` in the served body (whole note or one
+  section) whose target is a note id the reader cannot see (above the effective ceiling, history without
+  `include_history`, or missing) with the constant `[[redacted]]` (`cerebro.domain.links.REDACTED_LINK`): the whole
+  link goes, anchor and alias included, and code blocks are covered too. Brackets that are not note ids are left
+  alone. `hub`, `related` and `superseded_by` of the `NoteView` and hub `members` were already filtered to visible
+  targets. This protects against data that predates the rule or was edited outside Cérebro.
 - `NoteRef` is the body-free view used by these rules: id, title, type, priority, sensitivity, status, `hub`,
   `related`, `superseded_by` and the wikilinks already extracted from the body.
 - **Sections.** `ReadNote` reads one section by heading: ATX headings (`#` to `######`), matched ignoring case

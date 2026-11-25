@@ -1,6 +1,14 @@
 import pytest
 
-from cerebro.domain.links import Link, LinkKind, WikiLink, extract_wikilinks, note_links
+from cerebro.domain.links import (
+    REDACTED_LINK,
+    Link,
+    LinkKind,
+    WikiLink,
+    extract_wikilinks,
+    note_links,
+    redact_wikilinks,
+)
 from cerebro.domain.note import NoteId
 from tests.unit.domain.builders import make_note
 
@@ -74,3 +82,15 @@ def test_note_links_cover_body_and_references() -> None:
 def test_note_links_without_references() -> None:
     note = make_note(body="nothing", hub=None, related=())
     assert note_links(note) == ()
+
+
+def test_redact_wikilinks_replaces_links_the_reader_may_not_follow() -> None:
+    body = "a [[open]] b [[secret]] c [[secret#Part]] d [[ secret | alias ]] e [[Not A Slug]] f [[open#X]]"
+    out = redact_wikilinks(body, lambda target: target.value == "open")
+    assert out == f"a [[open]] b {REDACTED_LINK} c {REDACTED_LINK} d {REDACTED_LINK} e [[Not A Slug]] f [[open#X]]"
+    assert "secret" not in out
+
+
+def test_redact_wikilinks_also_covers_code() -> None:
+    out = redact_wikilinks("`[[secret]]`\n```\n[[secret]]\n```\n", lambda _: False)
+    assert "secret" not in out

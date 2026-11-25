@@ -1,6 +1,7 @@
 """Link extraction: wikilinks in the body plus the ``hub``, ``related`` and ``superseded_by`` references."""
 
 import re
+from collections.abc import Callable
 from dataclasses import dataclass
 from enum import StrEnum
 
@@ -10,6 +11,11 @@ from cerebro.domain.slug import is_slug
 
 # [[note-id]] or [[note-id#Section heading]]; no nesting, no line breaks inside the brackets.
 _WIKILINK = re.compile(r"\[\[([^\[\]#|\n]*)(?:#([^\[\]|\n]*))?\]\]")
+# Any ``[[...]]``, broader than ``_WIKILINK`` so that unsupported forms such as ``[[id|alias]]`` are seen by redaction.
+_ANY_BRACKETS = re.compile(r"\[\[([^\[\]\n]*)\]\]")
+
+REDACTED_LINK = "[[redacted]]"
+"""What ``redact_wikilinks`` puts in place of a link the reader may not follow."""
 
 
 class LinkKind(StrEnum):
@@ -81,3 +87,20 @@ def note_links(note: Note) -> tuple[Link, ...]:
         related=note.related,
         superseded_by=note.superseded_by,
     )
+
+
+def redact_wikilinks(body: str, may_see: Callable[[NoteId], bool]) -> str:
+    """``body`` with every ``[[...]]`` whose target is a note id that ``may_see`` rejects replaced by ``REDACTED_LINK``.
+
+    The whole link goes, section anchor and alias included. Unlike link extraction this also looks inside code
+    blocks (an id there leaks just the same) and at the ``[[id|alias]]`` form. Brackets whose target is not a valid
+    note id are not links and are left alone.
+    """
+
+    def replace(match: re.Match[str]) -> str:
+        target = re.split(r"[#|]", match.group(1), maxsplit=1)[0].strip()
+        if is_slug(target) and not may_see(NoteId(target)):
+            return REDACTED_LINK
+        return match.group(0)
+
+    return _ANY_BRACKETS.sub(replace, body)

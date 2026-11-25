@@ -125,8 +125,10 @@ current P0 notes in id order within the 1,500-word core budget (`core_truncated`
 visible hubs and their areas. `ReadNote` accepts `id`, `id#Section` or `[[id#Section]]` (`SectionNotFound` for a
 visible note without that heading) and, for a hub, returns the member list built at read time (ADR-0015). The
 `hub`, `related` and `superseded_by` references of a note are dropped when their target is hidden or missing; hits
-and graph nodes from the indexes are re-checked against the ceiling (defense in depth). Wikilinks inside a body are
-served as written.
+and graph nodes from the indexes are re-checked against the ceiling (defense in depth). Wikilinks inside a served
+body (whole or one section) whose target the reader cannot see, or that does not exist, are replaced by the constant
+`[[redacted]]`; the write path additionally forbids links to a higher sensitivity (`link_to_higher_sensitivity`, see
+`docs/domain-model.md`).
 
 **Write**
 - `SubmitProposal` — store an incoming proposal in the Inbox (agents only have this).

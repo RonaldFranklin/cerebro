@@ -209,6 +209,35 @@ class TestValidateProposal:
         assert outcome.validation is not None
         assert ViolationCode.BROKEN_LINK in outcome.validation.codes
 
+    @pytest.mark.parametrize("kind", ["body", "related", "hub"])
+    def test_links_to_a_higher_sensitivity_are_errors_for_proposals(self, kit: Kit, kind: str) -> None:
+        # a public new note linking to the restricted "vault-layout" (a hub is linked as ``hub``)
+        options: dict[str, dict[str, Any]] = {
+            "body": {"body": "See [[vault-layout]].\n"},
+            "related": {"related": (NID("vault-layout"),)},
+            "hub": {"hub": NID("vault-layout")},
+        }
+        outcome = kit.validate(kit.submit_create(**options[kind]))
+        assert outcome.status is S.REJECTED
+        assert outcome.validation is not None
+        assert ViolationCode.LINK_TO_HIGHER_SENSITIVITY in {v.code for v in outcome.validation.errors}
+        for violation in outcome.validation.violations:
+            if violation.code is ViolationCode.LINK_TO_HIGHER_SENSITIVITY:
+                assert violation.message == "vault-layout may not be linked from this note"
+                assert "Vault layout" not in violation.message
+
+    def test_links_to_equal_or_lower_sensitivity_are_fine_for_proposals(self, kit: Kit) -> None:
+        # internal note -> internal and public targets
+        pid = kit.submit_create(sensitivity=INTERNAL, body="See [[server-ssh-access]] and [[core-rules]].\n")
+        outcome = kit.validate(pid)
+        assert outcome.status is S.VALIDATED, outcome.validation
+
+    def test_an_update_that_adds_a_leaking_link_is_rejected(self, kit: Kit) -> None:
+        outcome = kit.validate(kit.submit_update(body="# SSH\n\nSee [[vault-layout]].\n"))
+        assert outcome.status is S.REJECTED
+        assert outcome.validation is not None
+        assert ViolationCode.LINK_TO_HIGHER_SENSITIVITY in outcome.validation.codes
+
     def test_core_budget_applies_with_the_proposed_note_substituted(self, kit: Kit) -> None:
         pid = kit.submit_create(type=CORE, priority=Priority.P0, hub=None, body=words(1600))
         outcome = kit.validate(pid)
@@ -823,6 +852,37 @@ class TestOwnerEditNote:
         result = self.edit(kit, replace(current, body="See [[not-written-yet]].\n"), note_hash(kit))
         assert result.revision is not None
         assert ViolationCode.BROKEN_LINK in {v.code for v in result.validation.warnings}
+
+    @pytest.mark.parametrize("kind", ["body", "related", "superseded_by", "hub"])
+    def test_links_to_a_higher_sensitivity_are_errors_for_the_owner_too(self, kit: Kit, kind: str) -> None:
+        current = kit.world.notes.get(SSH)  # internal; vault-layout is restricted
+        assert current is not None
+        options: dict[str, dict[str, Any]] = {
+            "body": {"body": "See [[vault-layout]].\n"},
+            "related": {"related": (NID("vault-layout"),)},
+            "superseded_by": {
+                "superseded_by": NID("vault-layout"),
+                "status": Status.SUPERSEDED,
+                "priority": Priority.P3,
+            },
+            "hub": {"hub": NID("vault-layout")},
+        }
+        commits = kit.commits
+        result = self.edit(kit, replace(current, **options[kind]), note_hash(kit))
+        assert result.revision is None
+        assert ViolationCode.LINK_TO_HIGHER_SENSITIVITY in {v.code for v in result.validation.errors}
+        assert ViolationCode.LINK_TO_HIGHER_SENSITIVITY not in {v.code for v in result.validation.warnings}
+        assert kit.commits == commits
+        messages = [
+            v.message for v in result.validation.violations if v.code is ViolationCode.LINK_TO_HIGHER_SENSITIVITY
+        ]
+        assert messages == ["vault-layout may not be linked from this note"]
+
+    def test_the_owner_may_link_to_equal_or_lower_sensitivity(self, kit: Kit) -> None:
+        current = kit.world.notes.get(SSH)
+        assert current is not None
+        result = self.edit(kit, replace(current, body="See [[core-rules]] and [[infrastructure]].\n"), note_hash(kit))
+        assert result.revision is not None
 
     def test_invalid_notes_are_not_written(self, kit: Kit) -> None:
         current = kit.world.notes.get(SSH)

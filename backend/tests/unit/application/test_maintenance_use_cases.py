@@ -304,7 +304,7 @@ class TestAuthenticateToken:
 
 def healthy_world() -> World:
     w = World()
-    w.add(id=NID("core-rules"), type=CORE, priority=Priority.P0, hub=None, body="Be kind. See [[ssh]].\n")
+    w.add(id=NID("core-rules"), type=CORE, priority=Priority.P0, hub=None, body="Be kind.\n")
     w.add(id=NID("infrastructure"), type=HUB, priority=Priority.P1, hub=None, body="Intro.\n")
     w.add(id=NID("ssh"), hub=NID("infrastructure"), sensitivity=RES, body="Use the key. See [[core-rules]].\n")
     return w

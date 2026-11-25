@@ -50,6 +50,7 @@ class ViolationCode(StrEnum):
     SUPERSEDED_BY_CYCLE = "superseded_by_cycle"
     HUB_CHAIN_CYCLE = "hub_chain_cycle"
     HUB_CHAIN_TOO_DEEP = "hub_chain_too_deep"
+    LINK_TO_HIGHER_SENSITIVITY = "link_to_higher_sensitivity"
     # duplicates (application: similarity search)
     POSSIBLE_DUPLICATE = "possible_duplicate"
     # budgets
@@ -132,4 +133,7 @@ PROPOSAL_POLICY: Final = SeverityPolicy(name="proposal", warnings=_ALWAYS_WARNIN
 """Agent proposals: strict."""
 
 OWNER_EDIT_POLICY: Final = SeverityPolicy(name="owner_edit", warnings=_ALWAYS_WARNINGS | {ViolationCode.BROKEN_LINK})
-"""Owner edits and health reports: broken links only warn (the owner may link to a note not written yet)."""
+"""Owner edits and health reports: broken links only warn (the owner may link to a note not written yet).
+
+``LINK_TO_HIGHER_SENSITIVITY`` is deliberately absent from every warning set: it is an error on every write path.
+"""
