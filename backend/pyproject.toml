@@ -30,7 +30,7 @@ xfail_strict = true
 [tool.ruff]
 line-length = 120
 target-version = "py314"
-src = ["src", "tests"]
+src = ["src", "tests", "devtools"]
 
 [tool.ruff.lint]
 select = [
@@ -49,6 +49,26 @@ select = [
 [tool.mypy]
 python_version = "3.14"
 strict = true
-files = ["src", "tests"]
+files = ["src", "tests", "devtools"]
 mypy_path = "src"
 warn_unreachable = true
+
+[tool.importlinter]
+root_package = "cerebro"
+include_external_packages = true
+contract_types = ["stdlib_only: devtools.import_contracts.StdlibOnlyContract"]
+
+[[tool.importlinter.contracts]]
+name = "Layers point inward: bootstrap -> adapters -> application -> domain"
+type = "layers"
+layers = [
+    "cerebro.bootstrap",
+    "cerebro.adapters",
+    "cerebro.application",
+    "cerebro.domain",
+]
+
+[[tool.importlinter.contracts]]
+name = "Domain and application use only the standard library"
+type = "stdlib_only"
+source_modules = ["cerebro.domain", "cerebro.application"]
