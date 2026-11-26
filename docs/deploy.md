@@ -287,6 +287,8 @@ After those restore commands succeed, retrieve the **hml** Fernet key from the o
 install -d -m 0700 "$RESTORE_DIR"/{secrets,index}
 install -m 0600 "$ESCROW_FILE" "$RESTORE_DIR/secrets/fernet.key"
 cmp -s "$CEREBRO_KEY_FILE" "$RESTORE_DIR/secrets/fernet.key"
+# Refuse to overwrite an unfinished drill's recovery record.
+(set -C; printf '%s\n' "$APP_SHA" "$image_id" "$RESTORE_DIR" "$DRILL_PORT" > "$ENV_DIR/drill-recovery")
 dc down
 (
   export DATA_DIR="$RESTORE_DIR" PRIVATE_PORT="$DRILL_PORT"
@@ -296,9 +298,15 @@ dc down
 )
 ```
 
-Sign in in a fresh browser session with the escrowed hml password and read the fixture by its recorded ID through both the browser and MCP. Restore normal hml even if a drill check fails:
+Sign in in a fresh browser session with the escrowed hml password and read the fixture by its recorded ID through both the browser and MCP. Restore normal hml even if a drill check fails. If Bash exited, open a fresh terminal as the same operator and run the installation variables block again with the original values. The private recovery record also works during a first install before hml has an accepted release:
 
 ```bash
+select_env hml
+mapfile -t recovery < "$ENV_DIR/drill-recovery"
+test "${#recovery[@]}" -eq 4
+use_release "${recovery[0]}"
+image_id=${recovery[1]}; RESTORE_DIR=${recovery[2]}; DRILL_PORT=${recovery[3]}
+test "$(docker image inspect --format '{{.Id}}' "cerebro-backend:git-$APP_SHA")" = "$image_id"
 (DATA_DIR="$RESTORE_DIR"; PRIVATE_PORT="$DRILL_PORT"; dc down)
 start_release
 sudo tailscale serve --bg --https="$HTTPS_PORT" "http://127.0.0.1:$PRIVATE_PORT"
@@ -306,7 +314,7 @@ tailscale serve status
 test "$(curl -sS -o /dev/null -w '%{http_code}' "$PRIVATE_ORIGIN/mcp")" = 401
 ```
 
-Verify ordinary hml reads again. Keep the private drill tree under the owner's retention policy. Production recovery is separate and requires owner approval.
+Verify ordinary hml reads again, then run `rm -- "$ENV_DIR/drill-recovery"`. Stop and contact the owner if ordinary hml cannot be restored. Keep the private drill tree under the owner's retention policy. Production recovery is separate and requires owner approval.
 
 **Verify** the owner accepts hml, its restored fixture, both clients and external secret custody. Record the accepted SHA/image pair **after acceptance only**:
 
