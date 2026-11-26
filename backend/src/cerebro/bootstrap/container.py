@@ -19,6 +19,7 @@ import threading
 from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
+from functools import cached_property
 from pathlib import Path
 
 from cerebro.adapters.outbound.crypto import FernetCipher, load_keys
@@ -31,7 +32,10 @@ from cerebro.adapters.outbound.sqlite import (
     SqliteSearchIndex,
     SqliteTokenStore,
 )
+from cerebro.adapters.outbound.sqlite.login_attempts import SqliteLoginAttempts
 from cerebro.adapters.outbound.system import SystemIdGenerator, UtcClock
+from cerebro.adapters.outbound.system.sessions import MemorySessions
+from cerebro.application.browser import BrowserAuth
 from cerebro.application.dto import (
     AdmissionResult,
     AgentTokenSummary,
@@ -103,6 +107,7 @@ from cerebro.application.use_cases import (
     SubmitProposal,
     ValidateProposal,
 )
+from cerebro.bootstrap.browser import owner_credentials
 from cerebro.bootstrap.settings import Settings
 from cerebro.domain.access import AccessCeiling, AccessContext
 from cerebro.domain.enums import Sensitivity
@@ -246,6 +251,17 @@ class Container:
             list_agent_tokens=ListAgentTokens(self.tokens),
             revoke_agent_token=RevokeAgentToken(self.tokens, clock),
             authenticate_token=AuthenticateToken(self.tokens, clock),
+        )
+
+    @cached_property
+    def browser_auth(self) -> BrowserAuth:
+        """Built once at browser service startup and shared between its listener adapters."""
+        return BrowserAuth(
+            owner_credentials(self.settings),
+            SqliteLoginAttempts(self.settings.state_dir / STATE_FILE),
+            MemorySessions(),
+            self.clock,
+            self.ids,
         )
 
     def start(self) -> bool:

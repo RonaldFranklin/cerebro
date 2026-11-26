@@ -101,3 +101,10 @@ class SectionNotFound(ApplicationError):  # noqa: N818
         super().__init__("section not found")
         self.note_id = note_id
         self.section = section
+
+
+class PasswordDurabilityError(ApplicationError):
+    """The new owner verifier is active, but its directory entry could not be synced."""
+
+    def __init__(self) -> None:
+        super().__init__("owner password updated, durability unconfirmed")

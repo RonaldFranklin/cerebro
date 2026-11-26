@@ -128,6 +128,8 @@ Phase 8 remains the later backlog.
 ## 🟨 Phase 5 — HTTP API and web UI
 
 Owner-approved delivery plan, dependencies, verification and adjustments: [phase-5.md](plans/phase-5.md).
+The toolchain is pinned. Local password provisioning, the durable login throttle and the browser session
+lifecycle are implemented and tested. The HTTP endpoints follow in PR 4.
 
 - Use Node 26.13.1 per [ADR-0013](adr/0013-stack-and-dependency-policy.md) (Active LTS at phase start),
   pin it (`package.json` `engines`, `.nvmrc`, CI) and record it with the frontend versions in

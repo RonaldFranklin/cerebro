@@ -564,10 +564,11 @@ def test_concurrent_admission_on_distinct_connections_survives_restart(state_pat
     assert restarted.get("another") is None
 
 
-def test_v1_state_upgrade_preserves_unattributed_proposals_and_existing_credentials(
-    state_path: Path, cipher: FernetCipher
+@pytest.mark.parametrize("version", [1, 2])
+def test_state_upgrade_preserves_proposals_and_existing_credentials(
+    state_path: Path, cipher: FernetCipher, version: int
 ) -> None:
-    # Reproduce the schema and on-disk values written by the Phase 3 state adapters.
+    # Reproduce the schemas and on-disk values written by the Phase 3 and 4 state adapters.
     state_path.parent.mkdir(mode=0o700)
     state_path.touch(mode=0o600)
     old = make_reviewable("legacy")
@@ -604,25 +605,46 @@ def test_v1_state_upgrade_preserves_unattributed_proposals_and_existing_credenti
                 None,
             ),
         )
+        if version == 2:
+            conn.executescript(
+                "ALTER TABLE proposals ADD COLUMN admission_token_id TEXT;"
+                "ALTER TABLE proposals ADD COLUMN admitted_key TEXT;"
+                "CREATE INDEX proposals_by_admission ON proposals(admission_token_id, admitted_key);"
+                "CREATE INDEX pending_by_token ON proposals(admission_token_id) "
+                "WHERE status NOT IN ('rejected','applied');"
+                "PRAGMA user_version = 2;"
+            )
+            conn.execute(
+                "UPDATE proposals SET admission_token_id = ?, admitted_key = ?", (token.id, utc_key(old.created_at))
+            )
         conn.execute("ANALYZE")
     store = SqliteProposalStore(state_path, cipher)
     assert store.get(old.id) == old
     assert SqliteTokenStore(state_path).get(token.id) == token
+    if version == 2:
+        with pytest.raises(ProposalLimitReached):
+            store.admit(
+                make_reviewable("denied"),
+                token_id=token.id,
+                limits=ProposalLimits(per_hour=1, pending=1),
+                clock=FixedClock(),
+            )
     store.admit(
-        make_reviewable("new"), token_id=token.id, limits=ProposalLimits(per_hour=1, pending=1), clock=FixedClock()
+        make_reviewable("new"), token_id=token.id, limits=ProposalLimits(per_hour=2, pending=2), clock=FixedClock()
     )
     assert len(store.find(source_agent=old.source_agent)) == 2
 
 
-def test_unrecognized_v1_file_is_left_intact(state_path: Path, cipher: FernetCipher) -> None:
+@pytest.mark.parametrize("version", [1, 2])
+def test_unrecognized_state_file_is_left_intact(state_path: Path, cipher: FernetCipher, version: int) -> None:
     state_path.parent.mkdir(mode=0o700)
     state_path.touch(mode=0o600)
     with closing(sqlite3.connect(state_path)) as db, db:
         db.execute("CREATE TABLE unrelated (value TEXT)")
         db.execute("INSERT INTO unrelated VALUES ('fixture')")
-        db.execute("PRAGMA user_version = 1")
+        db.execute(f"PRAGMA user_version = {version}")
     with pytest.raises(StateSchemaError):
         SqliteProposalStore(state_path, cipher)
     with closing(sqlite3.connect(state_path)) as db:
-        assert db.execute("PRAGMA user_version").fetchone() == (1,)
+        assert db.execute("PRAGMA user_version").fetchone() == (version,)
         assert db.execute("SELECT * FROM unrelated").fetchall() == [("fixture",)]
