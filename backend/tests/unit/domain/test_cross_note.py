@@ -81,7 +81,7 @@ def test_broken_links_in_body_related_and_superseded_by() -> None:
     }
 
 
-def test_broken_link_is_warning_for_owner_and_error_for_proposal() -> None:
+def test_broken_link_is_warning_for_owner_and_error_for_agent_write() -> None:
     hub = ref("area", is_hub=True)
     me = ref("me", hub="area", body_links=["gone"])
     findings = cross_note_findings(me, snap(hub, me))

@@ -72,6 +72,18 @@ class TestFilesystemNoteRepositoryContract(NoteRepositoryContract):
     def repo(self, git: GitRepo, root: Path, cipher: Cipher) -> NoteRepository:
         return FilesystemNoteRepository(root, git=git, cipher=cipher)
 
+    @pytest.fixture
+    def break_writes(self, root: Path) -> Callable[[], None]:
+        return lambda: (root / ".git/index.lock").touch()
+
+    @pytest.fixture
+    def edit_uncommitted(self, root: Path) -> Callable[[NoteId], None]:
+        def edit(note_id: NoteId) -> None:
+            with (root / f"notes/{note_id.value}.md").open("a") as handle:
+                handle.write("Edited by hand.\n")
+
+        return edit
+
 
 def plain(**overrides: Any) -> Note:
     return make_note(sensitivity=Sensitivity.INTERNAL, **overrides)

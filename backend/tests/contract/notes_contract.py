@@ -1,18 +1,22 @@
 """Contract for ``NoteRepository``. Phase 2 adapters subclass it and override the ``repo`` fixture."""
 
+from collections.abc import Callable
 from dataclasses import replace
 from datetime import date
 
 import pytest
 
+from cerebro.adapters.outbound.filesystem import NoteWriteError
+from cerebro.application.errors import NoteReadError
 from cerebro.application.ports import NoteChange, NoteRepository
 from cerebro.application.ports.notes import CommittedCreate
 from cerebro.domain.commit_message import AgentWriteCommit, OwnerCommit, create_request_key
 from cerebro.domain.content_hash import content_hash
-from cerebro.domain.enums import Sensitivity
+from cerebro.domain.enums import Priority, Sensitivity
 from cerebro.domain.errors import ContentConflict, InvalidValueError
 from cerebro.domain.note import NoteId
 from cerebro.domain.note_ref import NoteRef
+from cerebro.domain.vocabulary import HUB
 from tests.unit.domain.builders import make_note
 
 MESSAGE = OwnerCommit(subject="Add note: server-ssh-access")
@@ -22,6 +26,72 @@ class NoteRepositoryContract:
     @pytest.fixture
     def repo(self) -> NoteRepository:
         raise NotImplementedError
+
+    @pytest.fixture
+    def break_writes(self) -> Callable[[], None]:
+        """Make the next ``apply`` fail for a reason outside the changes it is given."""
+        raise NotImplementedError
+
+    @pytest.fixture
+    def edit_uncommitted(self) -> Callable[[NoteId], None]:
+        """Leave the file of a stored note different from the last commit."""
+        raise NotImplementedError
+
+    def test_a_failed_write_raises_and_keeps_nothing(
+        self, repo: NoteRepository, break_writes: Callable[[], None]
+    ) -> None:
+        note = make_note()
+        revision = repo.apply([NoteChange(note=note)], MESSAGE)
+        break_writes()
+        changes = [
+            NoteChange(note=replace(note, body="Lost.\n"), expected_hash=content_hash(note)),
+            NoteChange(note=make_note(id=NoteId("lost-note"))),
+        ]
+        with pytest.raises(NoteWriteError):
+            repo.apply(changes, MESSAGE)
+        assert repo.head() == revision
+        assert repo.list_notes() == (note,)
+
+    def test_an_update_that_changes_nothing_is_refused(self, repo: NoteRepository) -> None:
+        note = make_note()
+        revision = repo.apply([NoteChange(note=note)], MESSAGE)
+        with pytest.raises(NoteWriteError):
+            repo.apply([NoteChange(note=note, expected_hash=content_hash(note))], MESSAGE)
+        assert repo.head() == revision
+
+    def test_a_note_cannot_move_to_another_folder(self, repo: NoteRepository) -> None:
+        note = make_note()
+        revision = repo.apply([NoteChange(note=note)], MESSAGE)
+        hub = replace(note, type=HUB, priority=Priority.P1, hub=None)
+        with pytest.raises(InvalidValueError):
+            repo.apply([NoteChange(note=hub, expected_hash=content_hash(note))], MESSAGE)
+        assert repo.head() == revision
+        assert repo.get(note.id) == note
+
+    def test_an_uncommitted_note_is_refused_and_reported_while_others_are_served(
+        self, repo: NoteRepository, edit_uncommitted: Callable[[NoteId], None]
+    ) -> None:
+        # Plaintext files: appending to an encrypted one would corrupt it instead of merely editing it.
+        edited, other = (
+            make_note(id=NoteId(name), sensitivity=Sensitivity.INTERNAL) for name in ("edited-note", "other-note")
+        )
+        revision = repo.apply([NoteChange(note=edited), NoteChange(note=other)], MESSAGE)
+        edit_uncommitted(edited.id)
+        overwrite = NoteChange(note=replace(edited, body="Overwritten.\n"), expected_hash=content_hash(edited))
+        # A conflict when the edit changed the note's content, otherwise a refused write.
+        with pytest.raises((ContentConflict, NoteWriteError)):
+            repo.apply([overwrite], MESSAGE)
+        assert repo.head() == revision
+        with pytest.raises(NoteReadError):
+            repo.get(edited.id)
+        with pytest.raises(NoteReadError):
+            repo.list_notes()
+        with pytest.raises(NoteReadError):
+            repo.list_refs()
+        scan = repo.scan()
+        assert (scan.notes, scan.stable) == ((other,), False)
+        assert [problem.path for problem in scan.problems] == ["notes/edited-note.md"]
+        assert repo.get(other.id) == other
 
     def test_create_record_returns_the_original_note_after_later_commits(self, repo: NoteRepository) -> None:
         note = make_note()

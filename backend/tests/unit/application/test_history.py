@@ -47,6 +47,19 @@ def test_visibility_of_each_version_is_required_for_detail_and_listing(hidden: s
         history.detail(HistoryRequest(port.revision), owner)
 
 
+@pytest.mark.parametrize("broken", ["revision", "parent"])
+def test_an_unreadable_version_is_left_out_of_the_list_and_unavailable_in_detail(broken: str) -> None:
+    world = standard_world()
+    note = world.notes.get(NoteId("server-ssh-access"))
+    assert note
+    port = FakeHistory(note, replace(note, body="After."))
+    port.unreadable.add(getattr(port, broken))
+    history = OwnerHistory(world.notes, port)
+    assert history.list(ctx(owner=True)) == ()
+    with pytest.raises(ChangeUnavailable):
+        history.detail(HistoryRequest(port.revision), ctx(owner=True))
+
+
 def _detail(before_body: str, after_body: str) -> ChangeDetail:
     world = standard_world()
     base = make_note(id=NoteId("server-ssh-access"), sensitivity=Sensitivity.INTERNAL, body=before_body)

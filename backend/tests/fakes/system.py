@@ -68,14 +68,4 @@ class ReversingCipher:
         return plaintext
 
 
-class RecordingVersionControl:
-    """Counts pushes."""
-
-    def __init__(self) -> None:
-        self.pushes = 0
-
-    def push(self) -> None:
-        self.pushes += 1
-
-
-__all__ = ["START", "FixedClock", "RecordingVersionControl", "ReversingCipher", "SequentialIdGenerator"]
+__all__ = ["START", "FixedClock", "ReversingCipher", "SequentialIdGenerator"]

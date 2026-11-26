@@ -9,7 +9,6 @@ from cerebro.application.dto import HealthReportRequest, SearchNotesRequest
 from cerebro.application.errors import (
     AlreadyExists,
     NoteNotFound,
-    PermissionDenied,
     SectionNotFound,
     TokenNotFound,
 )
@@ -80,7 +79,6 @@ RAISING: list[tuple[str, Callable[[], Any]]] = [
             created_at=SECRET,  # type: ignore[arg-type]
         ),
     ),
-    ("permission denied", lambda: (_ for _ in ()).throw(PermissionDenied("read"))),
     ("note not found", lambda: (_ for _ in ()).throw(NoteNotFound(NoteId(SLUG_SECRET)))),
     ("token not found", lambda: (_ for _ in ()).throw(TokenNotFound(SECRET))),
     ("already exists", lambda: (_ for _ in ()).throw(AlreadyExists("token", SECRET))),
@@ -95,12 +93,20 @@ def test_exceptions_never_carry_the_received_value(build: Callable[[], Any]) -> 
     _assert_clean(*_exception_texts(excinfo.value))
 
 
-@pytest.mark.parametrize("field", ["id", "title", "type", "area", "priority", "sensitivity", "status", "summary"])
-@pytest.mark.parametrize("value", [SECRET, SLUG_SECRET, 123, True, [SECRET], {SECRET: 1}])
+_FIELDS = ("id", "title", "type", "area", "priority", "sensitivity", "status", "summary")
+_VALUES: tuple[object, ...] = (SECRET, SLUG_SECRET, 123, True, [SECRET], {SECRET: 1})
+# Valid field values: they parse, so there is no report to inspect.
+_ACCEPTED: tuple[tuple[str, object], ...] = (
+    *((field, SLUG_SECRET) for field in ("id", "title", "type", "area", "summary")),
+    *((field, SECRET) for field in ("title", "summary")),
+)
+
+
+@pytest.mark.parametrize(("field", "value"), [(f, v) for f in _FIELDS for v in _VALUES if (f, v) not in _ACCEPTED])
 def test_frontmatter_reports_never_carry_the_received_value(field: str, value: object) -> None:
-    result = parse_note(make_raw(**{field: value}), "body")
-    if isinstance(result, ValidationReport):
-        _assert_clean(*(v.message for v in result.violations), *(v.field for v in result.violations))
+    report = parse_note(make_raw(**{field: value}), "body")
+    assert isinstance(report, ValidationReport)
+    _assert_clean(*(v.message for v in report.violations), *(v.field for v in report.violations))
 
 
 def test_frontmatter_unknown_and_date_fields_never_echo() -> None:
@@ -112,8 +118,10 @@ def test_frontmatter_unknown_and_date_fields_never_echo() -> None:
         report = parse_note(raw, "body")
         assert isinstance(report, ValidationReport)
         _assert_clean(*(v.message for v in report.violations), *(v.field for v in report.violations))
-    assert isinstance(parse_note([SECRET], "body"), ValidationReport)
-    assert isinstance(parse_note(SECRET, "body"), ValidationReport)
+    for raw_value in ([SECRET], SECRET):
+        report = parse_note(raw_value, "body")
+        assert isinstance(report, ValidationReport)
+        _assert_clean(*(v.message for v in report.violations), *(v.field for v in report.violations))
 
 
 def test_validation_findings_never_carry_received_ids_or_vocabulary() -> None:
