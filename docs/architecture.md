@@ -111,8 +111,8 @@ Recent changes scans at most 32 first-parent revisions and shows up to 20 attrib
 The application checks current and historical visibility before returning the actor, timestamp, note and
 unified diff. Whole documents are compared, and only the returned diff is bounded (16,384 characters), with
 clipping marked as truncated. When the changed regions of both versions are too large to align line by line (their
-line counts multiply to more than 4,000 x 4,000), the region is shown as removed and then added. Git retains the
-complete history.
+line counts multiply to more than 4,000 x 4,000), the region is shown as removed and then added, with the removed
+lines limited to half of the output. Git retains the complete history.
 
 Ports know nothing about access: use cases apply the ceiling and raise `NoteNotFound` for hidden notes exactly as
 for missing ones, while the two indexes filter by the mandatory ceiling argument. Application exceptions live in

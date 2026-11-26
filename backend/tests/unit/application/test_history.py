@@ -98,8 +98,27 @@ def test_a_rewrite_too_large_to_align_is_shown_as_one_replacement() -> None:
     result = _detail(before, after)
     body = result.diff.split("@@\n", 1)[1].splitlines()
     assert body[0] == "-old"
+    assert "+new" in body
     assert " shared" not in body
     assert result.truncated
+    assert len(result.diff) <= MAX_DIFF_CHARS
+
+
+def test_a_clipped_removed_side_is_marked_truncated_even_when_the_additions_are_short() -> None:
+    result = _detail("a long removed line\n" * 4100, "n\n" * 4001)
+    assert "+n" in result.diff.splitlines()
+    assert result.truncated
+
+
+@pytest.mark.parametrize(
+    ("before", "after"),
+    [("Text.", "Text.\n"), ("Text.\n", "Text."), ("One.\r\nTwo.", "One.\nTwo.")],
+    ids=["newline-added", "newline-removed", "line-ending"],
+)
+def test_line_ending_changes_are_not_an_empty_diff(before: str, after: str) -> None:
+    result = _detail(before, after)
+    assert result.diff
+    assert not result.truncated
 
 
 def test_links_far_into_a_long_note_are_redacted() -> None:

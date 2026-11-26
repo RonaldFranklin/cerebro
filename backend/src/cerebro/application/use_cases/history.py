@@ -3,7 +3,7 @@
 import difflib
 import json
 import re
-from collections.abc import Callable, Iterator
+from collections.abc import Callable
 from contextlib import AbstractContextManager, nullcontext
 from dataclasses import dataclass
 from functools import lru_cache
@@ -85,8 +85,10 @@ class OwnerHistory:
         if versions.before is not None and versions.info.parent:
             before = _lines(versions.before, self._visibility(versions.info.parent, ctx))
         after = _lines(versions.after, self._visibility(revision, ctx))
-        diff = "\n".join(_unified_diff(before, after))
-        return ChangeDetail(self._summary(versions, ctx), diff[:MAX_DIFF_CHARS], len(diff) > MAX_DIFF_CHARS)
+        diff, clipped = _unified_diff(before, after)
+        return ChangeDetail(
+            self._summary(versions, ctx), diff[:MAX_DIFF_CHARS], clipped or len(diff) > MAX_DIFF_CHARS
+        )
 
     def _readable_current(self, note_id: NoteId) -> Note | None:
         try:
@@ -147,11 +149,15 @@ def _lines(note: Note, visible: Callable[[NoteId], bool]) -> list[str]:
         raw[key] = redact_wikilinks(str(raw[key]), visible)
     frontmatter = [f"{key}: {json.dumps(value, ensure_ascii=False, default=str)}" for key, value in raw.items()]
     document = "\n".join(["---", *frontmatter, "---", redact_wikilinks(note.body, visible)])
-    return document.splitlines()
+    # Not splitlines(): a change of final newline or of line ending must remain a difference.
+    return document.split("\n")
 
 
-def _unified_diff(before: list[str], after: list[str]) -> Iterator[str]:
-    """Unified diff of two whole documents. Only the region between their common ends is compared."""
+def _unified_diff(before: list[str], after: list[str]) -> tuple[str, bool]:
+    """Unified diff of two whole documents, and whether removed lines were already left out of it.
+
+    Only the region between the common ends of the documents is compared.
+    """
     shortest = min(len(before), len(after))
     head = 0
     while head < shortest and before[head] == after[head]:
@@ -161,12 +167,15 @@ def _unified_diff(before: list[str], after: list[str]) -> Iterator[str]:
         tail += 1
     old, new = len(before) - head - tail, len(after) - head - tail
     if old * new > _MAX_COMPARISONS:
-        yield from ("--- before", "+++ after", f"@@ -{head + 1},{old} +{head + 1},{new} @@")
-        yield from (f"-{line}" for line in before[head : head + old])
-        yield from (f"+{line}" for line in after[head : head + new])
-        return
+        header = ["--- before", "+++ after", f"@@ -{head + 1},{old} +{head + 1},{new} @@"]
+        removed = "\n".join(f"-{line}" for line in before[head : head + old])
+        added = (f"+{line}" for line in after[head : head + new])
+        # Removals come first, so they get at most half of the output to leave room for the additions.
+        half = MAX_DIFF_CHARS // 2
+        return "\n".join([*header, removed[:half], *added]), len(removed) > half
     skipped = max(head - _CONTEXT_LINES, 0)
     dropped = max(tail - _CONTEXT_LINES, 0)
+    lines = []
     for line in difflib.unified_diff(
         before[skipped : len(before) - dropped],
         after[skipped : len(after) - dropped],
@@ -178,4 +187,5 @@ def _unified_diff(before: list[str], after: list[str]) -> Iterator[str]:
         if line.startswith("@@"):
             # Content lines carry a one-character prefix, so only hunk headers start like this.
             line = _HUNK_START.sub(lambda start: f"{start[1]}{int(start[2]) + skipped}", line)
-        yield line
+        lines.append(line)
+    return "\n".join(lines), False
