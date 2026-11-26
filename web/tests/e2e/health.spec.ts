@@ -52,11 +52,13 @@ test("private health findings link to their notes and stay off the public listen
   await expect(lower.getByText("This view requires the private listener.")).toBeVisible();
   await expect(lower.getByRole("link", {name:"Health", exact:true})).toHaveCount(0);
   expect(requests).toEqual([]);
-  const denied = await lower.evaluate(async () => {
-    const response = await fetch("/api/health", {headers:{"X-Forwarded-Host":"private.example.invalid","X-Forwarded-Proto":"https"}});
-    return {status:response.status, text:await response.text()};
-  });
-  expect(denied.status).toBe(403);
-  expect(denied.text).not.toContain("fixture-vault-catalog");
+  for (const headers of [undefined, {"X-Forwarded-Host":"private.example.invalid","X-Forwarded-Proto":"https"}]) {
+    const denied = await lower.evaluate(async extra => {
+      const response = await fetch("/api/health", {headers:extra});
+      return {status:response.status, text:await response.text()};
+    }, headers);
+    expect(denied.status).toBe(403);
+    expect(denied.text).not.toContain("fixture-vault-catalog");
+  }
   await expect(lower.locator("body")).not.toContainText("fixture-vault-catalog");
 });

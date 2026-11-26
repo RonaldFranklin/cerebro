@@ -29,7 +29,7 @@ test("approve the inspected proposal and explicitly save a note under the produc
   await page.getByRole("link",{name:"SSH access",exact:true}).click();
   await expect(page.getByRole("heading",{name:"SSH access",exact:true})).toBeVisible();
   const prose = page.locator(".markdown-body");
-  await expect(prose).toHaveAttribute("lang", /^[a-z]{2,3}(?:-[A-Za-z0-9]+)*$/);
+  await expect(prose).toHaveAttribute("lang", "en");
   await expect(prose).toHaveAttribute("translate", "yes");
   const command = prose.locator("pre code");
   await expect(command).toHaveText(/ssh -V/);
