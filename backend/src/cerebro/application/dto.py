@@ -7,7 +7,7 @@ note is read on purpose: they are never the ``Note`` entity, so a field added to
 from dataclasses import dataclass, field, replace
 from datetime import date, datetime
 from enum import StrEnum
-from typing import Final
+from typing import Final, Literal
 
 from cerebro.application.ports.graph import GraphSlice
 from cerebro.application.ports.search import MAX_LIMIT, SearchHit
@@ -396,15 +396,21 @@ class ProposalOutcome:
     validation: ValidationReport | None = None
     decision: Decision | None = None
     conflict: bool = False
+    revision: int | None = None
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class ProposalIdRequest:
-    """Request of the steps that act on a stored proposal: validate, curate and apply."""
+    """Apply optionally requires the approved revision inspected by the owner."""
 
     proposal_id: str
+    expected_revision: int | None = None
 
     def __post_init__(self) -> None:
+        if self.expected_revision is not None and (
+            type(self.expected_revision) is not int or self.expected_revision < 0
+        ):
+            raise InvalidValueError("expected_revision", "expected a nonnegative integer")
         if not isinstance(self.proposal_id, str) or not self.proposal_id:
             raise InvalidValueError("proposal_id", "expected a non-empty string")
 
@@ -429,6 +435,11 @@ class InboxItem:
 class InboxPreview:
     decision: Decision | None
     candidate: NoteView | None
+    base: NoteView | None
+    base_label: Literal["empty", "base", "current"]
+    stale_base: bool
+    validation: ValidationReport | None
+    historical_validation: ValidationReport | None
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -453,8 +464,10 @@ class ReviewProposalRequest:
     reason: str | None = None
     override: Decision | None = None
     expected_revision: int | None = None
+    require_fresh_base: bool = False
 
     def __post_init__(self) -> None:
+        _require_bool(self.require_fresh_base, "require_fresh_base")
         if self.expected_revision is not None and (
             type(self.expected_revision) is not int or self.expected_revision < 0
         ):

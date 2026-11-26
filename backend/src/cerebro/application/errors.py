@@ -5,6 +5,7 @@ Inbound adapters map each of these to their own error format in one place. Domai
 """
 
 from cerebro.domain.note import NoteId
+from cerebro.domain.report import ValidationReport
 
 
 class ApplicationError(Exception):
@@ -86,6 +87,12 @@ class ProposalNotApplicable(ApplicationError):  # noqa: N818
     def __init__(self, reason: str) -> None:
         super().__init__(f"proposal cannot be applied: {reason}")
         self.reason = reason
+
+
+class AmendmentValidationError(ProposalNotApplicable):
+    def __init__(self, report: ValidationReport) -> None:
+        super().__init__("amendment failed validation")
+        self.report = report
 
 
 class DecryptionError(ApplicationError):

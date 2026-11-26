@@ -70,6 +70,8 @@ class ApplyProposal:
         proposal = self._proposals.get(request.proposal_id)
         if proposal is None:
             raise ProposalNotFound(request.proposal_id)
+        if request.expected_revision is not None and request.expected_revision != proposal.revision:
+            raise ProposalConflict(proposal.id)
         if proposal.status is ProposalStatus.APPLIED:
             return ApplyProposalResult(
                 proposal_id=proposal.id,
@@ -86,8 +88,7 @@ class ApplyProposal:
         existing = self._notes.get(note_id) if is_create else None
         if existing is not None and not _visible(existing, ctx):
             raise NoteNotFound(note_id)
-        today = self._clock.now().date()
-        candidate, problems = build_candidate(proposal, note_id=note_id, base=base, today=today)
+        candidate, problems = build_candidate(proposal, note_id=note_id, base=base)
         if candidate is None:
             return self._send_back(proposal, ApplyOutcome.INVALID, PROPOSAL_POLICY.report(problems), note_id)
         if not ctx.ceiling.allows(candidate.sensitivity):

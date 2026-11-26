@@ -4,7 +4,7 @@
 
 ## 1. Delivery sequence
 
-PR 1 records the decision in [ADR-0019](../adr/0019-owner-browser-api.md). PR 2 pins the approved inventory. PR 3 implements owner authentication. PR 4 mounts the authenticated browser service. PR 5 implements browser reads. PRs 6–11 are planned. Start each branch from current main after the preceding PR merges. The owner authorizes merges for all eleven PRs, including security and dependency changes, with independent review, findings resolved, completed green CI and scripts/merge-pr.sh. The dependency, ADR and privileged setup boundaries are recorded in §6.
+PR 1 records the decision in [ADR-0019](../adr/0019-owner-browser-api.md). PR 2 pins the approved inventory. PR 3 implements owner authentication. PR 4 mounts the authenticated browser service. PR 5 implements browser reads. PR 6 implements private owner writes. PRs 7–11 are planned. Start each branch from current main after the preceding PR merges. The owner authorizes merges for all eleven PRs, including security and dependency changes, with independent review, findings resolved, completed green CI and scripts/merge-pr.sh. The dependency, ADR and privileged setup boundaries are recorded in §6.
 
 | PR and branch | Deliverable | Verification before merge |
 |---|---|---|
@@ -305,3 +305,27 @@ Graph options can be derived from the caller's unfiltered graph. Unknown and inv
 return the same 404. Health returns 403 on the public listener. The SQLite graph projection advances
 to version 3 and rebuilds from the content repository on startup. The state database and MCP read
 response fields retain their existing formats.
+
+### PR 6 delivery record
+
+Owner writes require the restricted listener, a valid session, exact Origin, JSON and the session CSRF
+header. PUT `/api/notes/{id}` takes `expected_hash` from the complete private read and a `note` object
+containing the editable metadata and Markdown. The path supplies the immutable ID. A successful edit
+returns the new content hash, commit, validation and warnings. A stale edit returns 409 without changing
+the note. Validation failures return 422. The editor can retain the draft and reload the current revision.
+
+GET `/api/inbox` returns proposal metadata in `items`. GET `/api/inbox/{id}` adds a reviewable candidate,
+its base, the curator decision, current validation and historical validation, plus `diff.fields` and a unified Markdown `diff.body`.
+The diff compares at most 512 lines and 32,768 characters on each side, caps the returned text at
+32,768 characters and marks clipping through `diff.truncated`. The full base and candidate remain available.
+A create has an empty base. When the stored hash differs from the live target, the preview labels that
+target as current and sets `stale_base`. The preview reports validation as indeterminate when that base
+prevents assessment. A missing target carries structural errors. Candidate note dates use the durable
+submission date so reopening or resuming on a later day preserves the displayed change. Rejected proposal
+bodies are unavailable.
+
+POST to `/api/inbox/{id}/amend`, `/approve`, `/resume` or `/reject` with the inspected `revision`.
+Amend also takes a replacement Markdown `body`. Reject requires a `reason`. Approval rechecks the
+proposal and its target, then applies the approved revision under the writer lock. If interrupted, reload
+the listing and resume the approved revision. Applying an already-applied current revision returns
+`already_applied`. Successful changes report the commit and any restricted-history warning.

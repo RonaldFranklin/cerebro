@@ -4,7 +4,13 @@ from dataclasses import replace
 
 from cerebro.application.access import require_owner
 from cerebro.application.dto import AmendmentResult, AmendProposalRequest
-from cerebro.application.errors import PermissionDenied, ProposalConflict, ProposalNotApplicable, ProposalNotFound
+from cerebro.application.errors import (
+    AmendmentValidationError,
+    PermissionDenied,
+    ProposalConflict,
+    ProposalNotApplicable,
+    ProposalNotFound,
+)
 from cerebro.application.ports.proposals import ProposalStore
 from cerebro.application.ports.system import Clock
 from cerebro.application.proposal_support import commit_target
@@ -37,8 +43,8 @@ class AmendProposal:
             raise ProposalNotApplicable("only reviewable creates and updates may be amended")
         now = self._clock.now()
         candidate = replace(proposal, content=replace(proposal.content, body=request.body), updated_at=now)
-        report = self._validator.assess(candidate, ctx, now.date(), candidate_id=commit_target(candidate))
+        report = self._validator.assess(candidate, ctx, candidate_id=commit_target(candidate))
         if not report.ok:
-            raise ProposalNotApplicable("amendment failed validation")
+            raise AmendmentValidationError(report)
         saved = self._proposals.save(replace(candidate, validation=report), expected_revision=request.expected_revision)
         return AmendmentResult(proposal_id=saved.id, revision=saved.revision)

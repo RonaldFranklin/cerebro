@@ -12,6 +12,7 @@ from datetime import date
 from cerebro.application.errors import ProposalNotApplicable
 from cerebro.application.ports.notes import NoteRepository
 from cerebro.domain.budgets import core_budget_findings, word_count
+from cerebro.domain.content_hash import content_hash
 from cerebro.domain.cross_note import cross_note_findings, inbound_link_sensitivity_findings
 from cerebro.domain.decision import DecisionKind
 from cerebro.domain.enums import Priority, Status
@@ -68,12 +69,18 @@ def commit_target(proposal: Proposal) -> NoteId:
     return proposal.target
 
 
+def stale_proposal_base(proposal: Proposal, current: Note | None) -> bool:
+    if proposal.kind is ProposalKind.CREATE:
+        return current is not None
+    return current is None or content_hash(current) != proposal.base_hash
+
+
 def _missing(field: str) -> Finding:
     return Finding(code=ViolationCode.MISSING_FIELD, field=field, message="required to create a note")
 
 
 def build_candidate(
-    proposal: Proposal, *, note_id: NoteId | None, base: Note | None, today: date
+    proposal: Proposal, *, note_id: NoteId | None, base: Note | None
 ) -> tuple[Note | None, tuple[Finding, ...]]:
     """The note the proposal would write, or the findings that stop it from being built.
 
@@ -83,6 +90,8 @@ def build_candidate(
     the body and any metadata given and adds ``related``; ``link`` only adds ``related``; ``deprecate`` makes the
     note ``superseded`` (if ``superseded_by`` is given) or ``archived``. ``related`` ids are only ever added.
     """
+    # The persisted submission date binds validation, preview and a later apply to the same note.
+    today = proposal.created_at.date()
     c = proposal.content
     if proposal.kind is ProposalKind.CREATE:
         return _create(c, note_id, today)
