@@ -29,9 +29,9 @@ Do not contradict an ADR; propose a new ADR that supersedes it instead.
 
 ## 3. Current status
 
-Phases 0-5 and 7 are delivered. Phase 6 (deploy) is next, beginning with Docker validation in WSL. Some owner
-manual checkpoints are still pending. Details: [`docs/roadmap.md`](docs/roadmap.md). Update this section and the
-roadmap whenever a phase starts or finishes.
+Phases 0-5 and 7 are delivered. Phase 6 (deploy) is in progress. The local preparation and WSL validation
+are tracked in [the phase plan](docs/plans/phase-6.md). The server agent installs hml and prod.
+See [the roadmap](docs/roadmap.md) for pending checkpoints. Update this section and the roadmap whenever a phase starts or finishes.
 
 ## 4. Non-negotiable rules
 
