@@ -16,6 +16,7 @@ from cerebro.application.agent_write import AgentWriteRequest, AgentWriteResult,
 from cerebro.application.dto import (
     GetNeighborsRequest,
     GetOverviewRequest,
+    GetVocabularyRequest,
     GraphView,
     NoteView,
     Overview,
@@ -34,13 +35,7 @@ from cerebro.domain.access import AccessContext, Scope
 from cerebro.domain.enums import Priority, Status
 from cerebro.domain.errors import DomainError
 from cerebro.domain.note import NoteId
-from cerebro.domain.vocabulary import Area, NoteType
-
-
-@dataclass(frozen=True, slots=True)
-class WriteGuideRequest:
-    """Fetch the static guidance without reading note content."""
-
+from cerebro.domain.vocabulary import Area, NoteType, Vocabulary
 
 type ToolRequest = (
     GetOverviewRequest
@@ -48,7 +43,7 @@ type ToolRequest = (
     | ReadNoteRequest
     | GetNeighborsRequest
     | AgentWriteRequest
-    | WriteGuideRequest
+    | GetVocabularyRequest
 )
 
 
@@ -77,7 +72,7 @@ _TOOLS = {
     tool.name: tool
     for tool in (
         WRITE_TOOL,
-        _tool("cerebro_write_guide", "Read the writing rules before creating or updating a note.", {}),
+        _tool("cerebro_write_guide", "Read the writing rules, areas and types before writing a note.", {}),
         _tool("cerebro_overview", "Read core notes and visible hubs.", {}),
         _tool(
             "cerebro_search",
@@ -144,7 +139,7 @@ def parse_tool(name: str, arguments: object) -> ToolRequest:
 
     try:
         if name == "cerebro_write_guide":
-            return WriteGuideRequest()
+            return GetVocabularyRequest()
         if name == "cerebro_overview":
             return GetOverviewRequest()
         if name == "cerebro_search":
@@ -207,6 +202,7 @@ class MCPTools:
     get_neighbors: ContextUseCase[GetNeighborsRequest, GraphView]
 
     agent_write: ContextUseCase[AgentWriteRequest, AgentWriteResult]
+    get_vocabulary: ContextUseCase[GetVocabularyRequest, Vocabulary]
 
     def list_tools(self, ctx: AccessContext) -> types.ListToolsResult:
         if ctx.is_owner:
@@ -237,8 +233,13 @@ class MCPTools:
                     "findings": _findings(receipt.findings),
                     "warnings": [{"code": w.code.value, "message": w.message} for w in receipt.warnings],
                 }
-            elif isinstance(request, WriteGuideRequest):
-                output = {"guide": read_write_guide()}
+            elif isinstance(request, GetVocabularyRequest):
+                vocabulary = self.get_vocabulary.execute(request, ctx)
+                output = {
+                    "guide": read_write_guide(),
+                    "areas": sorted(area.value for area in vocabulary.areas),
+                    "types": sorted(kind.value for kind in vocabulary.types),
+                }
             else:
                 output = _neighbors(self.get_neighbors.execute(request, ctx))
             return types.CallToolResult(

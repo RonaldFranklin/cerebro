@@ -48,6 +48,7 @@ from cerebro.application.dto import (
     GetGraphRequest,
     GetNeighborsRequest,
     GetOverviewRequest,
+    GetVocabularyRequest,
     GraphView,
     HealthReportRequest,
     HealthReportResult,
@@ -83,6 +84,7 @@ from cerebro.application.use_cases import (
     GetGraph,
     GetNeighbors,
     GetOverview,
+    GetVocabulary,
     HealthReport,
     IssueAgentToken,
     ListAgentTokens,
@@ -178,6 +180,7 @@ class UseCases:
     read_note: ContextUseCase[ReadNoteRequest, NoteView]
     get_neighbors: ContextUseCase[GetNeighborsRequest, GraphView]
     get_graph: ContextUseCase[GetGraphRequest, GraphView]
+    get_vocabulary: ContextUseCase[GetVocabularyRequest, Vocabulary]
     agent_write: ContextUseCase[AgentWriteRequest, AgentWriteResult]
     history: OwnerHistory
     owner_edit_note: ContextUseCase[OwnerEditNoteRequest, OwnerEditNoteResult]
@@ -236,6 +239,7 @@ class Container:
             read_note=Refreshed(ReadNote(notes, graph), fresh),
             get_neighbors=Refreshed(GetNeighbors(notes, graph), fresh),
             get_graph=Refreshed(GetGraph(graph), fresh),
+            get_vocabulary=GetVocabulary(vocabulary),
             history=OwnerHistory(notes, GitChangeHistory(git, self.cipher), lock.held),
             owner_edit_note=Serialized(
                 Refreshed(OwnerEditNote(notes, search, graph, clock, vocabulary), fresh_locked), lock

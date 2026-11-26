@@ -136,6 +136,14 @@ class GraphView:
         return cls(nodes=nodes, edges=edges, center=center)
 
 
+# --- GetVocabulary --------------------------------------------------------------------------------------------
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class GetVocabularyRequest:
+    """No parameters: the vocabulary of the content repository."""
+
+
 # --- GetOverview ----------------------------------------------------------------------------------------------
 
 

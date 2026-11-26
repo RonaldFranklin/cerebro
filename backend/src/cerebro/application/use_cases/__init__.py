@@ -4,6 +4,7 @@ from cerebro.application.use_cases.authenticate_token import AuthenticateToken
 from cerebro.application.use_cases.get_graph import GetGraph
 from cerebro.application.use_cases.get_neighbors import GetNeighbors
 from cerebro.application.use_cases.get_overview import GetOverview
+from cerebro.application.use_cases.get_vocabulary import GetVocabulary
 from cerebro.application.use_cases.health_report import HealthReport
 from cerebro.application.use_cases.issue_agent_token import IssueAgentToken
 from cerebro.application.use_cases.list_agent_tokens import ListAgentTokens
@@ -18,6 +19,7 @@ __all__ = [
     "GetGraph",
     "GetNeighbors",
     "GetOverview",
+    "GetVocabulary",
     "HealthReport",
     "IssueAgentToken",
     "ListAgentTokens",
