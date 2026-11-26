@@ -1,16 +1,6 @@
-import { expect, type Page } from "@playwright/test";
+import { expect } from "@playwright/test";
 import { execFileSync } from "node:child_process";
-import { fileURLToPath } from "node:url";
 import { test } from "./fixture";
-
-async function capture(page: Page, filename: string) {
-  if (process.env.CAPTURE_SCREENSHOTS !== "1") return;
-  await page.evaluate(() => document.fonts.ready);
-  await page.screenshot({
-    path:fileURLToPath(new URL("../../../docs/screenshots/phase-5/" + filename, import.meta.url)),
-    fullPage:true, animations:"disabled",
-  });
-}
 
 test("inspect an agent’s committed note and explicitly save an owner edit under the production CSP", async ({page, demo}) => {
   const violations: string[] = [];
@@ -66,10 +56,8 @@ test("inspect an agent’s committed note and explicitly save an owner edit unde
   expect(geometry.height).toBeGreaterThan(90);
   expect(["pre", "pre-wrap", "break-spaces"]).toContain(geometry.content);
   expect(geometry.nonce).toBe(true);
-  await capture(page, "10-editor.png");
   await page.getByRole("button",{name:"Preview",exact:true}).click();
   await expect(page.locator(".editor-preview")).toContainText("Verified in the disposable browser fixture.");
-  await capture(page, "10-preview.png");
   const save = page.waitForResponse(res => res.request().method() === "PUT" && res.url().endsWith("/api/notes/server-ssh-access"));
   await page.getByRole("button",{name:"Save changes",exact:true}).click();
   const saved = await save;
@@ -108,7 +96,6 @@ test("a concurrent owner edit survives inspection of a conflicted draft", async 
   await expect(body).toContainText("Pending owner amendment.");
   await page.getByRole("button",{name:"Reload stored note",exact:true}).click();
   await expect(page.getByRole("button",{name:"Keep my changes",exact:true})).toBeVisible();
-  await capture(page, "10-conflict.png");
   expect(execFileSync("git",["-C",demo.content_repo,"rev-parse","HEAD"],{encoding:"utf8"}).trim()).toBe(before);
   await page.getByRole("button",{name:"Keep my changes",exact:true}).click();
   await expect(page.getByLabel("Summary",{exact:true})).toHaveValue(summary);

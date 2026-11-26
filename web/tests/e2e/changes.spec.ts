@@ -1,5 +1,4 @@
 import { expect } from "@playwright/test";
-import { fileURLToPath } from "node:url";
 import { test } from "./fixture";
 
 test("the private owner can trace the agent update from history to its note", async ({page, context, demo}) => {
@@ -19,11 +18,6 @@ test("the private owner can trace the agent update from history to its note", as
   const detail = await response;
   expect(detail.headers()["cache-control"]).toContain("no-store");
   await expect(page.getByRole("region", {name:"Commit diff"})).toContainText("Collect the infrastructure handover notes here.");
-  if (process.env.CAPTURE_SCREENSHOTS === "1") {
-    await page.evaluate(() => document.fonts.ready);
-    await page.screenshot({path:fileURLToPath(new URL("../../../docs/screenshots/phase-7/recent-changes.png", import.meta.url)),
-      fullPage:true, animations:"disabled"});
-  }
   await page.getByRole("link", {name:"Open note"}).click();
   await expect(page.getByRole("heading", {name:"Island hub",exact:true})).toBeVisible();
   await expect(page.getByText("Collect the infrastructure handover notes here.", {exact:false}).first()).toBeVisible();
