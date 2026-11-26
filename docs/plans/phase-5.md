@@ -177,15 +177,29 @@ For a fresh WSL Ubuntu shell with curl, tar, xz and sha256sum, install the offic
 )
 ```
 
-Stop if verification fails. Select the installed Node in each new shell, or use the nvm selection above. Install the pinned package manager locally with the bundled npm.
+Stop if verification fails. Select the installed Node in each new shell, or use the nvm selection above. Install the native pnpm binary for glibc-based WSL Ubuntu. Verify the archive against the SHA-512 digest from the committed lock before extracting it.
 
 ```bash
 case "$(uname -m)" in x86_64) arch=x64 ;; aarch64) arch=arm64 ;; esac
 export PATH="$HOME/.local/opt/node-v26.13.1-linux-$arch/bin:$PATH"   # archive installation
 node --version                                                    # v26.13.1
 pnpm_dir="$HOME/.local/opt/cerebro-pnpm-12.22.0"
-npm install --prefix "$pnpm_dir" --before=2026-11-19T00:00:00Z --no-audit --no-fund pnpm@12.22.0
-export PATH="$pnpm_dir/node_modules/.bin:$PATH"
+(
+  set -eu
+  case "$arch" in
+    x64) digest=881019018098a28c3a83468e6ca9a9aca9080463bbda62b82857ea22b63b8c874746401b37aeed70dd3381a3c4dfd50011d31cae42e12f012697e54cc5ff21f1 ;;
+    arm64) digest=d4c67719f14215c92ab8024fe9667df392eb77930fe58340eef3d91fbf56fb5415cf0979e5f54c76c00e7337469c5794e23a8cc04467935dbdff583dcd8c610f ;;
+    *) exit 1 ;;
+  esac
+  tmp="$(mktemp -d)"
+  trap 'rm -rf -- "$tmp"' EXIT
+  cd "$tmp"
+  curl -fsSLo pnpm.tgz "https://registry.npmjs.org/@pnpm/exe.linux-$arch/-/exe.linux-$arch-12.22.0.tgz"
+  printf '%s  pnpm.tgz\n' "$digest" | sha512sum -c -
+  mkdir -p "$pnpm_dir"
+  tar -xzf pnpm.tgz --strip-components=1 -C "$pnpm_dir" package/pnpm
+)
+export PATH="$pnpm_dir:$PATH"
 pnpm --version                                                    # 12.22.0
 ```
 
@@ -227,5 +241,5 @@ the Chromium system packages were installed. Node and pnpm were installed under 
 The Linux x64 browser downloads matched the three URLs and dates in §4. The committed web lock
 matches the approved inventory, and the Python lock adds only FastAPI and annotated-doc.
 TypeScript 7 checks Vite, Playwright and CodeMirror types in strict mode. The native Vite build
-bundles a Markdown editor and Playwright opens it in Chromium. Run this compatibility check with
+bundles a Markdown editor. Playwright opens it over fixture HTTPS and verifies editor styling under the browser CSP. Run this compatibility check with
 `cd web && pnpm install --frozen-lockfile && pnpm exec playwright install chromium && pnpm run test:toolchain`.

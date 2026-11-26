@@ -66,10 +66,12 @@ jobs:
           echo "5c063e46bab0fbc1c17cc445d7ff129cbdcd0471be6ed83b6ab864f8143bc864  $archive" | sha256sum -c -
           tar -xJf "$archive"
           node_bin="$RUNNER_TEMP/node-v${version}-linux-x64/bin"
-          export PATH="$node_bin:$PATH"
-          npm install --prefix "$RUNNER_TEMP/pnpm" --before=2026-11-19T00:00:00Z --no-audit --no-fund pnpm@12.22.0
+          curl -fsSLo pnpm.tgz --retry 3 "https://registry.npmjs.org/@pnpm/exe.linux-x64/-/exe.linux-x64-12.22.0.tgz"
+          echo "881019018098a28c3a83468e6ca9a9aca9080463bbda62b82857ea22b63b8c874746401b37aeed70dd3381a3c4dfd50011d31cae42e12f012697e54cc5ff21f1  pnpm.tgz" | sha512sum -c -
+          mkdir "$RUNNER_TEMP/pnpm"
+          tar -xzf pnpm.tgz --strip-components=1 -C "$RUNNER_TEMP/pnpm" package/pnpm
           echo "$node_bin" >> "$GITHUB_PATH"
-          echo "$RUNNER_TEMP/pnpm/node_modules/.bin" >> "$GITHUB_PATH"
+          echo "$RUNNER_TEMP/pnpm" >> "$GITHUB_PATH"
       - name: Build and launch the browser fixture
         working-directory: web
         run: |
