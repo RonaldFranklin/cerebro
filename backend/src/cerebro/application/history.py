@@ -22,8 +22,15 @@ class ChangeUnavailable(ApplicationError):  # noqa: N818
 
 
 @dataclass(frozen=True, slots=True)
+class HistoryCursor:
+    head: str
+    start: str
+
+
+@dataclass(frozen=True, slots=True)
 class HistoryRequest:
     revision: str
+    cursor: HistoryCursor | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -49,7 +56,7 @@ class ChangeSummary:
 @dataclass(frozen=True, slots=True)
 class ChangePage:
     changes: tuple[ChangeSummary, ...]
-    next_cursor: str | None
+    next_cursor: HistoryCursor | None
 
 
 @dataclass(frozen=True, slots=True)

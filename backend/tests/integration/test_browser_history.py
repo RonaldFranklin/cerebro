@@ -153,7 +153,7 @@ def test_history_pages_cross_both_limits_and_open_older_details(tmp_path: Path) 
     last = history.list(owner, second.next_cursor)
     assert [row.revision for row in last.changes] == revisions[1::-1]
     assert last.next_cursor is None
-    assert history.detail(HistoryRequest(revisions[0]), owner).change.revision == revisions[0]
+    assert history.detail(HistoryRequest(revisions[0], second.next_cursor), owner).change.revision == revisions[0]
 
 
 def test_private_api_follows_an_opaque_cursor_after_an_empty_window(tmp_path: Path) -> None:
@@ -184,3 +184,5 @@ def test_private_api_follows_an_opaque_cursor_after_an_empty_window(tmp_path: Pa
         last = client.get("/api/changes", params={"cursor": first["next_cursor"]}).json()
         assert [row["revision"] for row in last["changes"]] == [revision]
         assert last["next_cursor"] is None
+        assert client.get(f"/api/changes/{revision}").status_code == 404
+        assert client.get(f"/api/changes/{revision}", params={"cursor": first["next_cursor"]}).status_code == 200

@@ -77,3 +77,18 @@ test("Load more appends the next page and disappears at the end", async ({page})
   await expect(page.getByRole("button", {name:/Island hub/})).toBeVisible();
   await expect(page.getByRole("button", {name:"Load more"})).toHaveCount(0);
 });
+
+test("retrying an expired continuation reloads the first page", async ({page}) => {
+  await owner(page);
+  let reads = 0;
+  await page.route("**/api/changes", route => route.fulfill({json:{
+    changes:++reads === 1 ? [] : [row], next_cursor:reads === 1 ? "expired" : null,
+  }}));
+  await page.route("**/api/changes?cursor=expired", route => route.fulfill({status:404, json:{}}));
+  await page.goto("/changes");
+  await expect(page.getByText("No note changes to show.")).toHaveCount(0);
+  await page.getByRole("button", {name:"Load more"}).click();
+  await page.getByRole("button", {name:"Retry"}).click();
+  await expect(page.getByRole("button", {name:/Island hub/})).toBeVisible();
+  expect(reads).toBe(2);
+});

@@ -18,6 +18,7 @@ from cerebro.application.history import (
     ChangePage,
     ChangeSummary,
     ChangeUnavailable,
+    HistoryCursor,
     HistoryRequest,
     HistoryVersion,
     is_revision,
@@ -53,19 +54,27 @@ class OwnerHistory:
         self._notes = notes
         self._history = history
 
-    def list(self, ctx: AccessContext, cursor: str | None = None) -> ChangePage:
+    def list(self, ctx: AccessContext, cursor: HistoryCursor | None = None) -> ChangePage:
         require_owner(ctx, "inspect change history")
         with self._guard():
             return self._list(ctx, cursor)
 
-    def _list(self, ctx: AccessContext, cursor: str | None) -> ChangePage:
-        rows: list[ChangeSummary] = []
-        if cursor is not None and not is_revision(cursor):
+    def _window(self, cursor: HistoryCursor | None) -> tuple[str | None, tuple[str, ...]]:
+        recent = self._history.recent()
+        if cursor is None:
+            return next(iter(recent), None), recent
+        # The browser authenticated this continuation. Its original HEAD must still be on the current chain.
+        if cursor.head not in recent or not is_revision(cursor.start):
             raise ChangeUnavailable()
-        revisions = self._history.recent(cursor)
+        return recent[0], self._history.recent(cursor.start)
+
+    def _list(self, ctx: AccessContext, cursor: HistoryCursor | None) -> ChangePage:
+        rows: list[ChangeSummary] = []
+        head, revisions = self._window(cursor)
         for index, revision in enumerate(revisions):
             if index == RECENT_WINDOW or len(rows) == MAX_CHANGES:
-                return ChangePage(tuple(rows), revision)
+                assert head is not None
+                return ChangePage(tuple(rows), HistoryCursor(head, revision))
             try:
                 versions = self._authorized(revision, ctx)
                 if versions:
@@ -77,10 +86,11 @@ class OwnerHistory:
     def detail(self, request: HistoryRequest, ctx: AccessContext) -> ChangeDetail:
         require_owner(ctx, "inspect change history")
         with self._guard():
-            return self._detail(request.revision, ctx)
+            return self._detail(request, ctx)
 
-    def _detail(self, revision: str, ctx: AccessContext) -> ChangeDetail:
-        if not is_revision(revision) or not self._history.recent(revision):
+    def _detail(self, request: HistoryRequest, ctx: AccessContext) -> ChangeDetail:
+        revision = request.revision
+        if not is_revision(revision) or revision not in self._window(request.cursor)[1][:RECENT_WINDOW]:
             raise ChangeUnavailable()
         versions = self._authorized(revision, ctx)
         if versions is None:

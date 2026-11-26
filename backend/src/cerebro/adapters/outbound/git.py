@@ -153,7 +153,6 @@ class GitRepo:
         git_path = Path(found).resolve()
         if not git_path.is_absolute():  # pragma: no cover - resolve() always returns an absolute path
             raise GitError("git executable must resolve to an absolute path")
-        self._recent_page: tuple[str | None, tuple[str, ...]] = (None, ())
         self._root = root.resolve()
         if (self._root / ".git").is_symlink():
             raise GitError("the repository's .git must not be a symlink")
@@ -393,24 +392,14 @@ class GitRepo:
     def recent_revisions(self, limit: int, cursor: str | None = None) -> tuple[str, ...]:
         if not 1 <= limit <= 64:
             raise GitError("invalid history window")
-        head = self.head()
-        page_head, page_revisions = self._recent_page
-        if cursor is not None and (head != page_head or cursor not in page_revisions):
-            self._require_object_id(cursor)
-            if not head:
-                raise GitError("history cursor unavailable")
-            # At this distance the first-parent chain must land on the cursor itself.
-            _, count = self._run(["rev-list", "--first-parent", "--count", f"{cursor}..{head}", "--"])
-            _, ancestor = self._run(["rev-parse", "--verify", f"{head}~{int(count)}"])
-            if ancestor.strip() != cursor:
-                raise GitError("history cursor unavailable")
-        if not head:
+        start = cursor or self.head()
+        if start is None:
             return ()
-        _, output = self._run(["rev-list", "--first-parent", f"--max-count={limit}", cursor or head, "--"])
+        self._require_object_id(start)
+        _, output = self._run(["rev-list", "--first-parent", f"--max-count={limit}", start, "--"])
         revisions = tuple(output.splitlines())
         for revision in revisions:
             self._require_object_id(revision)
-        self._recent_page = (head, revisions)
         return revisions
 
     @staticmethod
