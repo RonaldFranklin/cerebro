@@ -73,12 +73,16 @@ uv run cerebro --check-config
 uv run cerebro init-content
 uv run python - <<'KEY'
 import os
+import stat
 from pathlib import Path
 from cerebro.adapters.outbound.crypto import generate_key
 
 os.umask(0o077)
 path = Path(os.environ["CEREBRO_KEY_FILE"])
 path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+info = path.parent.lstat()
+if not stat.S_ISDIR(info.st_mode) or stat.S_IMODE(info.st_mode) != 0o700 or info.st_uid != os.getuid():
+    raise SystemExit("Choose a private secrets directory owned by the service user (0700).")
 with path.open("xb") as key:
     key.write(generate_key() + b"\n")
 KEY
