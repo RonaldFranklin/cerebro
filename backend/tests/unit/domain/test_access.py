@@ -168,7 +168,7 @@ class TestAccessContext:
             scopes=frozenset({Scope.READ}),
         )
         assert ctx.can(Scope.READ) is True
-        assert ctx.can(Scope.PROPOSE) is False
+        assert ctx.can(Scope.WRITE) is False
         assert ctx.is_owner is False
 
     def test_owner_has_every_scope_whatever_is_passed(self) -> None:
@@ -215,12 +215,12 @@ class TestAccessContext:
 
         ctx = AccessContext(principal=Agent("a"), ceiling=AccessCeiling(Sensitivity.PUBLIC), scopes=Liar({Scope.READ}))
         assert type(ctx.scopes) is frozenset
-        assert ctx.can(Scope.PROPOSE) is False
+        assert ctx.can(Scope.WRITE) is False
 
 
 class TestScope:
     def test_minimal_set(self) -> None:
-        assert {s.value for s in Scope} == {"read", "propose", "write", "core"}
+        assert {s.value for s in Scope} == {"read", "write", "core"}
 
     def test_parse(self) -> None:
         assert Scope.parse("read") is Scope.READ

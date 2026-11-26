@@ -1,4 +1,4 @@
-"""Token storage, state file hardening and byte-preserving upgrades of legacy state."""
+"""Token storage, state file hardening and refusal of unsupported state files."""
 
 import hashlib
 import sqlite3
@@ -9,14 +9,13 @@ from pathlib import Path
 
 import pytest
 
-from cerebro.adapters.outbound.crypto import FernetCipher, generate_key
 from cerebro.adapters.outbound.sqlite import (
     SqliteTokenStore,
     StateCorruptionError,
     StateFileError,
     StateSchemaError,
 )
-from cerebro.adapters.outbound.sqlite._state_db import _SCHEMA_V1, SCHEMA_VERSION, is_unique_violation
+from cerebro.adapters.outbound.sqlite._state_db import SCHEMA_VERSION, is_unique_violation
 from cerebro.application.ports import TokenStore
 from cerebro.domain.access import AccessCeiling, Scope
 from cerebro.domain.agent_token import AgentToken
@@ -30,17 +29,8 @@ from tests.contract.stores_contract import (
 
 
 @pytest.fixture
-def cipher() -> FernetCipher:
-    return FernetCipher([generate_key()])
-
-
-@pytest.fixture
 def state_path(tmp_path: Path) -> Path:
     return tmp_path / "data" / "state.sqlite"
-
-
-def raw_bytes(path: Path) -> bytes:
-    return b"".join(p.read_bytes() for p in (path, Path(f"{path}-wal")) if p.exists())
 
 
 class TestSqliteTokenStoreContract(TokenStoreContract):
@@ -134,7 +124,7 @@ def test_token_roundtrip_with_every_field(state_path: Path) -> None:
         id="t-1",
         agent="codex@workstation",
         ceiling=AccessCeiling(Sensitivity.RESTRICTED),
-        scopes=frozenset({Scope.READ, Scope.PROPOSE}),
+        scopes=frozenset({Scope.READ, Scope.WRITE, Scope.CORE}),
         token_hash=TokenHash(hashlib.sha256(b"x").hexdigest()),
         created_at=T0,
         expires_at=T0 + timedelta(days=30),
@@ -219,72 +209,24 @@ def test_token_digest_roundtrips_and_a_damaged_row_fails_the_hash_lookup(state_p
         store.find_by_hash(token.token_hash)
 
 
-@pytest.mark.parametrize("version", [1, 2, 3])
-def test_state_upgrade_preserves_proposals_and_existing_credentials(
-    state_path: Path, cipher: FernetCipher, version: int
-) -> None:
-    # Reproduce the schemas and on-disk values written by the Phase 3 and 4 state adapters.
+@pytest.mark.parametrize("version", [1, 2, 3, 4])
+def test_a_state_file_from_an_earlier_release_is_refused_and_left_intact(state_path: Path, version: int) -> None:
+    # The releases with the retired Inbox wrote versions 1-4 and a proposals table; no upgrade exists (ADR-0023).
     state_path.parent.mkdir(mode=0o700)
     state_path.touch(mode=0o600)
-    token = make_token()
-    sealed = cipher.encrypt(b'{"fixture":"historical proposal"}')
-    timestamp = token.created_at.isoformat()
-    with closing(sqlite3.connect(state_path)) as conn, conn:
-        conn.executescript(_SCHEMA_V1)
-        conn.execute("PRAGMA user_version = 1")
-        conn.execute(
-            "INSERT INTO proposals VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            ("legacy", "create", "needs_owner", 0, token.agent, timestamp, timestamp, "curator/null", None, sealed),
-        )
-        conn.execute(
-            "INSERT INTO tokens VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            (
-                token.id,
-                token.token_hash.hexdigest,
-                token.agent,
-                "internal",
-                '["read"]',
-                token.created_at.isoformat(),
-                token.created_at.isoformat(),
-                None,
-                None,
-            ),
-        )
-        if version >= 2:
-            conn.executescript(
-                "ALTER TABLE proposals ADD COLUMN admission_token_id TEXT;"
-                "ALTER TABLE proposals ADD COLUMN admitted_key TEXT;"
-                "CREATE INDEX proposals_by_admission ON proposals(admission_token_id, admitted_key);"
-                "CREATE INDEX pending_by_token ON proposals(admission_token_id) "
-                "WHERE status NOT IN ('rejected','applied');"
-                "PRAGMA user_version = 2;"
-            )
-            conn.execute("UPDATE proposals SET admission_token_id = ?, admitted_key = ?", (token.id, timestamp))
-        if version == 3:
-            conn.execute("CREATE TABLE login_attempts (reserved_us INTEGER NOT NULL) STRICT")
-            conn.execute("INSERT INTO login_attempts VALUES (42)")
-            conn.execute("UPDATE tokens SET scopes = ?", ('["read","propose"]',))
-            conn.execute("PRAGMA user_version = 3")
-        conn.execute("ANALYZE")
-    SqliteTokenStore(state_path)
+    with closing(sqlite3.connect(state_path)) as db, db:
+        db.execute("CREATE TABLE proposals (id TEXT PRIMARY KEY, payload BLOB NOT NULL) STRICT")
+        db.execute("INSERT INTO proposals VALUES ('fixture', x'00')")
+        db.execute(f"PRAGMA user_version = {version}")
+    with pytest.raises(StateSchemaError, match=f"schema version {version};.*move the file aside") as error:
+        SqliteTokenStore(state_path)
+    assert "fixture" not in str(error.value)
     with closing(sqlite3.connect(state_path)) as db:
-        assert db.execute("SELECT id, status, payload FROM proposals").fetchall() == [("legacy", "needs_owner", sealed)]
-        if version >= 2:
-            assert db.execute("SELECT admission_token_id, admitted_key FROM proposals").fetchone() == (
-                token.id,
-                timestamp,
-            )
-    if version == 3:
-        loaded = SqliteTokenStore(state_path).get(token.id)
-        assert loaded is not None
-        assert loaded.scopes == frozenset({Scope.READ, Scope.PROPOSE})
-        with closing(sqlite3.connect(state_path)) as db:
-            assert db.execute("SELECT reserved_us FROM login_attempts").fetchall() == [(42,)]
-    else:
-        assert SqliteTokenStore(state_path).get(token.id) == token
+        assert db.execute("PRAGMA user_version").fetchone() == (version,)
+        assert db.execute("SELECT id FROM proposals").fetchall() == [("fixture",)]
 
 
-@pytest.mark.parametrize("version", [1, 2, 3])
+@pytest.mark.parametrize("version", [1, 2, 3, 4])
 def test_unrecognized_state_file_is_left_intact(state_path: Path, version: int) -> None:
     state_path.parent.mkdir(mode=0o700)
     state_path.touch(mode=0o600)

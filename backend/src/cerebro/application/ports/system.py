@@ -15,12 +15,8 @@ class IdGenerator(Protocol):
         """Four random lowercase ASCII letters or digits for an agent-created note id."""
         ...
 
-    def new_edit_id(self) -> str:
-        """A unique, time-sortable owner edit id (1-64 characters of letters, digits, ``_`` or ``-``)."""
-        ...
-
     def new_token_id(self) -> str:
-        """A unique token id (same alphabet as owner edit ids)."""
+        """A unique token id (1-64 characters of letters, digits, ``_`` or ``-``)."""
         ...
 
     def new_token_secret(self) -> str:
@@ -42,7 +38,7 @@ class Cipher(Protocol):
 
 class VersionControl(Protocol):
     """Backup side of the content repository. Commits are made by ``NoteRepository.apply`` (one commit per
-    applied change, with the trailers of ``CommitMessage``); this port only publishes them.
+    applied change, with its ``Written-by`` trailer); this port only publishes them.
     """
 
     def push(self) -> None:

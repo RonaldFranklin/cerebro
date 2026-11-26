@@ -86,9 +86,9 @@ Structure and rule details enforced by the domain:
 - **Severity depends on the write path.** Rules report findings with a stable code and never stop at the first
   one. A severity policy per write path decides which findings are `error` (block the change) and which are
   `warning` (reported, e.g. by the health report, but not blocking). Agent writes and owner edits share the same
-  rules; today both treat only the soft word limit, duplicate `related` ids and `possible_duplicate` as warnings; **broken links are
+  rules; today both treat only the soft word limit and duplicate `related` ids as warnings; **broken links are
   additionally a warning for owner edits** and an error for agent writes. Structural frontmatter problems are
-  always errors.
+  always errors. Agent writes may also return a `possible_duplicate` warning from the similarity search.
 - Enforced outside the domain: `id` equals the file name (filesystem repository adapter, Phase 2); `id` is
   immutable on update.
 - **Cross-note rules** are pure functions over a snapshot `Mapping[NoteId, NoteRef]` (see Links); the proposed
@@ -199,7 +199,7 @@ effective_ceiling = min(listener_ceiling, token_ceiling)
 - **Principals and scopes:** `AccessContext(principal, ceiling, scopes)` is built once per request, with
   `ceiling` already the effective ceiling. `principal` is `Agent(name)` or `Owner`. Scopes are `read`,
   `write` and `core`. `core` extends `write` to core and P0 notes and is refused on a credential without
-  `write` ([ADR-0022](adr/0022-core-scope.md)). A legacy `propose` grant authorizes no direct writes. The **owner has every scope** but is still limited by the **listener** ceiling (there is no token);
+  `write` ([ADR-0022](adr/0022-core-scope.md)). The **owner has every scope** but is still limited by the **listener** ceiling (there is no token);
   owner-only actions (owner edit, change history, maintenance) require the `Owner` principal, not a scope. An agent only
   has the scopes of its token. Agent names are lowercase (`claude-code@workstation`, at most 64 characters);
   `owner` (with or without a host part) is reserved so an agent can never appear as the owner in trailers.
@@ -345,8 +345,9 @@ A committed change is durable even if a derived index needs rebuilding.
 The private owner's Recent changes view reads git history. It shows the authenticated writer, time, note
 and bounded diff. Exposing a change requires visibility of the current note and all note versions represented
 in the diff, including the parent version for updates. Historical data receives the same link redaction as
-current content. Legacy proposal records and backups retain their original meaning. Restoring them never
-applies an old proposal or issues a write grant.
+current content. Only commits with a valid `Written-by` trailer are listed: an agent name, or `owner` for an
+owner edit, which always updates an existing note ([ADR-0023](adr/0023-no-legacy-compatibility.md)). Any other
+commit is not attributed.
 
 ## 8. Agent tokens
 
@@ -365,5 +366,4 @@ applies an old proposal or issues a write grant.
   the digest explicitly. `TokenHash` equality is constant-time; `TokenStore.find_by_hash` takes a `TokenHash`.
   The plaintext secret never enters the domain.
 - Stored hashed (SHA-256; tokens are high-entropy random). Shown once at creation.
-- The authenticated token name supplies direct-write attribution. Existing `propose` tokens require explicit
-  replacement to gain `write`. A legacy token with `read` keeps its read access.
+- The authenticated token name supplies direct-write attribution.

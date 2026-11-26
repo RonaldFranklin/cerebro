@@ -1,7 +1,6 @@
 """The real system adapters run the shared Clock / IdGenerator contracts plus what the contract cannot see."""
 
 import re
-from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime, timedelta
 
 import pytest
@@ -35,26 +34,8 @@ class TestSystemIdGenerator(IdGeneratorContract):
         assert all(len(ids.new_token_secret()) >= 43 for _ in range(50))
 
     def test_many_ids_and_secrets_are_unique_and_valid(self, ids: IdGenerator) -> None:
-        edits = [ids.new_edit_id() for _ in range(5000)]
         tokens = [ids.new_token_id() for _ in range(5000)]
         secrets_ = [ids.new_token_secret() for _ in range(5000)]
-        assert len(set(edits)) == len(set(tokens)) == len(set(secrets_)) == 5000
-        assert all(ALPHABET.fullmatch(i) for i in (*edits, *tokens))
+        assert len(set(tokens)) == len(set(secrets_)) == 5000
+        assert all(ALPHABET.fullmatch(i) for i in tokens)
         assert all(re.fullmatch(r"[A-Za-z0-9_-]+", s) for s in secrets_)
-
-    def test_edit_ids_sort_by_creation_order(self, ids: IdGenerator) -> None:
-        # uuid7 is monotonic within the process even inside one millisecond, so no sleeping is needed.
-        created = [ids.new_edit_id() for _ in range(5000)]
-        assert created == sorted(created)
-
-    def test_edit_ids_sort_across_generator_instances_in_one_process(self) -> None:
-        # Same process only: the uuid7 state is process-wide. No claim about ordering across processes.
-        created = [SystemIdGenerator().new_edit_id() for _ in range(100)]
-        assert created == sorted(created)
-
-    def test_ids_are_unique_across_threads(self, ids: IdGenerator) -> None:
-        with ThreadPoolExecutor(max_workers=8) as pool:
-            batches = list(pool.map(lambda _: [ids.new_edit_id() for _ in range(500)], range(8)))
-        flat = [i for batch in batches for i in batch]
-        assert len(set(flat)) == len(flat) == 4000
-        assert all(batch == sorted(batch) for batch in batches)

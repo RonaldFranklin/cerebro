@@ -16,7 +16,7 @@ from cerebro.application.errors import (
 from cerebro.application.use_cases import HealthReport
 from cerebro.domain.access import AccessCeiling, Scope, validate_agent_name
 from cerebro.domain.agent_token import AgentToken
-from cerebro.domain.commit_message import CommitMessage
+from cerebro.domain.commit_message import OwnerCommit
 from cerebro.domain.cross_note import cross_note_findings
 from cerebro.domain.enums import Priority, Sensitivity, Status
 from cerebro.domain.frontmatter import parse_note
@@ -65,12 +65,7 @@ RAISING: list[tuple[str, Callable[[], Any]]] = [
     ("token hash long", lambda: TokenHash(LONG_SECRET)),
     ("search text", lambda: SearchNotesRequest(text=1, limit=SECRET)),  # type: ignore[arg-type]
     ("search limit", lambda: SearchNotesRequest(limit=SECRET)),  # type: ignore[arg-type]
-    (
-        "commit message",
-        lambda: CommitMessage(
-            subject=SECRET + "\n", proposal_id=SECRET + " ", proposed_by=SECRET + "!", curated_by="a", approved_by="b"
-        ),
-    ),
+    ("commit message", lambda: OwnerCommit(subject=SECRET + "\n")),
     ("note title type", lambda: make_note(title=SECRET.encode())),
     ("note date", lambda: make_note(created=SECRET)),
     ("note hub", lambda: make_note(hub=SECRET)),

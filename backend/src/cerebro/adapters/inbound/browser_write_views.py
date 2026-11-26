@@ -4,7 +4,7 @@ from cerebro.application.dto import ApplyWarning
 from cerebro.domain.frontmatter import FIELD_ORDER
 from cerebro.domain.report import ValidationReport
 
-_FIELDS = frozenset(FIELD_ORDER) | {"body", "target", "base_hash", "rationale", "source_session", "source_context"}
+_FIELDS = frozenset(FIELD_ORDER) | {"body"}
 
 
 def validation_view(report: ValidationReport) -> dict[str, object]:

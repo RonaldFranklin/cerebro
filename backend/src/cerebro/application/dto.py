@@ -378,19 +378,19 @@ def sensitivity_raise_warnings(previous: Sensitivity | None, new: Sensitivity) -
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class OwnerEditNoteRequest:
-    """The new version of a note, in full. ``expected_hash`` is the content hash the owner loaded (see ``NoteView``);
-    ``None`` creates a note that must not exist yet. ``created`` and ``updated`` are ignored: the use case keeps the
-    stored ``created`` and sets ``updated`` to today.
+    """The new version of an existing note, in full. ``expected_hash`` is the content hash the owner loaded (see
+    ``NoteView``). ``created`` and ``updated`` are ignored: the use case keeps the stored ``created`` and sets
+    ``updated`` to today.
     """
 
     note: Note
-    expected_hash: str | None = None
+    expected_hash: str
 
     def __post_init__(self) -> None:
         if not isinstance(self.note, Note):
             raise InvalidValueError("note", "expected a Note")
-        if self.expected_hash is not None and not isinstance(self.expected_hash, str):
-            raise InvalidValueError("expected_hash", "expected a string or None")
+        if not isinstance(self.expected_hash, str):
+            raise InvalidValueError("expected_hash", "expected a string")
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -480,8 +480,6 @@ class IssueAgentTokenRequest:
         if not isinstance(self.ceiling, AccessCeiling):
             raise InvalidValueError("ceiling", "expected an AccessCeiling")
         validate_credential_scopes(self.scopes)
-        if Scope.PROPOSE in self.scopes:
-            raise InvalidValueError("scopes", "new credentials support read, write and core")
         expires = self.expires_at
         if expires is not None and (not isinstance(expires, datetime) or expires.tzinfo is None):
             raise InvalidValueError("expires_at", "expected a timezone-aware datetime")

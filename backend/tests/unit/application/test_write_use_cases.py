@@ -15,12 +15,11 @@ from cerebro.application.errors import (
 from cerebro.application.index_state import index_is_stale
 from cerebro.domain.content_hash import content_hash
 from cerebro.domain.enums import Priority, Sensitivity, Status
-from cerebro.domain.errors import ContentConflict
+from cerebro.domain.errors import ContentConflict, InvalidValueError
 from cerebro.domain.note import Note
 from cerebro.domain.report import ViolationCode
 from tests.unit.application.world import NID
 from tests.unit.application.write_kit import (
-    NEW_ID,
     SECRET,
     SSH,
     Kit,
@@ -38,21 +37,6 @@ RESTRICTED = Sensitivity.RESTRICTED
 @pytest.fixture
 def kit() -> Kit:
     return Kit()
-
-
-# -- SubmitProposal ------------------------------------------------------------------------------------------------
-
-
-# -- ValidateProposal ----------------------------------------------------------------------------------------------
-
-
-# -- CurateProposal ------------------------------------------------------------------------------------------------
-
-
-# -- ReviewProposal ------------------------------------------------------------------------------------------------
-
-
-# -- ApplyProposal -------------------------------------------------------------------------------------------------
 
 
 def edit_note(kit: Kit, **changes: Any) -> Note:
@@ -106,10 +90,6 @@ class TestRestrictedRaiseWarning:
                 note=replace(current, sensitivity=level), expected_hash=content_hash(current)
             )
             assert kit.edit_uc().execute(request, owner_ctx()).warnings == ()
-        created = replace(
-            current, id=NID("fresh-restricted"), title="Fresh", sensitivity=Sensitivity.RESTRICTED, hub=None
-        )
-        assert kit.edit_uc().execute(OwnerEditNoteRequest(note=created), owner_ctx()).warnings == ()
 
     def test_owner_edit_with_errors_writes_nothing_and_does_not_warn(self, kit: Kit) -> None:
         current = kit.world.notes.get(SSH)
@@ -123,8 +103,16 @@ class TestRestrictedRaiseWarning:
 
 
 class TestOwnerEditNote:
-    def edit(self, kit: Kit, note: Note, expected: str | None, c: Any = None) -> Any:
+    def edit(self, kit: Kit, note: Note, expected: str, c: Any = None) -> Any:
         return kit.edit_uc().execute(OwnerEditNoteRequest(note=note, expected_hash=expected), c or owner_ctx())
+
+    def test_an_edit_always_names_the_loaded_version_of_a_note(self, kit: Kit) -> None:
+        current = kit.world.notes.get(SSH)
+        assert current is not None
+        with pytest.raises(InvalidValueError, match="expected_hash"):
+            OwnerEditNoteRequest(note=current, expected_hash=None)  # type: ignore[arg-type]
+        with pytest.raises(InvalidValueError, match="note"):
+            OwnerEditNoteRequest(note="note", expected_hash=note_hash(kit))  # type: ignore[arg-type]
 
     def test_only_the_owner_edits(self, kit: Kit) -> None:
         current = kit.world.notes.get(SSH)
@@ -133,7 +121,7 @@ class TestOwnerEditNote:
             self.edit(kit, current, note_hash(kit), agent_ctx())
         assert kit.commits == 5
 
-    def test_edit_commits_with_owner_trailers(self, kit: Kit) -> None:
+    def test_edit_commits_written_by_the_owner(self, kit: Kit) -> None:
         current = kit.world.notes.get(SSH)
         assert current is not None
         result = self.edit(kit, replace(current, body="# SSH\n\nEdited.\n", created=date(2000, 1, 1)), note_hash(kit))
@@ -143,11 +131,7 @@ class TestOwnerEditNote:
         assert note is not None
         assert (note.created, note.updated, note.body) == (date(2026, 11, 24), date(2026, 11, 25), "# SSH\n\nEdited.\n")
         message = kit.world.notes.commits[-1][1]
-        assert message.render() == (
-            "Update note: server-ssh-access\n\n"
-            "Proposed-by: owner\nCurated-by: owner\nApproved-by: owner\n"
-            "Proposal-Id: owner-edit-edit-0001"
-        )
+        assert message.render() == "Update note: server-ssh-access\n\nWritten-by: owner"
         assert [h.id for h in kit.world.search.search(_query("Edited"))] == [SSH]
 
     def test_stale_hash_is_a_conflict_and_writes_nothing(self, kit: Kit) -> None:
@@ -170,28 +154,6 @@ class TestOwnerEditNote:
         assert hidden is not None
         with pytest.raises(NoteNotFound):
             self.edit(kit, hidden, content_hash(hidden), owner_ctx(PUBLIC))
-
-    def test_create(self, kit: Kit) -> None:
-        current = kit.world.notes.get(SSH)
-        assert current is not None
-        fresh = replace(current, id=NEW_ID, related=(), created=date(2000, 1, 1))
-        result = self.edit(kit, fresh, None)
-        assert result.revision is not None
-        stored = kit.world.notes.get(NEW_ID)
-        assert stored is not None
-        assert stored.created == date(2026, 11, 25)
-        assert kit.world.notes.commits[-1][1].subject == "Add note: docker-conventions"
-
-    def test_create_over_an_existing_note_conflicts(self, kit: Kit) -> None:
-        current = kit.world.notes.get(SSH)
-        assert current is not None
-        with pytest.raises(ContentConflict):
-            self.edit(kit, current, None)
-        hidden = kit.world.notes.get(NID("vault-layout"))
-        assert hidden is not None
-        with pytest.raises(NoteNotFound):
-            self.edit(kit, hidden, None, owner_ctx(PUBLIC))
-        assert kit.commits == 5
 
     @pytest.mark.parametrize("where", ["title", "summary", "body"])
     def test_secrets_in_frontmatter_and_body_are_errors(self, kit: Kit, where: str) -> None:
@@ -261,7 +223,7 @@ class TestOwnerEditNote:
         assert "linker links to this note" in [v.message for v in result.validation.errors]
         assert kit.commits == commits
 
-    def test_an_edit_that_does_not_raise_sensitivity_is_not_blocked_by_legacy_inbound_links(self, kit: Kit) -> None:
+    def test_an_edit_that_does_not_raise_sensitivity_is_not_blocked_by_existing_inbound_links(self, kit: Kit) -> None:
         kit.world.add(id=NID("linker"), hub=NID("infrastructure"), body="See [[server-ssh-access]].\n")
         current = kit.world.notes.get(SSH)  # internal, linked from the public "linker"
         assert current is not None
@@ -271,15 +233,6 @@ class TestOwnerEditNote:
         assert again is not None
         # equal sensitivity and lowering are fine too
         assert self.edit(kit, replace(again, sensitivity=PUBLIC), note_hash(kit)).revision is not None
-
-    def test_creating_a_note_that_lower_notes_link_to_is_refused_for_the_owner(self, kit: Kit) -> None:
-        kit.world.add(id=NID("linker"), hub=NID("infrastructure"), body="See [[not-yet]].\n")
-        current = kit.world.notes.get(SSH)
-        assert current is not None
-        new = replace(current, id=NID("not-yet"), related=(), sensitivity=INTERNAL)
-        result = self.edit(kit, new, None)
-        assert result.revision is None
-        assert [v.message for v in result.validation.errors] == ["linker links to this note"]
 
     def test_raising_a_hubs_sensitivity_is_refused_while_members_point_at_it(self, kit: Kit) -> None:
         hub = kit.world.notes.get(NID("infrastructure"))  # public hub with public/internal members

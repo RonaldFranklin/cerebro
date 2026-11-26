@@ -1,4 +1,4 @@
-"""In-memory ``ProposalStore`` and ``TokenStore``, and a scriptable ``Curator``."""
+"""In-memory ``TokenStore``."""
 
 from cerebro.application.errors import (
     AlreadyExists,

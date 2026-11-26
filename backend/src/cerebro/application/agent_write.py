@@ -51,7 +51,6 @@ _HINTS = {
     ViolationCode.SECRET_DETECTED: "Remove the secret or replace it with a reference to your secret manager.",
     ViolationCode.UNKNOWN_FIELD: "Use only the documented frontmatter fields.",
     ViolationCode.INVALID_FIELD: "Check the field type, format and permitted values in the guide.",
-    ViolationCode.POSSIBLE_DUPLICATE: "Search for an existing note covering the same topic.",
 }
 
 

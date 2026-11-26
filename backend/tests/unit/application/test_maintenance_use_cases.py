@@ -190,7 +190,6 @@ class TestIssueAgentToken:
             frozenset[Scope](),
             {Scope.READ},
             frozenset({"read"}),
-            frozenset({Scope.READ, Scope.PROPOSE}),
             frozenset({Scope.READ, Scope.CORE}),
         ],
     )

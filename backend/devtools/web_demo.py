@@ -21,10 +21,12 @@ from cerebro.adapters.inbound.cli_owner import set_owner_password
 from cerebro.application.agent_write import AgentWriteRequest
 from cerebro.application.browser import ProvisionOwnerPassword
 from cerebro.application.dto import AuthenticateTokenRequest, IssueAgentTokenRequest, OwnerEditNoteRequest
+from cerebro.application.ports import NoteChange
 from cerebro.bootstrap.browser import owner_credentials
 from cerebro.bootstrap.container import build_container
 from cerebro.bootstrap.settings import load_settings
 from cerebro.domain.access import AccessCeiling, AccessContext, Scope
+from cerebro.domain.commit_message import OwnerCommit
 from cerebro.domain.content_hash import content_hash
 from cerebro.domain.enums import Sensitivity
 from cerebro.domain.note import NoteId
@@ -36,15 +38,6 @@ from devtools.web_tls import certificate, tls_relay
 def _populate(config: Path, *, automation: bool) -> bool:
     settings = load_settings(config, {})
     container = build_container(settings)
-    container.start()
-    provision = ProvisionOwnerPassword(owner_credentials(settings))
-    if automation:
-        line = sys.stdin.buffer.readline(1026)
-        if not line.endswith(b"\n"):
-            raise ValueError("Invalid fixture credential")
-        provision.execute(line[:-1])
-    elif set_owner_password(provision.execute):
-        return False
     note = container.notes.get(ISLAND_ID)
     assert note
     restricted_hub = replace(
@@ -56,11 +49,17 @@ def _populate(config: Path, *, automation: bool) -> bool:
         body="Restricted catalog for the browser demonstration.\n",
         sensitivity=Sensitivity.RESTRICTED,
     )
-    created = container.use_cases.owner_edit_note.execute(
-        OwnerEditNoteRequest(note=restricted_hub), AccessContext.for_owner(AccessCeiling(Sensitivity.RESTRICTED))
-    )
-    if not created.validation.ok:
-        raise RuntimeError("Invalid fixture hub")
+    # The owner edits existing notes only, so the fixture seeds this hub before the first index build.
+    container.notes.apply([NoteChange(note=restricted_hub)], OwnerCommit(subject="Seed the fixture vault catalog"))
+    container.start()
+    provision = ProvisionOwnerPassword(owner_credentials(settings))
+    if automation:
+        line = sys.stdin.buffer.readline(1026)
+        if not line.endswith(b"\n"):
+            raise ValueError("Invalid fixture credential")
+        provision.execute(line[:-1])
+    elif set_owner_password(provision.execute):
+        return False
     ssh = container.notes.get(SSH_ID)
     assert ssh
     reference = replace(

@@ -93,7 +93,7 @@ const commands = [
   /docker (?:compose (?:build|config|down|logs|ps|pull|restart|start|stop|up)|build|images|ps|run)/,
   /(?:pnpm|npm) (?:run [a-z][\w:-]*|exec [a-z][\w-]*|build|install|lint|test)/,
   /uv (?:run [a-z][\w-]*|lock|sync)/,
-  /cerebro (?:inbox (?:amend|approve|list|reject)|token (?:issue|list|revoke)|health|init-content|owner-password|read|reindex|search)/,
+  /cerebro (?:token (?:issue|list|revoke)|health|init-content|owner-password|read|reindex|search)/,
   /python3? -m [a-z][\w.]*/,
   /(?:git|docker|pnpm|npm|uv|cerebro|python3?) --(?:help|version)/,
 ].map(pattern => pattern.source.replaceAll(" ", "[ \\t]+")).join("|");

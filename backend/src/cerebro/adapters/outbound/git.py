@@ -361,8 +361,6 @@ class GitRepo:
         if checked:
             self._run(["add", "--all", "--", *checked], redact=self._names(checked))
 
-    add = stage
-
     def commit(self, message: str, paths: Iterable[str | PurePath] | None = None) -> str:
         """Commit with ``message`` (kept verbatim) as the configured identity; returns the new commit id.
 
@@ -557,18 +555,6 @@ class GitRepo:
         if to_remove:
             self._run(["rm", "--cached", "-f", "--quiet", "--ignore-unmatch", "--", *to_remove], redact=redact)
             self._run(["clean", "-f", "--quiet", "--", *to_remove], redact=redact)
-
-    def log(self, count: int = 10) -> list[str]:
-        """The messages of the last ``count`` commits, newest first, each without its trailing newline.
-
-        Raises ``GitError`` rather than returning partial data when the output exceeds the size limit.
-        """
-        if count < 1:
-            raise GitError("count must be positive")
-        if self.head() is None:
-            return []
-        _, out = self._run(["log", f"--max-count={count}", "--format=%B%x00"])
-        return [m.strip("\n") for m in out.split("\x00") if m.strip()]
 
     def is_clean(self) -> bool:
         """True when there are no staged, unstaged or untracked changes."""

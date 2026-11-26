@@ -7,7 +7,7 @@ import pytest
 
 from cerebro.application.ports import NoteChange, NoteRepository
 from cerebro.application.ports.notes import CreateReceipt
-from cerebro.domain.commit_message import AgentWriteCommit, CommitMessage, create_request_key
+from cerebro.domain.commit_message import AgentWriteCommit, OwnerCommit, create_request_key
 from cerebro.domain.content_hash import content_hash
 from cerebro.domain.enums import Sensitivity
 from cerebro.domain.errors import ContentConflict, InvalidValueError
@@ -15,13 +15,7 @@ from cerebro.domain.note import NoteId
 from cerebro.domain.note_ref import NoteRef
 from tests.unit.domain.builders import make_note
 
-MESSAGE = CommitMessage(
-    subject="Add note: server-ssh-access",
-    proposal_id="proposal-0001",
-    proposed_by="claude-code",
-    curated_by="curator/null",
-    approved_by="owner",
-)
+MESSAGE = OwnerCommit(subject="Add note: server-ssh-access")
 
 
 class NoteRepositoryContract:
