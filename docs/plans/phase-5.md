@@ -364,8 +364,8 @@ preserves the history selection in note, hub and section links. Hub membership i
 from the note introduction.
 
 The shared Markdown component escapes raw HTML in Marked and allows only approved formatting and link
-elements through DOMPurify. Images render as text. Valid visible wikilinks open the same-origin reader.
-External HTTP(S) links use a no-referrer policy. The note language applies to prose. Code, links and
+elements through DOMPurify. Images render as text. Wikilinks open the same-origin reader only when the destination ID belongs to the visible graph for the current history selection.
+External HTTP(S) links use a no-referrer policy and exclude the application hostname on every port. The note language applies to prose. Code, links and
 recognized inline commands, paths and identifiers preserve their original text during browser translation.
 The reader and search screens use the same-origin API, session and CSP.
 

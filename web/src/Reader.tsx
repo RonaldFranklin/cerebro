@@ -1,7 +1,9 @@
 import { useQuery } from "@tanstack/react-query";
+import { useMemo } from "react";
 
 import { ApiError, type ApiClient, type Ceiling } from "./api";
-import { Markdown, markdownHeadings } from "./Markdown";
+import { Markdown, markdownHeadings, TechnicalText } from "./Markdown";
+import { useVisibleGraph } from "./visibleGraph";
 import "./reader.css";
 
 interface Member {
@@ -40,8 +42,10 @@ function Meta({ label, value }: { label: string; value: string }) {
   return <div><dt>{label}</dt><dd translate="no">{value}</dd></div>;
 }
 
-function Document({ note, history }: { note: Note; history: boolean }) {
-  const headings = markdownHeadings(note.body);
+function Document({ note, history, outlineBody, visibleIds }: {
+  note: Note; history: boolean; outlineBody: string; visibleIds: ReadonlySet<string>;
+}) {
+  const headings = useMemo(() => markdownHeadings(outlineBody), [outlineBody]);
   const wholeNote = notePath(note.id, history);
   return <article className="reader-view">
     <nav className="reader-trail" aria-label="Breadcrumb">
@@ -51,18 +55,18 @@ function Document({ note, history }: { note: Note; history: boolean }) {
     </nav>
     <header className="reader-heading" lang={note.lang}>
       <div className="reader-class"><span translate="no">{note.type}</span><span translate="no">{note.priority}</span></div>
-      <h1>{note.title}</h1>
-      <p>{note.summary}</p>
+      <h1><TechnicalText text={note.title} visibleIds={visibleIds}/></h1>
+      <p><TechnicalText text={note.summary} visibleIds={visibleIds}/></p>
     </header>
     <div className="reader-columns">
       <div className="reader-document">
         {note.section && <p className="reader-section-return"><a href={wholeNote}>Read full note</a></p>}
-        <Markdown body={note.body} lang={note.lang} history={history}/>
+        <Markdown body={note.body} lang={note.lang} history={history} visibleIds={visibleIds}/>
         {note.members !== null && <section className="reader-members" aria-labelledby="reader-members-title">
           <h2 id="reader-members-title">Hub members</h2>
           {note.members.length ? <ul>{note.members.map(member => <li key={member.id}>
             <a translate="no" href={notePath(member.id, history)}>{member.title}</a>
-            <span translate="no">{member.type}</span><p>{member.summary}</p>
+            <span translate="no">{member.type}</span><p><TechnicalText text={member.summary} visibleIds={visibleIds}/></p>
           </li>)}</ul> : <p>No visible members.</p>}
         </section>}
       </div>
@@ -88,10 +92,18 @@ function Document({ note, history }: { note: Note; history: boolean }) {
 export function ReaderScreen({ api, id, history, section }: {
   api: ApiClient; id: string; history: boolean; section: string | null;
 }) {
-  const result = useQuery({
+  const full = useQuery({
+    queryKey: ["note", id, history, null],
+    queryFn: ({ signal }) => api.read<Note>("/api" + notePath(id, history), signal),
+  });
+  const part = useQuery({
+    enabled: Boolean(section),
     queryKey: ["note", id, history, section],
     queryFn: ({ signal }) => api.read<Note>("/api" + notePath(id, history, section ?? undefined), signal),
   });
+  const result = section ? part : full;
+  const graph = useVisibleGraph(api, history);
+  const visibleIds = useMemo(() => new Set(graph.data?.nodes.map(node => node.id)), [graph.data]);
   if (result.isPending) return <p role="status">Loading note…</p>;
   if (result.isError) {
     const missing = result.error instanceof ApiError && result.error.status === 404;
@@ -102,5 +114,5 @@ export function ReaderScreen({ api, id, history, section }: {
       {section && <a href={notePath(id, history)}>Read full note</a>} <a href="/search">Back to search</a>
     </section>;
   }
-  return <Document note={result.data} history={history}/>;
+  return <Document note={result.data} history={history} outlineBody={full.data?.body ?? result.data.body} visibleIds={visibleIds}/>;
 }

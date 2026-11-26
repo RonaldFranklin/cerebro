@@ -89,9 +89,11 @@ export class BrowserSession {
     }
     this.reset({ kind: "checking" });
     if (!this.scheduleDeadline(session, started)) return;
+    const queries = new QueryClient({ defaultOptions: { queries: { retry: false, refetchOnWindowFocus: false } } });
+    queries.setQueryDefaults(["search-form"], { gcTime: Infinity });
     this.set({
       kind: "active", checking: false, generation: ++this.generation, session,
-      queries: new QueryClient({ defaultOptions: { queries: { retry: false, refetchOnWindowFocus: false } } }),
+      queries,
       api: new ApiClient(session, this.lifetime.signal, this.expire, this.activity),
     });
     this.activity();

@@ -1,9 +1,10 @@
-import { useState, type FormEvent } from "react";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 import type { ApiClient } from "./api";
 import { markdownHeadings } from "./Markdown";
 import { notePath, type Note } from "./Reader";
+import { useVisibleGraph } from "./visibleGraph";
 import "./search.css";
 
 type Filter = "area" | "type" | "priority" | "status";
@@ -12,7 +13,14 @@ type NoteSummary = Record<Filter, string> & { id: string; title: string; summary
 
 const filters: Filter[] = ["area", "type", "priority", "status"];
 const defaults: Criteria = { q: "", area: "", type: "", priority: "", status: "", history: false };
-const historyStatuses = new Set(["archived", "superseded"]);
+type Options = Record<Filter, string[]>;
+function visibleFilters(draft: Criteria, options?: Options): Criteria {
+  let next = draft;
+  for (const key of filters) {
+    if (draft[key] && !options?.[key].includes(draft[key])) next = {...next, [key]: ""};
+  }
+  return next;
+}
 const searchState = ["search-form"];
 
 function searchPath(criteria: Criteria) {
@@ -44,31 +52,40 @@ export function SearchScreen({api}: {api: ApiClient}) {
   const [draft, setDraft] = useState(criteria);
   const [invalid, setInvalid] = useState(false);
   const [expanded, setExpanded] = useState<string | null>(null);
-  const metadata = useQuery({
-    queryKey: ["search-options", draft.history],
-    queryFn: async ({signal}) => {
-      const {nodes} = await api.read<{nodes: Record<Filter, string>[]}>("/api/graph?history=" + draft.history, signal);
-      return Object.fromEntries(filters.map(key => [key, [...new Set(nodes.map(node => node[key]))].sort()])) as Record<Filter, string[]>;
-    },
-  });
+  const metadata = useVisibleGraph(api, draft.history);
+  const options = useMemo(() => {
+    if (!metadata.data) return undefined;
+    const nodes = metadata.data.nodes;
+    return Object.fromEntries(filters.map(key => [key, [...new Set(nodes.map(node => node[key]))].sort()])) as Options;
+  }, [metadata.data]);
+  useEffect(() => {
+    if (options) setDraft(current => visibleFilters(current, options));
+  }, [options]);
   const results = useQuery({
     queryKey: ["search-results", criteria],
     queryFn: ({signal}) => api.read<{results: NoteSummary[]}>(searchPath(criteria), signal),
   });
 
+  const awaitingOptions = metadata.isPending && filters.some(key => draft[key] !== "");
+
   function submit(event: FormEvent) {
     event.preventDefault();
+    if (awaitingOptions) return;
     if (new TextEncoder().encode(draft.q).length > 1024) {
       setInvalid(true);
       return;
     }
-    const next = {...draft, q: draft.q.trim()};
+    const next = {...visibleFilters(draft, options), q: draft.q.trim()};
+    setDraft(next);
     setInvalid(false);
     setExpanded(null);
     setCriteria(next);
     client.setQueryData(searchState, next);
   }
 
+  const count = results.data?.results.length ?? 0;
+  const status = results.isPending ? "Searching…" : results.isError ? "Search is unavailable." :
+    count === 0 ? "No matching notes." : `${count} ${count === 1 ? "result" : "results"} shown.`;
   return <article className="search-view">
     <header className="page-heading"><h1>Search</h1></header>
     <form role="search" className="search-form" onSubmit={submit}>
@@ -78,32 +95,30 @@ export function SearchScreen({api}: {api: ApiClient}) {
           <input id="note-query" type="search" value={draft.q} autoComplete="off" placeholder="Search by keyword"
             aria-invalid={invalid} aria-describedby={invalid ? "query-error" : undefined}
             onChange={e => {setDraft({...draft, q: e.target.value}); setInvalid(false);}}/></div>
-        <button type="submit" className="primary-btn">Search notes</button>
+        <button type="submit" disabled={awaitingOptions} className="primary-btn">Search notes</button>
       </div>
       {invalid && <p id="query-error" role="alert">Search text must fit in 1,024 UTF-8 bytes.</p>}
       <div className="search-filters">{filters.map(key => {
         const label = key[0].toUpperCase() + key.slice(1);
-        const options = metadata.data?.[key] ?? [];
+        const values = options?.[key] ?? [];
         return <label key={key}>{label}
           <select value={draft[key]} onChange={e => setDraft({...draft, [key]: e.target.value})}>
             <option value="">Any {key}</option>
-            {draft[key] && !options.includes(draft[key]) && <option value={draft[key]}>{draft[key]}</option>}
-            {options.map(value => <option key={value} value={value}>{value}</option>)}
+            {values.map(value => <option key={value} value={value}>{value}</option>)}
           </select>
         </label>;
       })}</div>
       <label className="search-history"><input type="checkbox" checked={draft.history} onChange={e => {
         const history = e.target.checked;
-        setDraft({...draft, history, status: !history && historyStatuses.has(draft.status) ? "" : draft.status});
+        setDraft({...draft, history});
       }}/>Include history</label>
       {metadata.isError && <p role="alert">Filter options are unavailable. <button type="button" onClick={() => void metadata.refetch()}>Retry filters</button></p>}
     </form>
     <section className="search-results" aria-labelledby="results-heading">
       <div className="panel-heading"><h2 id="results-heading">Results</h2>
-        {results.data && <span className="item-count">{results.data.results.length} shown</span>}</div>
-      {results.isPending ? <p role="status">Searching…</p> :
-        results.isError ? <div role="alert"><p>Search is unavailable.</p><button onClick={() => void results.refetch()}>Retry search</button></div> :
-        results.data.results.length === 0 ? <p role="status">No matching notes.</p> :
+        <span className="item-count" role="status" aria-atomic="true">{status}</span></div>
+      {results.isError && <button type="button" onClick={() => void results.refetch()}>Retry search</button>}
+      {results.isSuccess && count > 0 &&
         <ul>{results.data.results.map(note => <li key={note.id}>
           <div className="search-note-meta"><span>{note.type}</span><span>{note.area}</span>
             <span translate="no">{note.priority}</span><span>{note.status}</span></div>

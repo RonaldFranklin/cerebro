@@ -1,9 +1,9 @@
 import DOMPurify from "dompurify";
 import { Marked, type Tokens } from "marked";
-import { useLayoutEffect, useRef } from "react";
+import { useLayoutEffect, useRef, type ReactNode } from "react";
 import "./markdown.css";
 
-type Props = { body: string; lang: string; history?: boolean; linkWikiNotes?: boolean };
+type Props = { body: string; lang: string; history?: boolean; visibleIds?: ReadonlySet<string> };
 export type MarkdownHeading = { title: string; level: number };
 
 function escapeHtml(text: string): string {
@@ -15,7 +15,8 @@ function externalUrl(value: string): string | null {
   if (!/^https?:\/\//i.test(value) || /[\s\\\p{Cc}\p{Cf}]/u.test(value)) return null;
   try {
     const url = new URL(value);
-    if (url.username || url.password || url.origin === location.origin) return null;
+    const host = (name: string) => name.toLowerCase().replace(/\.+$/, "");
+    if (url.username || url.password || host(url.hostname) === host(location.hostname)) return null;
     return url.href;
   } catch {
     return null;
@@ -26,7 +27,7 @@ function validSection(title: string): boolean {
   return !/[\p{Cc}\p{Cf}]/u.test(title) && new TextEncoder().encode(title).length <= 256;
 }
 
-function parser(history: boolean, linkWikiNotes: boolean): Marked {
+function parser(history: boolean, visibleIds?: ReadonlySet<string>): Marked {
   return new Marked({
     gfm: true,
     renderer: {
@@ -56,7 +57,7 @@ function parser(history: boolean, linkWikiNotes: boolean): Marked {
         const id: string = token.id;
         const section: string = token.section;
         const label = escapeHtml(token.raw);
-        if (!linkWikiNotes || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(id) || id.length > 80 ||
+        if (!visibleIds?.has(id) || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(id) || id.length > 80 ||
             !validSection(section)) return label;
         const query = new URLSearchParams();
         if (section) query.set("section", section);
@@ -87,12 +88,39 @@ export function markdownHeadings(body: string): MarkdownHeading[] {
 }
 
 // Preserve technical tokens in prose. Authors use code spans for arbitrary shell syntax.
-const shellCommand = /\b(?:git|pnpm|npm|uv|cerebro|docker|python3?)\s+(?:--?[\w-]+|[a-z][\w-]*)(?:\s+(?:--?[\w-]+|run|pytest|build|test|status|compose|install|--))*/;
+const command = [
+  /git (?:status|diff|log|show|add|commit|checkout|switch|branch|fetch|pull|push|merge|restore|clone)/,
+  /docker (?:compose (?:up|down|logs|ps|build|pull|start|stop|restart|config)|build|run|ps|images)/,
+  /(?:pnpm|npm) (?:run [a-z][\w:-]*|exec [a-z][\w-]*|install|test|build|lint)/,
+  /uv (?:run [a-z][\w-]*|sync|lock)/,
+  /cerebro (?:inbox (?:list|approve|reject|amend)|token (?:list|issue|revoke)|search|read|reindex|health|owner-password)/,
+  /python3? -m [a-z][\w.]*/,
+].map(pattern => pattern.source.replaceAll(" ", "[ \\t]+")).join("|");
+const shellCommand = new RegExp(`\\b(?:${command})\\b(?:[ \\t]+--?[a-zA-Z][\\w-]*(?:=[\\w.-]+)?)*`);
 const pathToken = /(?<![\w./~-])(?:~\/|\.\.?\/|\/|[\w.-]+\/)(?:[\w.-]+\/)*[\w.-]*[\w-]/;
-const identifier = /\b[a-z0-9]+(?:-[a-z0-9]+)+\b|(?<!\w)--[a-z][\w-]*|\b[\w-]+\.(?:md|toml|yaml|yml|json|sh|py|ts|tsx|js|css|html|sqlite)\b/;
-const technical = new RegExp([shellCommand, pathToken, identifier].map(pattern => pattern.source).join("|"), "g");
+const optionOrFile = /(?<!\w)--[a-z][\w-]*|\b[\w-]+\.(?:md|toml|yaml|yml|json|sh|py|ts|tsx|js|css|html|sqlite)\b/;
+const possibleId = /(?<![\w-])(?<id>[a-z0-9]+(?:-[a-z0-9]+)*)(?![\w-])/;
+const technical = new RegExp([shellCommand, pathToken, optionOrFile, possibleId].map(pattern => pattern.source).join("|"), "g");
 
-function markTechnicalText(fragment: DocumentFragment) {
+function* technicalMatches(text: string, visibleIds?: ReadonlySet<string>) {
+  for (const match of text.matchAll(technical)) {
+    if (!match.groups?.id || visibleIds?.has(match.groups.id)) yield match;
+  }
+}
+
+/** Plain titles and summaries do not interpret Markdown. */
+export function TechnicalText({ text, visibleIds }: { text: string; visibleIds?: ReadonlySet<string> }) {
+  const parts: ReactNode[] = [];
+  let cursor = 0;
+  for (const match of technicalMatches(text, visibleIds)) {
+    parts.push(text.slice(cursor, match.index), <span key={match.index} translate="no">{match[0]}</span>);
+    cursor = match.index + match[0].length;
+  }
+  parts.push(text.slice(cursor));
+  return <>{parts}</>;
+}
+
+function markTechnicalText(fragment: DocumentFragment, visibleIds?: ReadonlySet<string>) {
   for (const element of fragment.querySelectorAll("pre, code, a")) element.setAttribute("translate", "no");
   const walker = document.createTreeWalker(fragment, NodeFilter.SHOW_TEXT);
   const textNodes: Text[] = [];
@@ -104,7 +132,7 @@ function markTechnicalText(fragment: DocumentFragment) {
     const text = node.data;
     const replacement = document.createDocumentFragment();
     let cursor = 0;
-    for (const match of text.matchAll(technical)) {
+    for (const match of technicalMatches(text, visibleIds)) {
       const span = document.createElement("span");
       span.setAttribute("translate", "no");
       span.textContent = match[0];
@@ -118,10 +146,10 @@ function markTechnicalText(fragment: DocumentFragment) {
   }
 }
 
-export function Markdown({ body, lang, history = false, linkWikiNotes = true }: Props) {
+export function Markdown({ body, lang, history = false, visibleIds }: Props) {
   const container = useRef<HTMLDivElement>(null);
   useLayoutEffect(() => {
-    const html = parser(history, linkWikiNotes).parse(body, { async: false });
+    const html = parser(history, visibleIds).parse(body, { async: false });
     const fragment = DOMPurify.sanitize(html, {
       ALLOWED_TAGS: [
         "p","h1","h2","h3","h4","h5","h6","strong","em","del","blockquote","hr","br",
@@ -130,8 +158,8 @@ export function Markdown({ body, lang, history = false, linkWikiNotes = true }: 
       ALLOWED_ATTR: ["href","rel","translate","start"],
       ALLOW_DATA_ATTR: false, ALLOW_ARIA_ATTR: false, RETURN_DOM_FRAGMENT: true,
     });
-    markTechnicalText(fragment);
+    markTechnicalText(fragment, visibleIds);
     container.current?.replaceChildren(fragment);
-  }, [body, history, linkWikiNotes]);
+  }, [body, history, visibleIds]);
   return <div className="markdown-body" ref={container} lang={lang} translate="yes" />;
 }

@@ -96,3 +96,53 @@ test("sections load on demand and keep the historical note in scope", async ({pa
   await sections.click();
   await expect(page.getByRole("link", {name: "Build guide"})).toHaveCount(0);
 });
+
+test("search state outlives query garbage collection and clears on sign-out", async ({page}) => {
+  await session(page);
+  await page.clock.install();
+  await page.route("**/api/search?*", route => route.fulfill({json: {results: []}}));
+  await page.route("**/api/logout", route => route.fulfill({status: 204}));
+  await page.route("**/api/login", route => route.fulfill({json: {ceiling: "restricted", csrf_token: "next", absolute_remaining_seconds: 28800}}));
+  await page.goto("/search");
+  const input = page.getByRole("searchbox");
+  await input.fill("retain within session");
+  await input.press("Enter");
+  await page.getByRole("navigation", {name: "Workspace"}).getByRole("link", {name: "Graph"}).click();
+  await page.clock.fastForward(6 * 60_000);
+  await page.goBack();
+  await expect(input).toHaveValue("retain within session");
+  await page.getByRole("button", {name: "Sign out", exact: true}).click();
+  await page.getByLabel("Password").fill("fixture");
+  await page.getByRole("button", {name: "Sign in"}).click();
+  await expect(input).toHaveValue("");
+});
+
+test("results announce successful completion and history-only filters leave the active search", async ({page}) => {
+  await session(page);
+  await page.route("**/api/graph?history=*", route => route.fulfill({
+    json: {nodes: new URL(route.request().url()).searchParams.get("history") === "true" ? [note] : [], edges: []},
+  }));
+  const queries: URLSearchParams[] = [];
+  await page.route("**/api/search?*", route => {
+    const params = new URL(route.request().url()).searchParams;
+    queries.push(params);
+    return route.fulfill({json: {results: params.get("area") === "research" ? [note] : []}});
+  });
+  await page.goto("/search");
+  const status = page.getByRole("region", {name: "Results"}).getByRole("status");
+  await expect(status).toHaveText("No matching notes.");
+  await status.evaluate(el => { el.setAttribute("data-marker", "persistent"); });
+  await page.getByLabel("Include history").check();
+  const area = page.getByRole("combobox", {name: "Area"});
+  await area.selectOption("research");
+  await page.getByRole("button", {name: "Search notes"}).click();
+  await expect(status).toHaveText("1 result shown.");
+  await expect(status).toHaveAttribute("data-marker", "persistent");
+  await page.getByLabel("Include history").uncheck();
+  await expect(area).toHaveValue("");
+  await expect(area.getByRole("option", {name: "research"})).toHaveCount(0);
+  await page.getByRole("button", {name: "Search notes"}).click();
+  await expect(status).toHaveText("No matching notes.");
+  await expect.poll(() => queries.at(-1)?.get("history")).toBe("false");
+  expect(queries.at(-1)?.has("area")).toBe(false);
+});
