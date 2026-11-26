@@ -33,7 +33,9 @@ rewrites and ``remote.<name>.receivepack`` / ``uploadpack`` (a configured remote
 a push by URL does not read them). ssh itself reads the real ``~/.ssh/config`` of the service user (``HOME`` only
 hides git's own config), so keep that file trustworthy. The content repository is the owner's own private
 repository; do not point Cérebro at one you do not trust. Refusing to stage ``.gitattributes`` narrows how a
-note write could activate such a driver.
+note write could activate such a driver. Index flags set by hand (``git update-index --assume-unchanged`` or
+``--skip-worktree``) make ``status`` and ``diff`` skip a file, so ``uncommitted_paths`` and ``matches_head`` cannot see
+its edits; ``core.checkStat`` and ``core.trustctime`` are forced to their defaults so configuration cannot do the same.
 """
 
 import contextlib
@@ -186,6 +188,8 @@ class GitRepo:
             f"core.hooksPath={os.devnull}",
             f"core.attributesFile={os.devnull}",
             "core.fsmonitor=false",
+            "core.checkStat=default",  # a repository config cannot make the clean-tree check ignore changed files
+            "core.trustctime=true",
             "core.pager=cat",
             "core.askPass=",
             "core.sshCommand=ssh",
@@ -476,13 +480,34 @@ class GitRepo:
         revision, _, message = out.partition("\x00")
         return revision, message.rstrip("\n")
 
-    def has_staged_changes(self) -> bool:
-        """True when the index differs from ``HEAD`` (or, before the first commit, is not empty)."""
+    def staged_paths(self) -> tuple[str, ...]:
+        """Paths whose index entry differs from ``HEAD`` (before the first commit: every path in the index)."""
         if self.head() is None:
             _, listing = self._run(["ls-files", "-z"])
-            return bool(listing)
-        code, _ = self._run(["diff", "--cached", "--quiet"], ok=(0, 1))
-        return code == 1
+        else:
+            _, listing = self._run(["diff", "--cached", "--name-only", "--no-renames", "-z"])
+        return tuple(sorted(name for name in listing.split("\x00") if name))
+
+    def uncommitted_paths(self, pathspecs: Sequence[str]) -> tuple[str, ...]:
+        """Paths under ``pathspecs`` that differ from ``HEAD`` in the index or the working tree: staged, modified,
+        deleted, untracked and ignored files alike. A pathspec is a top-level note folder or one note file in it."""
+        if not pathspecs or any(
+            not re.fullmatch(r"(?:core|hubs|notes)(?:/[a-z0-9-]{1,80}\.md)?", p) for p in pathspecs
+        ):
+            raise GitError("invalid note pathspec")
+        _, out = self._run(
+            [
+                "status",
+                "--porcelain=v1",
+                "-z",
+                "--no-renames",
+                "--untracked-files=all",
+                "--ignored=matching",
+                "--",
+                *pathspecs,
+            ]
+        )
+        return tuple(sorted({entry[3:] for entry in out.split("\x00") if len(entry) > 3}))
 
     def _head_entry(self, path: str | PurePath) -> str:
         """Check the committed tree independently of changes staged or edited by the owner."""
