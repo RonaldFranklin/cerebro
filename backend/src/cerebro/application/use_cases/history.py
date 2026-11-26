@@ -2,7 +2,8 @@
 
 import difflib
 import json
-from collections.abc import Callable
+import re
+from collections.abc import Callable, Iterator
 from contextlib import AbstractContextManager, nullcontext
 from dataclasses import dataclass
 from functools import lru_cache
@@ -26,6 +27,11 @@ from cerebro.domain.access import AccessContext
 from cerebro.domain.frontmatter import note_to_raw
 from cerebro.domain.links import redact_wikilinks
 from cerebro.domain.note import Note, NoteId
+
+_CONTEXT_LINES = 3
+# Line alignment costs up to the product of the two changed regions; beyond this one they are shown as replaced.
+_MAX_COMPARISONS = 4_000 * 4_000
+_HUNK_START = re.compile(r"([-+])(\d+)")
 
 
 @dataclass(frozen=True, slots=True)
@@ -76,16 +82,11 @@ class OwnerHistory:
         if versions is None:
             raise ChangeUnavailable()
         before: list[str] = []
-        short_before = False
         if versions.before is not None and versions.info.parent:
-            before, short_before = _lines(versions.before, self._visibility(versions.info.parent, ctx))
-        after, short_after = _lines(versions.after, self._visibility(revision, ctx))
-        diff = "\n".join(difflib.unified_diff(before, after, fromfile="before", tofile="after", lineterm=""))
-        return ChangeDetail(
-            self._summary(versions, ctx),
-            diff[:MAX_DIFF_CHARS],
-            short_before or short_after or len(diff) > MAX_DIFF_CHARS,
-        )
+            before = _lines(versions.before, self._visibility(versions.info.parent, ctx))
+        after = _lines(versions.after, self._visibility(revision, ctx))
+        diff = "\n".join(_unified_diff(before, after))
+        return ChangeDetail(self._summary(versions, ctx), diff[:MAX_DIFF_CHARS], len(diff) > MAX_DIFF_CHARS)
 
     def _readable_current(self, note_id: NoteId) -> Note | None:
         try:
@@ -131,7 +132,7 @@ class OwnerHistory:
         return visible
 
 
-def _lines(note: Note, visible: Callable[[NoteId], bool]) -> tuple[list[str], bool]:
+def _lines(note: Note, visible: Callable[[NoteId], bool]) -> list[str]:
     raw = note_to_raw(note)
     for key, ref in (("hub", note.hub), ("superseded_by", note.superseded_by)):
         if ref and not visible(ref):
@@ -146,6 +147,35 @@ def _lines(note: Note, visible: Callable[[NoteId], bool]) -> tuple[list[str], bo
         raw[key] = redact_wikilinks(str(raw[key]), visible)
     frontmatter = [f"{key}: {json.dumps(value, ensure_ascii=False, default=str)}" for key, value in raw.items()]
     document = "\n".join(["---", *frontmatter, "---", redact_wikilinks(note.body, visible)])
-    bounded = document[:MAX_DIFF_CHARS]
-    lines = bounded.splitlines()
-    return lines[:512], len(lines) > 512 or len(document) > MAX_DIFF_CHARS
+    return document.splitlines()
+
+
+def _unified_diff(before: list[str], after: list[str]) -> Iterator[str]:
+    """Unified diff of two whole documents. Only the region between their common ends is compared."""
+    shortest = min(len(before), len(after))
+    head = 0
+    while head < shortest and before[head] == after[head]:
+        head += 1
+    tail = 0
+    while tail < shortest - head and before[-1 - tail] == after[-1 - tail]:
+        tail += 1
+    old, new = len(before) - head - tail, len(after) - head - tail
+    if old * new > _MAX_COMPARISONS:
+        yield from ("--- before", "+++ after", f"@@ -{head + 1},{old} +{head + 1},{new} @@")
+        yield from (f"-{line}" for line in before[head : head + old])
+        yield from (f"+{line}" for line in after[head : head + new])
+        return
+    skipped = max(head - _CONTEXT_LINES, 0)
+    dropped = max(tail - _CONTEXT_LINES, 0)
+    for line in difflib.unified_diff(
+        before[skipped : len(before) - dropped],
+        after[skipped : len(after) - dropped],
+        fromfile="before",
+        tofile="after",
+        n=_CONTEXT_LINES,
+        lineterm="",
+    ):
+        if line.startswith("@@"):
+            # Content lines carry a one-character prefix, so only hunk headers start like this.
+            line = _HUNK_START.sub(lambda start: f"{start[1]}{int(start[2]) + skipped}", line)
+        yield line
