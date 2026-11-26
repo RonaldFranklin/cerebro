@@ -88,7 +88,7 @@ function Review({api, item}: {api: ApiClient; item: Item}) {
     queryFn:({signal}) => api.read<Preview>(path(item.id), signal),
   });
   const detail = canReview && !finished ? inspected : undefined;
-  const changed = Boolean(detail && (item.revision > detail.revision || (preview.data && preview.data.revision !== detail.revision)));
+  const changed = Boolean(detail && (item.revision > detail.revision || (preview.data && preview.data !== detail)));
   const locked = needsReload || changed;
   useEffect(() => {
     if (canReview && !finished) {
@@ -142,6 +142,7 @@ function Review({api, item}: {api: ApiClient; item: Item}) {
       if (error instanceof DOMException && error.name === "AbortError") return;
       if (error instanceof ApiError && error.status === 409) {
         setLocked(true); setFeedback("This revision can no longer be used. Reload before reviewing again.");
+        await client.invalidateQueries({queryKey:["inbox-list"]});
       } else if (error instanceof ApiError && error.status === 422) {
         setValidation(error.validation); setFeedback("The change did not pass validation.");
         if (action !== "amend" && action !== "reject") setLocked(true);
@@ -162,7 +163,7 @@ function Review({api, item}: {api: ApiClient; item: Item}) {
     {commit && <p>Commit <code>{commit}</code></p>}
     {warnings.map(warning => <p key={warning.code} role="status">{warning.message}</p>)}
     {validation && <div role="alert"><Validation report={validation}/></div>}
-    {changed && <p role="alert">A newer revision is available.</p>}
+    {changed && <p role="alert">The proposal or its target has changed.</p>}
     {locked && <button disabled={busy} onClick={() => void reload()}>Reload proposal</button>}
     {canReview && !finished && (preview.isError ? <p role="alert">Preview is unavailable. <button onClick={() => void refresh()}>Refresh preview</button></p> :
       !detail ? <p role="status">Loading preview…</p> : <>
@@ -191,6 +192,7 @@ function Review({api, item}: {api: ApiClient; item: Item}) {
 }
 
 export function InboxScreen({api}: {api: ApiClient}) {
+  const client = useQueryClient();
   const [selected, setSelected] = useState<string | null>(null);
   const [status, setStatus] = useState("");
   const list = useQuery({queryKey:["inbox-list"],queryFn:({signal})=>api.read<{items:Item[]}>("/api/inbox",signal)});
@@ -201,7 +203,7 @@ export function InboxScreen({api}: {api: ApiClient}) {
     {list.isPending ? <p role="status">Loading proposals…</p> : list.isError ? <p role="alert">Inbox is unavailable. <button onClick={()=>void list.refetch()}>Retry</button></p> : <>
       <div className="inbox-toolbar"><label>Status <select value={status} onChange={e=>{setStatus(e.target.value); setSelected(null);}}>
         <option value="">All statuses</option>{[...new Set([...items.map(row=>row.status), ...(status ? [status] : [])])].sort().map(s=><option key={s} value={s}>{label(s)}</option>)}
-      </select></label><button type="button" disabled={list.isFetching} onClick={()=>void list.refetch()}>Refresh inbox</button><span role="status">{visible.length} {visible.length === 1 ? "proposal" : "proposals"}</span></div>
+      </select></label><button type="button" disabled={list.isFetching} onClick={()=>void Promise.all([list.refetch(), client.refetchQueries({queryKey:["inbox-detail"],type:"active"})])}>Refresh inbox</button><span role="status">{visible.length} {visible.length === 1 ? "proposal" : "proposals"}</span></div>
       <div className={item ? "inbox-layout has-selection" : "inbox-layout"}><section className="inbox-list" aria-label="Proposals">
         {visible.length ? <ul>{visible.map(row=><li key={row.id}><button type="button" className={selected === row.id ? "current" : ""}
           aria-label={`Review ${row.id}`} aria-pressed={selected === row.id} onClick={()=>setSelected(row.id)}>

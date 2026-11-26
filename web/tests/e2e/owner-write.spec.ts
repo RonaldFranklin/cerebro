@@ -139,7 +139,7 @@ test("the lower-ceiling listener denies both owner workspaces", async ({page, de
   expect(privateRequests).toEqual([]);
 });
 
-test("signing out and back in from another tab discards the private editor draft", async ({page, context, demo}) => {
+test("a suspended editor drops its draft after another tab replaces the session", async ({page, context, demo}) => {
   const writes: string[] = [];
   context.on("request", request => {
     if (request.method() === "PUT") writes.push(new URL(request.url()).pathname);
@@ -156,13 +156,21 @@ test("signing out and back in from another tab discards the private editor draft
 
   const other = await context.newPage();
   await other.goto(demo.private_origin);
-  await other.getByRole("button",{name:"Sign out",exact:true}).click();
-  await expect(password).toBeVisible();
-  await expect(editor).toHaveCount(0);
-  const newLogin = other.getByLabel("Password",{exact:true});
-  await newLogin.fill(demo.password);
-  await newLogin.press("Enter");
-  await expect(other.getByRole("heading",{name:"Overview",exact:true})).toBeVisible();
+  const lifecycle = await context.newCDPSession(page);
+  await lifecycle.send("Page.setWebLifecycleState", {state:"frozen"});
+  // A same-origin client can replace the cookie without delivering application broadcasts
+  // to the frozen editor. Its next focus must revalidate against the new session.
+  const statuses = await other.evaluate(async password => {
+    const session = await (await fetch("/api/session")).json();
+    const logout = await fetch("/api/logout", {method:"POST", headers:{"X-CSRF-Token":session.csrf_token}});
+    const login = await fetch("/api/login", {method:"POST", headers:{"Content-Type":"application/json","X-Cerebro-Request":"1"},
+      body:JSON.stringify({password})});
+    return [logout.status, login.status];
+  }, demo.password);
+  expect(statuses).toEqual([204,200]);
+  await lifecycle.send("Page.setWebLifecycleState", {state:"active"});
+  await page.bringToFront();
+  await page.evaluate(() => window.dispatchEvent(new Event("focus")));
   await expect(editor).toContainText("Check the client");
   await expect(editor).not.toContainText(draft);
   await expect(page.getByRole("button",{name:"Save changes",exact:true})).toBeDisabled();

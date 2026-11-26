@@ -151,3 +151,35 @@ test("an externally approved item resumes its listed revision despite an open am
   await page.getByRole("button",{name:"Resume application"}).click();
   await expect(page.getByText("xyz")).toBeVisible();
 });
+
+test("changing the note base locks a previously valid proposal at the same revision",async({page})=>{
+  await setup(page);
+  await expect(page.getByRole("button",{name:"Approve and apply"})).toBeEnabled();
+  await page.route("**/api/inbox/pr-1",r=>r.fulfill({json:{...detail,stale_base:true,base_label:"current",validation:null}}));
+  await page.getByRole("button",{name:"Refresh inbox"}).click();
+  await expect(page.getByRole("button",{name:"Approve and apply"})).toBeDisabled();
+  await expect(page.getByText("Old summary")).toBeVisible();
+  await page.getByRole("button",{name:"Reload proposal"}).click();
+  await expect(page.getByText("The target changed after submission.")).toBeVisible();
+});
+
+test("a late amendment conflict reconciles an externally approved item",async({page})=>{
+  await setup(page);
+  let approved=false;
+  let release!:()=>void;
+  await page.route("**/api/inbox",r=>r.fulfill({json:{items:[{...item,status:approved?"approved":"needs_owner",revision:approved?4:3},{...item,id:"pr-2",status:"rejected"}]}}));
+  await page.reload();
+  await page.getByRole("button",{name:"Review pr-1"}).click();
+  await page.getByRole("button",{name:"Amend Markdown"}).click();
+  await page.getByLabel("Replacement Markdown").fill("Local fixture");
+  await page.route("**/api/inbox/pr-1/amend",async r=>{
+    await new Promise<void>(resolve=>{release=resolve;}); approved=true; await r.fulfill({status:409,json:{}});
+  });
+  await page.getByRole("button",{name:"Save amendment"}).click();
+  await expect.poll(()=>Boolean(release)).toBe(true);
+  await page.getByRole("button",{name:"Review pr-2"}).click();
+  release();
+  await expect(page.getByRole("button",{name:"Review pr-1"})).toContainText("approved");
+  await page.getByRole("button",{name:"Review pr-1"}).click();
+  await expect(page.getByRole("button",{name:"Resume application"})).toBeEnabled();
+});
