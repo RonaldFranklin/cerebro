@@ -45,6 +45,10 @@ The repository loses the receipt format, its cipher use in commits and the finge
 `AgentWriteCommit`. A replay costs one extra historical blob read. There is no compatibility path for receipts
 written by earlier releases ([ADR-0023](0023-no-legacy-compatibility.md)).
 
+An owner-side history rewrite that copies a `Write-Request` trailer into a newer commit that is not an exact create
+record (a squash or a reworded message), or dropping the old encryption key that seals a restricted create note,
+makes the replay of that request id fail closed: it returns an error and writes nothing.
+
 ## Alternatives considered
 
 - **Keep the encrypted receipt:** authenticates one trailer of a history that is otherwise unauthenticated, at

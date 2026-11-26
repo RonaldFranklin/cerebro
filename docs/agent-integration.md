@@ -203,7 +203,7 @@ with `cerebro health`.
 
 ## Inspect the same client writes in Recent changes
 
-Use this variant to see both clients' commits in the browser. Start the [WSL web demo](plans/phase-5.md#7-open-the-interface-from-wsl) and keep its terminal open. Open the printed private browser URL, compare the certificate fingerprint and sign in. In a second WSL terminal, from the application repository root, prepare a temporary client workspace:
+Use this variant to see both clients' commits in the browser. Start the [WSL web demo](plans/archive/phase-5.md#7-open-the-interface-from-wsl) and keep its terminal open. Open the printed private browser URL, compare the certificate fingerprint and sign in. In a second WSL terminal, from the application repository root, prepare a temporary client workspace:
 
 ```bash
 bash --noprofile --norc

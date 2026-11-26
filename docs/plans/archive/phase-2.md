@@ -1,7 +1,7 @@
 # Phase 2 plan — Outbound adapters
 
 Approved by the owner on 2026-11-25 (with adjustments 1-4 below).
-Scope and acceptance criteria: [roadmap](../roadmap.md#-phase-2--outbound-adapters).
+Scope and acceptance criteria: [roadmap](delivered-phases.md#-phase-2--outbound-adapters).
 Same working mode as [Phase 1](phase-1.md) section 5: one branch and one pull request per step, a fresh
 implementation sub-agent (Sonnet), a fresh review sub-agent (Sonnet; **Opus** for crypto, tokens, access
 ceiling and filesystem paths), merge by the agent once CI is green and the review is resolved (owner authorization of
@@ -37,13 +37,13 @@ Order: 1 and 2 first; 3 before 4 and 7; 5 and 6 are independent; 7 needs 3 and 6
 
 ## 3. Design decisions
 
-1. Two SQLite files ([ADR-0002](../adr/0002-markdown-git-source-of-truth.md)): disposable `index.sqlite`, backed-up
+1. Two SQLite files ([ADR-0002](../../adr/0002-markdown-git-source-of-truth.md)): disposable `index.sqlite`, backed-up
    `state.sqlite`. One connection per operation; WAL; schema version in `PRAGMA user_version`; files 0600 in a 0700
    directory (the index holds decrypted text and never goes to a backup).
 2. `NoteRepository.apply` only writes and commits; the use case updates the indexes afterwards. If that fails,
    `RebuildIndex` recovers, and the stale-revision check detects it.
 3. A restricted note file is encrypted whole (title and summary included) behind a plaintext header
-   (`id`, `sensitivity`, `encryption`), per [ADR-0008](../adr/0008-encryption-of-restricted-notes.md).
+   (`id`, `sensitivity`, `encryption`), per [ADR-0008](../../adr/0008-encryption-of-restricted-notes.md).
 4. Filesystem safety: only ids that pass the slug rule become paths; symlinks refused; resolved path must stay inside
    the root; file and YAML size capped before loading; YAML anchors, tags and duplicate keys rejected.
 5. One exclusive file lock around `apply` (single writer).
@@ -55,7 +55,7 @@ Order: 1 and 2 first; 3 before 4 and 7; 5 and 6 are independent; 7 needs 3 and 6
 ## 4. Dependencies (owner-authorized 2026-11-25)
 
 `PyYAML` (adapter only, `safe_load` through a restricted loader) and `cryptography` (adapter only, Fernet). Both
-already named in [ADR-0013](../adr/0013-stack-and-dependency-policy.md); pinned exactly to the newest stable release
+already named in [ADR-0013](../../adr/0013-stack-and-dependency-policy.md); pinned exactly to the newest stable release
 published at least 7 days earlier, and recorded in `docs/architecture.md` section 7 in the same PR.
 
 ## 5. Report (final)
@@ -72,6 +72,6 @@ container (`tests/integration/test_rebuild_acceptance.py`).
 - **Dependencies:** `cryptography==50.0.2`, `pyyaml==6.0.3`, dev `types-pyyaml==6.0.12.20261113` (the owner approved
   the dev dependency on 2026-11-25 after PR #31).
 - **Security:** every security-relevant PR had at least one fresh Opus review; all findings were fixed before merge.
-  Accepted residual risks are in [architecture.md](../architecture.md) ("Accepted risks").
+  Accepted residual risks are in [architecture.md](../../architecture.md) ("Accepted risks").
 - **Process lessons:** merge only through `scripts/merge-pr.sh` (GitHub sometimes lags on the PR head); never
   force-push; stage explicit paths.

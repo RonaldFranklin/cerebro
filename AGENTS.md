@@ -3,48 +3,35 @@
 Instructions for coding agents (Claude Code, Codex, and others) working on **this repository**.
 Claude Code reads this file automatically when no `CLAUDE.md` exists; keep it that way so one file serves every agent.
 
-> This repo holds the **application** code. The knowledge itself (the notes) lives in a separate, private
-> **content repository**. Never add real notes, personal data or infrastructure details here: this repo is public.
+> This repo holds the **application** code. The notes live in a separate **content repository**. This repo is
+> private and must stay publishable: never add real notes, personal data or infrastructure details here.
 
 ## 1. What Cérebro is
 
 A self-hosted, single-user knowledge base that gives every AI agent (Claude Code, Codex, ChatGPT, …) the same
-curated, prioritized context through MCP, plus a web UI where the owner browses notes and sees the knowledge graph.
-Agents read within their sensitivity ceiling. Phase 7 grants explicitly authorized agents immediate, validated
-create/update operations with authenticated attribution in Git.
+curated, prioritized context through MCP, plus a web UI where the owner browses and edits notes, sees the knowledge
+graph and inspects recent changes. Agents read within their sensitivity ceiling. Authorized agents create and
+update notes immediately after validation, attributed in Git.
 
-## 2. Read before working (in this order)
+## 2. Read when you touch it
 
-1. `docs/vision.md` — goals, non-goals, success criteria.
-2. `docs/architecture.md` — hexagonal layout, layers, ports, runtime topology.
-3. `docs/domain-model.md` — note schema, priorities, sensitivity, statuses and direct writes.
-4. `docs/roadmap.md` — phases and acceptance criteria. **Work only on the current phase.**
-5. `docs/adr/` — accepted decisions. Do not contradict an ADR; propose a new ADR that supersedes it instead.
+| Before you change or need | Read |
+|---|---|
+| goals, non-goals, success criteria | `docs/vision.md` |
+| layers, ports, use cases, runtime, storage, dependencies | `docs/architecture.md` |
+| note schema, priorities, sensitivity, secrets, agent writes, tokens | `docs/domain-model.md` |
+| phase scope, acceptance criteria, owner checkpoints | `docs/roadmap.md` |
+| any decided matter (check the index first) | `docs/adr/` |
+| MCP clients and manual client checks | `docs/agent-integration.md` |
+| history of finished phases | `docs/plans/archive/` |
+
+Do not contradict an ADR; propose a new ADR that supersedes it instead.
 
 ## 3. Current status
 
-- **Phases 0, 1 and 2 are done.** Phase 0: skeleton, tooling, CI. Phase 1: domain and application core (all use cases
-  against in-memory fakes); its security checkpoint was approved on 2026-11-25 after follow-up PRs #15-#23. Phase 2:
-  outbound adapters (system, Fernet crypto, hardened git, SQLite index and state store, filesystem `NoteRepository`) and a
-  minimal composition root in `bootstrap` (PRs #25-#33). Plans and records: [`docs/plans/phase-1.md`](docs/plans/phase-1.md),
-  [`docs/plans/phase-2.md`](docs/plans/phase-2.md).
-- **Phase 3 is approved.** The owner CLI and four authenticated MCP read tools are implemented and tested.
-  [Delivery record](docs/plans/phase-3.md) · [owner's manual client checks](docs/agent-integration.md).
-- **Phase 3 checkpoint:** only the owner's manual Claude Code and Codex tests remain.
-- **Phase 4 delivered the historical Inbox.** Phase 7 retired it, and
-  [ADR-0023](docs/adr/0023-no-legacy-compatibility.md) removed its leftovers without legacy compatibility. The owner's [Phase 4 checkpoint](docs/plans/phase-4.md#5-final-report)
-  refers to that release.
-- **Phase 5 is approved.** The browser UI serves the overview, search, reader, graph, editor and health.
-  The owner's manual checkpoints for Phases 3, 4 and 5 await their results.
-  [Phase 5 report](docs/plans/phase-5.md#8-phase-5-final-report) · [WSL demo](docs/plans/phase-5.md#7-open-the-interface-from-wsl)
-- **Phase 7 delivers direct agent writes.** The MCP tools `cerebro_write` and `cerebro_write_guide` require
-  an explicit write grant. Private owner sessions inspect note changes in **Recent changes**.
-  [Phase 7 report](docs/plans/phase-7.md#delivery-report) · [real-client walkthrough](docs/agent-integration.md).
-  Phase 6 (deploy) is next, beginning with Docker validation in WSL before hml and promotion of the same image to prod.
-- **Phase 2 decisions (2026-11-25):** the owner declined a MAC for token rows and accepted the
-  [residual risk](docs/architecture.md#accepted-risks-owner-decision-2026-11-25). The owner approved
-  `types-pyyaml` as a development dependency for strict type checking of the filesystem adapter.
-- Update this section and `docs/roadmap.md` whenever a phase starts or finishes.
+Phases 0-5 and 7 are delivered. Phase 6 (deploy) is next, beginning with Docker validation in WSL. Some owner
+manual checkpoints are still pending. Details: [`docs/roadmap.md`](docs/roadmap.md). Update this section and the
+roadmap whenever a phase starts or finishes.
 
 ## 4. Non-negotiable rules
 
@@ -78,8 +65,9 @@ create/update operations with authenticated attribution in Git.
 
 ## 5. How to work
 
-- Small, verifiable steps. One phase at a time; within a phase, one use case or adapter at a time.
-- **Git workflow:** one branch per step (e.g. `phase-3/cli-skeleton`, `docs/<topic>`), never commit to `main`
+- Small, verifiable steps. One phase at a time (**work only on the current phase**); within a phase, one use case or
+  adapter at a time.
+- **Git workflow:** one branch per step (e.g. `phase-6/docker-image`, `docs/<topic>`), never commit to `main`
   directly. Commits follow Conventional Commits (`feat:`, `fix:`, `docs:`, `build:`, `ci:`, `chore:`, `test:`,
   `refactor:`), one commit per step plus review fixes. Stage explicit paths, never `git add -A`. Never force-push:
   to fix a pull request, add commits (merge `main` into the branch if it moved). For every pull request:
@@ -125,9 +113,10 @@ create/update operations with authenticated attribution in Git.
 - Keep the orchestrating session light: delegate implementation and review per pull request when the runtime
   supports it; otherwise work one pull request at a time and keep each small.
 - Final report of a phase to the owner: merged PRs, tests and coverage, every "Decisions for review", and a security
-  section. Short reports in the chat; details in the PR descriptions and `docs/plans/phase-N.md`.
-- A new session must read, in this order: this file, `docs/plans/phase-N.md` of the current phase, the last merged
-  PRs (`git log`, `gh pr list --state all --limit 10`).
+  section. Short reports in the chat; details in the PR descriptions and `docs/plans/phase-N.md` (moved to
+  `docs/plans/archive/` once the phase is finished).
+- A new session must read, in this order: this file, `docs/plans/phase-N.md` of the current phase (when it exists),
+  the last merged PRs (`git log`, `gh pr list --state all --limit 10`). Read other docs per section 2.
 
 ## 6. Commands
 
@@ -145,22 +134,3 @@ CI (`.github/workflows/ci.yml`) runs the same checks with `uv sync --locked`, so
 build. From `web/`, run `pnpm install --frozen-lockfile`, `pnpm run typecheck`, `pnpm run build`,
 `pnpm run test:component` and `pnpm run test:e2e`. Browser tests use the pinned Chromium from
 `pnpm exec playwright install chromium` and E2E uses the locked backend installation.
-
-## 7. Repository map (target)
-
-```
-cerebro/
-├── AGENTS.md
-├── README.md
-├── LICENSE                  # Apache-2.0
-├── backend/                 # Python: domain, application, adapters, bootstrap
-├── web/                     # React + TypeScript + Vite UI
-├── deploy/                  # Dockerfiles, compose files, examples (no real values)
-└── docs/
-    ├── vision.md
-    ├── architecture.md
-    ├── domain-model.md
-    ├── roadmap.md
-    ├── agent-integration.md
-    └── adr/
-```

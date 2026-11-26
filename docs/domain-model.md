@@ -118,7 +118,7 @@ Structure and rule details enforced by the domain:
   sensitivity); only owner diagnostics may include details about other stored notes. For direct agent
   writes, reject a missing or invisible target identically for every reference covered by read-time
   redaction, including code and aliases. Check these before target-dependent rules. The health report runs
-  the rule too, so legacy leaks are listed as errors.
+  the rule too, so existing leaks are listed as errors.
 - `title` and `summary` may not contain `[[` (`wikilink_in_metadata`, error on every write path): search results
   and the overview serve them without link redaction.
 - A `hub` that does not exist (`hub_not_found`) or whose type is not `hub` (`hub_not_a_hub`) is always an error.
@@ -311,9 +311,8 @@ spot. An agent must omit secret values before submitting a note.
 
 ## 7. Agent writes
 
-Phase 7 replaces the Phase 4 Inbox with synchronous create and update operations.
-[ADR-0020](adr/0020-direct-agent-writes.md) defines the decision. The [Phase 7 plan](plans/phase-7.md)
-tracks delivery. The [Phase 4 report](plans/phase-4.md) records the earlier proposal lifecycle.
+Agent creates and updates are synchronous: each is validated and committed, or refused
+([ADR-0020](adr/0020-direct-agent-writes.md)).
 
 | Operation | Preconditions | Result |
 |---|---|---|

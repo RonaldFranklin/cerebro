@@ -1,6 +1,6 @@
 # ADR-0017: Owner CLI and read-only MCP transports
 
-- **Status:** accepted
+- **Status:** accepted, amended by [ADR-0020](0020-direct-agent-writes.md) (`cerebro_write` and `cerebro_write_guide` replace `cerebro_propose`)
 - **Date:** 2026-11-25
 
 ## Context

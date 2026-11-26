@@ -1,6 +1,6 @@
 """Shared plumbing of ``index.sqlite``: file creation, schema versioning, connections and transactions.
 
-Rules (``docs/plans/phase-2.md`` section 3):
+Rules (``docs/plans/archive/phase-2.md`` section 3):
 
 * The file is created ``0600`` (symlinks refused) inside a ``0700`` directory: it holds decrypted note text and is
   never backed up. A looser mode on an existing file or leaf directory is repaired (a directory we do not own and
