@@ -165,8 +165,13 @@ body (whole or one section) whose target the reader cannot see, or that does not
   An index is stale when its `built_from()` differs from the repository `head()` (`index_is_stale`; the
   `Container.start()` reindexes when it is stale, implemented in Phase 2 PR 8), or when its content
   differs note by note. `RebuildIndex` records `head()` (read before the notes); agent writes and
-  `OwnerEditNote` advance the recorded revision after updating an index that was fresh before the commit, so a
-  failed index update stays visible until `RebuildIndex` runs.
+  `OwnerEditNote` upsert the committed note and only then advance the recorded revision of an index that was
+  fresh before the commit (`index_commit`). A failed index update is not reported to the writer (the commit is
+  durable); it leaves a revision behind `head()`. **Self-healing:** every use case that reads an index, and every
+  writer once it holds the lock, first compares the revisions with `head()` (about 1 ms, one `git rev-parse`) and
+  rebuilds under the writer lock when either is behind, which also picks up external commits without a restart.
+  If that rebuild fails, the request fails: a stale index never serves a wider projection of a note that was
+  raised in sensitivity or archived. No index state is evicted before a commit.
   **Single writer:** reading `head()`, `apply` and advancing the revision must run under ONE writer lock held by
   the composition root (ADR-0002: writes are serialized through the application). Implemented as `WriterLock` in
   `cerebro.bootstrap.container` (a thread lock plus `flock` on `<state_dir>/writer.lock`) wrapping agent writes,

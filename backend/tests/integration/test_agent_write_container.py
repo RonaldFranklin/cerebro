@@ -63,15 +63,12 @@ def test_committed_create_survives_failed_index_update_and_lost_response(
     assert service.notes.head() == receipt.revision
     assert index_is_stale(service.notes, service.search, service.graph)
 
-    # A subsequent successful writer must not mark the partially updated indexes fresh.
+    # The next writer rebuilds under the lock before it commits, so both indexes end fresh.
     later = service.use_cases.agent_write.execute(replace(create(), request_id="fixture-2"), ctx)
     assert later.revision != receipt.revision
-    assert index_is_stale(service.notes, service.search, service.graph)
-    recovered = build_container(sample.settings)
-    assert recovered.start()
-    assert not index_is_stale(recovered.notes, recovered.search, recovered.graph)
-    assert recovered.use_cases.agent_write.execute(create(), ctx).revision == receipt.revision
-    assert recovered.notes.head() == later.revision
+    assert not index_is_stale(service.notes, service.search, service.graph)
+    assert service.use_cases.agent_write.execute(create(), ctx).revision == receipt.revision
+    assert service.notes.head() == later.revision
 
 
 def test_two_service_instances_only_commit_one_update_from_the_same_base(tmp_path: Path) -> None:
