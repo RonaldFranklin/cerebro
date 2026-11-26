@@ -24,8 +24,11 @@ class GitChangeHistory:
         self._git = git
         self._cipher = cipher
 
-    def recent(self) -> tuple[str, ...]:
-        return self._git.recent_revisions(RECENT_WINDOW)
+    def recent(self, cursor: str | None = None, *, verify_head: tuple[str, str] | None = None) -> tuple[str, ...]:
+        try:
+            return self._git.recent_revisions(RECENT_WINDOW + 1, cursor, verify_head=verify_head)
+        except GitError:
+            raise ChangeUnavailable() from None
 
     def change(self, revision: str) -> HistoryVersion | None:
         try:

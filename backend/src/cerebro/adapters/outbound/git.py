@@ -389,12 +389,25 @@ class GitRepo:
             raise GitError("commit left no HEAD")
         return commit_id
 
-    def recent_revisions(self, limit: int) -> tuple[str, ...]:
+    def recent_revisions(
+        self, limit: int, cursor: str | None = None, *, verify_head: tuple[str, str] | None = None
+    ) -> tuple[str, ...]:
         if not 1 <= limit <= 64:
             raise GitError("invalid history window")
-        if not self.head():
+        if verify_head is not None:
+            # A saved page is still valid after many appends, but not if its original chain was rewritten.
+            saved, head = verify_head
+            self._require_object_id(saved)
+            self._require_object_id(head)
+            _, distance = self._run(["rev-list", "--first-parent", "--count", f"{saved}..{head}", "--"])
+            _, ancestor = self._run(["rev-parse", "--verify", f"{head}~{int(distance)}"])
+            if ancestor.strip() != saved:
+                raise GitError("history cursor unavailable")
+        start = cursor or self.head()
+        if start is None:
             return ()
-        _, output = self._run(["rev-list", "--first-parent", f"--max-count={limit}", "HEAD", "--"])
+        self._require_object_id(start)
+        _, output = self._run(["rev-list", "--first-parent", f"--max-count={limit}", start, "--"])
         revisions = tuple(output.splitlines())
         for revision in revisions:
             self._require_object_id(revision)

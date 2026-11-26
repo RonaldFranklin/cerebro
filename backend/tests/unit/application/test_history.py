@@ -27,7 +27,7 @@ def test_history_authorizes_current_and_both_versions_and_redacts_links() -> Non
     assert "After" in result.diff
     assert "gone-note" not in result.diff
     port.before = replace(base, sensitivity=Sensitivity.RESTRICTED)
-    assert not api.list(owner)
+    assert not api.list(owner).changes
     with pytest.raises(ChangeUnavailable):
         api.detail(HistoryRequest(port.revision), owner)
 
@@ -42,7 +42,7 @@ def test_visibility_of_each_version_is_required_for_detail_and_listing(hidden: s
     port = FakeHistory(before, after)
     history = OwnerHistory(world.notes, port)
     owner = ctx(owner=True)
-    assert history.list(owner) == ()
+    assert history.list(owner).changes == ()
     with pytest.raises(ChangeUnavailable):
         history.detail(HistoryRequest(port.revision), owner)
 
@@ -55,7 +55,7 @@ def test_an_unreadable_version_is_left_out_of_the_list_and_unavailable_in_detail
     port = FakeHistory(note, replace(note, body="After."))
     port.unreadable.add(getattr(port, broken))
     history = OwnerHistory(world.notes, port)
-    assert history.list(ctx(owner=True)) == ()
+    assert history.list(ctx(owner=True)).changes == ()
     with pytest.raises(ChangeUnavailable):
         history.detail(HistoryRequest(port.revision), ctx(owner=True))
 
