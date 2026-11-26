@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
-import type { ApiClient } from "./api";
+import { ApiError, type ApiClient } from "./api";
 import { notePath } from "./Reader";
 import "./recentChanges.css";
 
@@ -56,12 +56,13 @@ export function RecentChangesScreen({api}: {api: ApiClient}) {
     getNextPageParam: page => page.next_cursor,
   });
   const changes = history.data?.pages.flatMap(page => page.changes) ?? [];
+  const denied = history.error instanceof ApiError && [401, 403].includes(history.error.status);
   return <article className="changes-view">
     <header className="page-heading"><h1>Recent changes</h1><p>Inspect committed note edits and the differences between revisions.</p></header>
     {history.isPending ? <p role="status">Loading recent changes…</p>
-      : history.isError && !history.data ? <div><p role="alert">Recent changes are unavailable.</p>
+      : history.isError && (!history.isFetchNextPageError || denied) ? <div><p role="alert">Recent changes are unavailable.</p>
         <button type="button" onClick={() => void history.refetch()}>Retry</button></div>
-      : changes.length === 0 ? <p className="empty-state">No note changes to show.</p>
+      : changes.length === 0 && !history.hasNextPage ? <p className="empty-state">No note changes to show.</p>
       : <ol className="change-list">{changes.map(change => {
         const expanded = selected === change.revision;
         return <li key={change.revision}>
@@ -76,8 +77,8 @@ export function RecentChangesScreen({api}: {api: ApiClient}) {
           {expanded && <div className="change-expanded"><ChangeDetails api={api} revision={change.revision}/></div>}
         </li>;
       })}</ol>}
-    {history.isFetchNextPageError && <p role="alert">Older changes are unavailable.</p>}
-    {history.hasNextPage && <button type="button" disabled={history.isFetching}
+    {history.isFetchNextPageError && !denied && <p role="alert">Older changes are unavailable.</p>}
+    {history.hasNextPage && !denied && <button type="button" disabled={history.isFetching}
       onClick={() => void history.fetchNextPage()}>Load more</button>}
   </article>;
 }

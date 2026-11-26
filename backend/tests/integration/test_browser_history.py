@@ -51,7 +51,9 @@ def test_only_a_private_owner_can_list_and_read_an_encrypted_diff(tmp_path: Path
             for endpoint in endpoints:
                 assert client.get(endpoint, headers={"X-Forwarded-Host": "private"}).status_code == 403
             return
-        assert client.get(endpoints[2]).json()["next_cursor"] is None
+        assert client.get(endpoints[2]).status_code == 404
+        assert client.get("/api/changes", params={"cursor": "é"}).status_code == 404
+        assert client.get("/api/changes?cursor=x&cursor=y").status_code == 422
         rows = client.get(endpoints[0]).json()["changes"]
         assert [row["revision"] for row in rows] == [revision]
         assert rows[0]["actor"] == "owner"
@@ -152,3 +154,33 @@ def test_history_pages_cross_both_limits_and_open_older_details(tmp_path: Path) 
     assert [row.revision for row in last.changes] == revisions[1::-1]
     assert last.next_cursor is None
     assert history.detail(HistoryRequest(revisions[0]), owner).change.revision == revisions[0]
+
+
+def test_private_api_follows_an_opaque_cursor_after_an_empty_window(tmp_path: Path) -> None:
+    sample = make_sample_repo(tmp_path)
+    container = build_container(sample.settings)
+    base = container.notes.get(DOCKER_ID)
+    assert base
+    revision = container.notes.apply(
+        [NoteChange(note=replace(base, body="Earlier entry"), expected_hash=content_hash(base))],
+        OwnerCommit.for_update(DOCKER_ID),
+    )
+    git = sample.git()
+    for i in range(32):
+        (sample.root / "manual").write_text(str(i))
+        git.stage(["manual"])
+        git.commit("Unattributed", ["manual"])
+    origin = "https://private.example.invalid"
+    owner_credentials(sample.settings).provision(b"history-fixture")
+    app = browser_api(container.browser_auth, BrowserBinding("private", origin), AccessCeiling(Sensitivity.RESTRICTED))
+    install_browser_history(app, container.use_cases.history)
+    with TestClient(app, base_url=origin) as client:
+        client.post(
+            "/api/login", headers={"Origin": origin, "X-Cerebro-Request": "1"}, json={"password": "history-fixture"}
+        )
+        first = client.get("/api/changes").json()
+        assert first["changes"] == []
+        assert revision not in first["next_cursor"]
+        last = client.get("/api/changes", params={"cursor": first["next_cursor"]}).json()
+        assert [row["revision"] for row in last["changes"]] == [revision]
+        assert last["next_cursor"] is None
