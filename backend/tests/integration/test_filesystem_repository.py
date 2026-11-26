@@ -680,7 +680,10 @@ def test_a_committed_id_in_two_folders_is_left_out_entirely(repo: FilesystemNote
 def test_an_undecryptable_committed_note_is_never_stable(git: GitRepo, root: Path, cipher: Cipher) -> None:
     FilesystemNoteRepository(root, git=git, cipher=cipher).apply([NoteChange(note=make_note())], MESSAGE)
     other = FilesystemNoteRepository(root, git=git, cipher=FernetCipher([generate_key()]))
-    assert not other.scan().stable  # a wrong key must not leave restricted notes out of a fresh index
+    scan = other.scan()  # a wrong key must not leave restricted notes out of a fresh index
+    assert [(p.path, p.stable) for p in scan.problems] == [("notes/server-ssh-access.md", False)]
+    assert "cannot be decrypted" in scan.problems[0].reason
+    assert not scan.stable
     with pytest.raises(NoteFileError, match="cannot be decrypted"):
         other.get(make_note().id)
 

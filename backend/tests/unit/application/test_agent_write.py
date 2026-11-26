@@ -470,15 +470,15 @@ def _query(ctx: AccessContext) -> SearchQuery:
     return SearchQuery(ceiling=ctx.ceiling, text="Direct write")
 
 
-def test_a_note_file_problem_fails_the_write_without_using_quota() -> None:
+def test_a_note_file_problem_fails_the_write_and_still_counts_against_the_quota() -> None:
     kit = Kit()
     write = writer(kit, 1)
     ctx = replace(agent_ctx(scopes=frozenset({Scope.WRITE})), token_id="token-one")
     kit.world.notes.problems.append(FileProblem("notes/broken.md", "invalid frontmatter", stable=True))
     commits = kit.commits
-    for _ in range(3):  # writes validate against every note: an incomplete set is refused, every time
-        with pytest.raises(NoteReadError):
-            write.execute(request(), ctx)
+    with pytest.raises(NoteReadError):  # writes validate against every note: an incomplete set is refused
+        write.execute(request(), ctx)
     assert kit.commits == commits
     kit.world.notes.problems.clear()
-    assert write.execute(request(), ctx).revision is not None  # the quota slot was given back each time
+    with pytest.raises(WriteRejected, match="rate_limited"):  # the rate limit holds whatever the failure
+        write.execute(request(), ctx)

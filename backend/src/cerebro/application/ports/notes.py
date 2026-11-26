@@ -42,9 +42,11 @@ class FileProblem:
     (never note content).
 
     ``stable`` is true when the problem follows from the committed content alone (the file equals ``HEAD``, so the
-    same revision always gives the same problem: malformed or undecryptable content, a wrong folder or file name,
-    a symlink, an oversized file, the same id in several folders). An index built without such a file can be recorded
-    as built from ``head()``. Anything else (a file that differs from ``HEAD``, an I/O error) is not stable."""
+    same revision always gives the same problem: malformed content, a wrong folder or file name, a plaintext file
+    declaring ``restricted``, an oversized file, an unexpected directory, the same id in several folders). An index
+    built without such a file can be recorded as built from ``head()``. Not stable: a file that differs from
+    ``HEAD``, an I/O error, a symlinked file or folder, and a restricted note that cannot be decrypted (the result
+    depends on the configured key)."""
 
     path: str
     reason: str

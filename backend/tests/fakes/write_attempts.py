@@ -16,9 +16,3 @@ class FakeWriteAttemptStore:
                 times.remove(min(times))
             times.append(now)
             return True
-
-    def release(self, token_id: str, reserved_at: datetime) -> None:
-        with self._lock:
-            times = self._reservations.get(token_id, [])
-            if reserved_at in times:
-                times.remove(reserved_at)

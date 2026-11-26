@@ -57,6 +57,7 @@ its entries by path (an attacker would need write access to the repository direc
 import errno
 import os
 import time
+from collections import Counter
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -326,8 +327,8 @@ class FilesystemNoteRepository:
                 entries.extend((folder, entry) for entry in sorted(os.scandir(directory), key=lambda e: e.name))
             except OSError:
                 problems.append(FileProblem(folder, "cannot be listed", stable=False))
-        names = [e.name for _, e in entries if e.name.endswith(".md") and not e.name.startswith(".")]
-        duplicated = {name for name in names if names.count(name) > 1}
+        counts = Counter(e.name for _, e in entries if e.name.endswith(".md") and not e.name.startswith("."))
+        duplicated = {name for name, count in counts.items() if count > 1}
         notes: list[tuple[str, Note]] = []
         for folder, entry in entries:
             relative = f"{folder}/{entry.name}"

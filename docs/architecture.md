@@ -103,7 +103,7 @@ backend/
 | `VersionControl` | `push` to the backup remote. Commits are made by `NoteRepository.apply`, so a write and its commit cannot diverge | git CLI |
 | `Cipher` | encrypt/decrypt restricted note payloads (used by the filesystem adapter only); `DecryptionError` on tampering | Fernet |
 | `TokenStore` | `add`, `get`, `find_by_hash` (also returns revoked tokens), `save`, `all`; tokens are stored hashed | SQLite |
-| `WriteAttemptStore` | Atomically reserve a rolling-hour slot for an authenticated token; a refusal leaves state unchanged; `release` gives the slot back when the write failed on a note file problem before anything was written | SQLite; in-memory fake |
+| `WriteAttemptStore` | Atomically reserve a rolling-hour slot for an authenticated token; a refusal leaves state unchanged | SQLite; in-memory fake |
 | `ChangeHistory` | Return recent first-parent revisions, attribution and note versions for private owner history | Git/filesystem; in-memory fake |
 | `Clock`, `IdGenerator` | `now()`; note ids, token ids and token secrets, for deterministic tests | system / fixed fakes |
 
@@ -244,7 +244,7 @@ Filesystem repository, operating notes (Phase 2):
   a symlinked or unreadable file, a folder that is not a real directory.
 - Writes are conservative: cross-note validation (`list_refs`, `list_notes`) needs every note, so agent writes and
   owner edits fail while **any** problem file exists, stable or not (an incomplete set could pass a budget or hub
-  rule the full set fails). An agent's quota slot is given back in that case. The owner fixes the file by hand and
+  rule the full set fails). Such a refused write still counts against the agent's quota. The owner fixes the file by hand and
   commits it; the health report names it.
 - Below the `restricted` ceiling, a note file that cannot be served now (`NoteReadError` on `get`) reads exactly like
   a missing note, so an agent cannot learn that a hidden note exists; at `restricted` the error propagates.

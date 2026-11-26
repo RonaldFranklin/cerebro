@@ -12,8 +12,3 @@ class WriteAttemptStore(Protocol):
         if the clock moves backwards. Refusals leave the window unchanged.
         """
         ...
-
-    def release(self, token_id: str, reserved_at: datetime) -> None:
-        """Give back one slot that ``reserve`` took at ``reserved_at`` for a request that failed on a local problem
-        before anything was written (the agent did nothing wrong). Does nothing if no such slot exists."""
-        ...
