@@ -214,7 +214,7 @@ fi
 (cd backend && uv sync --locked && uv run --locked ruff check . && uv run --locked ruff format --check . &&
   uv run --locked mypy && uv run --locked lint-imports --no-cache && uv run --locked pytest --cov)
 (cd web && pnpm install --frozen-lockfile && pnpm run typecheck && pnpm run build &&
-  pnpm exec playwright install chromium && pnpm run test:toolchain && pnpm run test:component && pnpm run test:e2e)
+  pnpm exec playwright install chromium && pnpm run test:component && pnpm run test:e2e)
 (cd backend && uv run --locked python -m devtools.web_demo --dist ../web/dist)
 ```
 
@@ -237,6 +237,9 @@ The owner approved PR #55, all dependencies in §4, user-space Node 26.13.1 and 
 | PR 2 onward | Try TypeScript 7 against Vite, Playwright and CodeMirror. If a verified incompatibility requires a fallback, select the newest stable preceding compatible TypeScript release at least seven days old and record the failing scenario, version, release date, changed lock and passing reproduction. The owner has authorized this fallback. |
 | Each of PRs 7–11 | Capture the screens delivered by that PR with Playwright against synthetic fixtures and commit the images in `docs/screenshots/phase-5/`. Link directly to those images in that PR's description. The owner's visual review follows delivery and is independent of the CI and merge gates. |
 
+The captured images and the capture code were later removed; git history keeps them. The separate
+toolchain compatibility check was removed as well, since the component and E2E suites cover the built UI.
+
 At close, document the exact WSL command to open the UI through `devtools.web_demo`, alongside the usual delivery, tests, decisions and security report.
 
 ### PR 2 delivery record
@@ -246,8 +249,7 @@ the Chromium system packages were installed. Node and pnpm were installed under 
 The Linux x64 browser downloads matched the three URLs and dates in §4. The committed web lock
 matches the approved inventory, and the Python lock adds only FastAPI and annotated-doc.
 TypeScript 7 checks Vite, Playwright and CodeMirror types in strict mode. The native Vite build
-bundles a Markdown editor. Playwright opens it over fixture HTTPS and verifies editor styling under the browser CSP. On x86-64 WSL Ubuntu, run this compatibility check with
-`cd web && pnpm install --frozen-lockfile && pnpm exec playwright install chromium && pnpm run test:toolchain`.
+bundles a Markdown editor. Playwright opens it over fixture HTTPS and verifies editor styling under the browser CSP.
 
 ### PR 3 delivery record
 
@@ -353,8 +355,6 @@ password at the terminal prompt and open the printed private HTTPS origin. Inspe
 certificate's SHA-256 fingerprint against the terminal output before accepting it. Ctrl+C removes
 the instance. The owner installation and global browser trust configuration are untouched.
 
-[Sign-in](../screenshots/phase-5/07-login.png) · [Overview](../screenshots/phase-5/07-overview.png)
-
 ### PR 8 delivery record
 
 Search applies the text query, area, type, priority, status and history filters on submit. Filter options
@@ -370,9 +370,8 @@ recognized inline commands, paths and identifiers preserve their original text d
 The reader and search screens use the same-origin API, session and CSP.
 
 Playwright exercises filtering, cancellation, missing notes, keyboard navigation, hubs, section links,
-HTML sanitization and translation boundaries. The installed-service test captures the production build
-against the disposable HTTPS fixture. [Search screenshot](../screenshots/phase-5/08-search.png) ·
-[Reader screenshot](../screenshots/phase-5/08-reader.png)
+HTML sanitization and translation boundaries. The installed-service test exercises the production build
+against the disposable HTTPS fixture.
 
 ### PR 9 delivery record
 
@@ -388,9 +387,6 @@ each area or type. The four priority sizes decrease from P0 to P3. The HTML list
 to keyboard users and browsers without WebGL. Its Connections disclosure lists the source, target,
 kind and optional section of each visible relationship. Layout workers and renderers are disposed when their
 graph unmounts. Graph settings and selection live in session memory.
-
-[Global graph](../screenshots/phase-5/09-graph.png) ·
-[Local neighborhood](../screenshots/phase-5/09-neighborhood.png)
 
 ### PR 10 delivery record
 
@@ -410,10 +406,6 @@ proposal, edits a note, and checks the parent and all three attribution trailers
 in the disposable content repository. Two-tab tests cover conflict recovery and disposal of an
 unsaved draft when another tab replaces the owner session. The lower-ceiling
 listener displays a denial for the owner workspaces.
-
-[Inbox](../screenshots/phase-5/10-inbox.png) · [Proposal review](../screenshots/phase-5/10-review.png) ·
-[Owner editor](../screenshots/phase-5/10-editor.png) · [Markdown preview](../screenshots/phase-5/10-preview.png) ·
-[Conflict comparison](../screenshots/phase-5/10-conflict.png)
 
 ## 7. Open the interface from WSL
 
@@ -476,16 +468,6 @@ are recorded in §4 and the [PR 2 delivery record](#pr-2-delivery-record).
 | [10 · #65](https://github.com/RonaldFranklin/cerebro/pull/65) | Inbox review, amendment and application; CodeMirror owner editing | Pin the inspected preview and explicitly reload on changes or uncertain writes. Resume approved items from metadata. Require the full private edit hash, respect the reader's history scope for completion and previews, keep drafts in memory, and require a separate save after comparing a conflicting current revision. |
 | [11 · #66](https://github.com/RonaldFranklin/cerebro/pull/66) | Private health panel, installed-service acceptance, WSL runbook and hand-off | Report index checks from HealthReport, show safe finding identifiers, and use listener-visible notes for links. Reuse the disposable HTTPS fixtures for browser acceptance and keep the owner's security and visual review open. |
 
-### Playwright screenshots
-
-| UI step | Captured screens |
-|---|---|
-| 7 | [Sign-in](../screenshots/phase-5/07-login.png) · [Overview](../screenshots/phase-5/07-overview.png) |
-| 8 | [Search](../screenshots/phase-5/08-search.png) · [Reader](../screenshots/phase-5/08-reader.png) |
-| 9 | [Global graph](../screenshots/phase-5/09-graph.png) · [Local graph](../screenshots/phase-5/09-neighborhood.png) |
-| 10 | [Inbox](../screenshots/phase-5/10-inbox.png) · [Review](../screenshots/phase-5/10-review.png) · [Editor](../screenshots/phase-5/10-editor.png) · [Preview](../screenshots/phase-5/10-preview.png) · [Conflict](../screenshots/phase-5/10-conflict.png) |
-| 11 | [Health](../screenshots/phase-5/11-health.png) |
-
 ### Verification
 
 The backend gate uses the locked environment, Ruff checks and formatting, strict mypy, import-linter,
@@ -515,7 +497,7 @@ markers are absent from public API responses and rendered pages.
   the corresponding warning. Review existing repository and backup access before using real notes.
 - Notes and proposals are untrusted display content. The client escapes raw HTML, sanitizes the output
   and runs local scripts and workers under CSP. The fixtures use synthetic data and isolated TLS;
-  static screenshots and automated tests do not establish the safety of an actual deployment.
+  automated tests do not establish the safety of an actual deployment.
 - **Owner review pending.** Complete the [manual browser walkthrough](#7-open-the-interface-from-wsl),
   including translation and both listeners, and review [ADR-0019](../adr/0019-owner-browser-api.md).
   Phase 3 still awaits the owner's real-client checks and Phase 4 retains its recorded security

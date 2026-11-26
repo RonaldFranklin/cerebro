@@ -1,3 +1,4 @@
+from collections.abc import Callable
 from dataclasses import replace
 
 import pytest
@@ -8,12 +9,30 @@ from cerebro.application.ports.notes import NoteChange
 from cerebro.application.use_cases.agent_write import AgentWrite
 from cerebro.domain.access import Scope
 from cerebro.domain.content_hash import content_hash
-from cerebro.domain.enums import Sensitivity
+from cerebro.domain.enums import Priority, Sensitivity
+from cerebro.domain.frontmatter import note_to_raw
 from cerebro.domain.note import NoteId
+from cerebro.domain.vocabulary import CORE
 from tests.fakes.write_attempts import FakeWriteAttemptStore
 from tests.unit.application.world import MESSAGE
 from tests.unit.application.write_kit import SECRET, Kit, agent_ctx
 from tests.unit.domain.builders import VALID_SUMMARY, VOCABULARY
+
+CORE_WRITER = frozenset({Scope.READ, Scope.WRITE, Scope.CORE})
+CORE_NOTE = {"type": "core", "priority": "P0", "hub": None, "title": "Global rule"}
+
+
+def update_of(note_id: str, kit: Kit, **fields: object) -> AgentWriteRequest:
+    note = kit.world.notes.get(NoteId(note_id))
+    assert note is not None
+    frontmatter = {k: v for k, v in note_to_raw(note).items() if k not in {"id", "created", "updated"}}
+    return AgentWriteRequest(
+        operation="update",
+        target=note_id,
+        base_hash=content_hash(note),
+        frontmatter={**frontmatter, **fields},
+        body=note.body + "Be concise.\n",
+    )
 
 
 def writer(kit: Kit, limit: int = 60) -> AgentWrite:
@@ -188,7 +207,7 @@ def test_narrower_listener_cannot_check_guesses_of_original_restricted_create() 
 def test_update_cannot_move_between_core_hubs_and_regular_notes() -> None:
     kit = Kit()
     write = writer(kit)
-    ctx = replace(agent_ctx(scopes=frozenset({Scope.WRITE})), token_id="token")
+    ctx = replace(agent_ctx(scopes=CORE_WRITER), token_id="token")
     receipt = write.execute(request(), ctx)
     base = kit.world.notes.get(receipt.note_id)
     assert base is not None
@@ -222,3 +241,52 @@ def test_replay_cannot_confirm_a_former_reference_after_its_reclassification() -
     for guess in (original, replace(original, body="See [[never-existed]].")):
         with pytest.raises(WriteRejected, match="broken_link"):
             write.execute(guess, ctx)
+
+
+@pytest.mark.parametrize(
+    "make",
+    [
+        lambda kit: request(**CORE_NOTE),
+        lambda kit: request(priority="P0"),
+        lambda kit: update_of("core-rules", kit),
+        lambda kit: update_of("core-rules", kit, status="archived"),
+        lambda kit: update_of("core-rules", kit, status="superseded", superseded_by="infrastructure"),
+        lambda kit: update_of("core-rules", kit, type="guide", priority="P2", hub="infrastructure"),
+        lambda kit: update_of("server-ssh-access", kit, priority="P0"),
+    ],
+    ids=["create-core", "create-p0", "edit-core", "archive-core", "supersede-core", "demote-core", "promote-p0"],
+)
+def test_core_and_p0_notes_need_the_core_scope(make: Callable[[Kit], AgentWriteRequest]) -> None:
+    kit = Kit()
+    write = writer(kit)
+    head = kit.world.notes.head()
+    ctx = replace(agent_ctx(scopes=frozenset({Scope.READ, Scope.WRITE})), token_id="token")
+    with pytest.raises(WriteRejected) as err:
+        write.execute(make(kit), ctx)
+    assert [f.code for f in err.value.findings] == ["core_scope_required"]
+    assert kit.world.notes.head() == head
+
+
+def test_core_scope_allows_core_writes_and_hubs_stay_open() -> None:
+    kit = Kit()
+    write = writer(kit)
+    core = replace(agent_ctx(scopes=CORE_WRITER), token_id="core-token")
+    assert write.execute(request(**CORE_NOTE), core).revision
+    assert write.execute(update_of("core-rules", kit), core).revision
+    plain = replace(agent_ctx(scopes=frozenset({Scope.WRITE})), token_id="plain-token")
+    hub = request(type="hub", priority="P1", hub=None, title="Networking")
+    assert write.execute(hub, plain).revision
+    assert write.execute(update_of("infrastructure", kit), plain).revision
+
+
+def test_create_replay_is_refused_once_the_stored_note_became_core() -> None:
+    kit = Kit()
+    write = writer(kit)
+    ctx = replace(agent_ctx(scopes=frozenset({Scope.WRITE})), token_id="token")
+    receipt = write.execute(request(), ctx)
+    note = kit.world.notes.get(receipt.note_id)
+    assert note is not None
+    promoted = replace(note, type=CORE, priority=Priority.P0, hub=None)
+    kit.world.notes.apply([NoteChange(note=promoted, expected_hash=content_hash(note))], MESSAGE)
+    with pytest.raises(WriteRejected, match="core_scope_required"):
+        write.execute(request(), ctx)

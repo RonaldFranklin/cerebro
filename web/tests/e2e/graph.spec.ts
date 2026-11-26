@@ -1,6 +1,4 @@
 import { expect, type Page } from "@playwright/test";
-import { mkdir } from "node:fs/promises";
-import { fileURLToPath } from "node:url";
 import { test } from "./fixture";
 
 async function signIn(page: Page, origin: string, password: string) {
@@ -9,14 +7,6 @@ async function signIn(page: Page, origin: string, password: string) {
   await input.fill(password);
   await input.press("Enter");
   await expect(page.getByRole("heading", {name:"Graph", exact:true})).toBeVisible();
-}
-
-async function capture(page: Page, file: string) {
-  if (process.env.CAPTURE_SCREENSHOTS !== "1") return;
-  const directory = new URL("../../../docs/screenshots/phase-5/", import.meta.url);
-  await mkdir(directory, {recursive:true});
-  await page.evaluate(() => document.fonts.ready);
-  await page.screenshot({path:fileURLToPath(new URL(file, directory)), animations:"disabled", fullPage:true});
 }
 
 test("the production worker lays out a selectable WebGL graph under the served CSP", async ({page, demo}) => {
@@ -38,14 +28,12 @@ test("the production worker lays out a selectable WebGL graph under the served C
     canvas instanceof HTMLCanvasElement && (canvas.getContext("webgl2") || canvas.getContext("webgl"))))).toBe(true);
   await expect(page.getByRole("button", {name:"Explore Synthetic vault catalog"})).toBeVisible();
   await expect(page.getByRole("combobox", {name:"Area",exact:true}).getByRole("option", {name:"security", exact:true})).toHaveCount(1);
-  await capture(page, "09-graph.png");
   await page.getByRole("button", {name:"Explore Infrastructure", exact:true}).click();
   await expect(page.getByRole("button", {name:"Back to global graph"})).toBeVisible();
   await expect(surface).toBeVisible();
   await page.getByRole("combobox", {name:"Color by",exact:true}).selectOption("type");
   await expect(page.getByText("Color by type", {exact:true})).toBeVisible();
   await expect(surface).toBeVisible();
-  await capture(page, "09-neighborhood.png");
   await page.getByRole("button", {name:"Back to global graph"}).click();
   await page.getByRole("combobox", {name:"Priority", exact:true}).selectOption("P0");
   await expect(page.getByRole("button", {name:/^Explore /})).toHaveCount(1);

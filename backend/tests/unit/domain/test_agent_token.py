@@ -73,6 +73,13 @@ class TestConstruction:
                 make_token(scopes=bad)
             assert excinfo.value.field == "scopes"
 
+    def test_core_scope_requires_write(self) -> None:
+        for bad in (frozenset({Scope.CORE}), frozenset({Scope.READ, Scope.CORE})):
+            with pytest.raises(InvalidValueError) as excinfo:
+                make_token(scopes=bad)
+            assert excinfo.value.field == "scopes"
+        assert make_token(scopes=frozenset({Scope.WRITE, Scope.CORE})).scopes == {Scope.WRITE, Scope.CORE}
+
     def test_ceiling_must_be_an_access_ceiling(self) -> None:
         with pytest.raises(InvalidValueError):
             make_token(ceiling=Sensitivity.PUBLIC)

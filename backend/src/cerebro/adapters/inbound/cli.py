@@ -69,7 +69,12 @@ def parse_arguments(args: Sequence[str]) -> argparse.Namespace:
     issue = actions.add_parser("issue", help="issue a token and print its secret once")
     issue.add_argument("agent", type=short_field)
     issue.add_argument("--ceiling", type=short_field, default="public", help="public (default), internal or restricted")
-    issue.add_argument("--scope", type=short_field, action="append", help="read (default) or write; repeat for both")
+    issue.add_argument(
+        "--scope",
+        type=short_field,
+        action="append",
+        help="read (default), write, or core (core and P0 notes; requires write); repeat to combine",
+    )
     issue.add_argument("--expires-at", type=short_field, help="ISO 8601 timestamp with timezone")
     actions.add_parser("list", help="list credential metadata")
     revoke = actions.add_parser("revoke", help="revoke a token by its id")

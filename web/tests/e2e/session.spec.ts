@@ -1,15 +1,5 @@
 import { expect, type Page } from "@playwright/test";
-import { mkdir } from "node:fs/promises";
-import { fileURLToPath } from "node:url";
 import { test } from "./fixture";
-
-async function screenshot(page: Page, filename: string) {
-  if (process.env.CAPTURE_SCREENSHOTS !== "1") return;
-  const directory = new URL("../../../docs/screenshots/phase-5/", import.meta.url);
-  await mkdir(directory, { recursive: true });
-  await page.evaluate(() => document.fonts.ready);
-  await page.screenshot({ path: fileURLToPath(new URL(filename, directory)), animations: "disabled" });
-}
 
 async function signIn(page: Page, password: string) {
   const field = page.getByLabel("Password", { exact: true });
@@ -22,13 +12,11 @@ async function signIn(page: Page, password: string) {
 test("owner sessions stay on their issuing HTTPS listener", async ({ page, context, demo }) => {
   await page.goto(demo.private_origin);
   await expect(page.getByRole("button", { name: "Sign in", exact: true })).toBeVisible();
-  await screenshot(page, "07-login.png");
   await signIn(page, demo.password);
   const marker = "Synthetic vault catalog";
   const privateOverview = await page.evaluate(async () => (await fetch("/api/overview")).json());
   expect(privateOverview.hubs.some((hub: { title: string }) => hub.title === marker)).toBe(true);
   await expect(page.getByText(marker, { exact: true })).toBeVisible();
-  await screenshot(page, "07-overview.png");
   const privateSession = await page.evaluate(async () => (await (await fetch("/api/session")).json()).ceiling);
   expect(privateSession).toBe("restricted");
 

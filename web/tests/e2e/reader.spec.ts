@@ -1,15 +1,5 @@
-import { expect, type Page } from "@playwright/test";
-import { mkdir } from "node:fs/promises";
-import { fileURLToPath } from "node:url";
+import { expect } from "@playwright/test";
 import { test } from "./fixture";
-
-async function capture(page: Page, file: string) {
-  if (process.env.CAPTURE_SCREENSHOTS !== "1") return;
-  const directory = new URL("../../../docs/screenshots/phase-5/", import.meta.url);
-  await mkdir(directory, { recursive: true });
-  await page.evaluate(() => document.fonts.ready);
-  await page.screenshot({ path: fileURLToPath(new URL(file, directory)), animations: "disabled" });
-}
 
 test("search, inspect sections and follow visible hub members", async ({ page, demo }) => {
   const violations: string[] = [];
@@ -25,7 +15,6 @@ test("search, inspect sections and follow visible hub members", async ({ page, d
   await password.press("Enter");
   const results = page.getByRole("region", { name: "Results" });
   await expect(results.getByRole("link", { name: "SSH access" })).toBeVisible();
-  await capture(page, "08-search.png");
   const search = page.getByRole("searchbox", { name: "Search notes" });
   await search.fill("SSH");
   await search.press("Enter");
@@ -34,7 +23,6 @@ test("search, inspect sections and follow visible hub members", async ({ page, d
   await page.keyboard.press("Enter");
   await expect(page.getByRole("heading", {name: "SSH access", exact: true})).toBeVisible();
   await expect(page.locator("pre code")).toHaveText(/ssh -V/);
-  await capture(page, "08-reader.png");
   const sections = page.getByRole("navigation", {name:"Sections"});
   await sections.getByRole("link", { name:"Configuration", exact:true }).click();
   await expect(page.getByRole("link", {name:"Read full note"})).toBeVisible();

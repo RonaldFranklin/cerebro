@@ -132,7 +132,7 @@ proposal review, revisions and owner edits. Phase 7 replaced the Inbox with Rece
 sanitized reader, search and keyboard-accessible local and global graphs. The private health panel
 reports index checks and safe findings. Installed Chromium tests verified login, isolation, rendering
 under CSP, commit trailers and logout against the synthetic HTTPS service. The owner's manual visual
-and security reviews remain open. [Final report and screenshots](plans/phase-5.md#8-phase-5-final-report) ·
+and security reviews remain open. [Final report](plans/phase-5.md#8-phase-5-final-report) ·
 [Open the interface in WSL](plans/phase-5.md#7-open-the-interface-from-wsl).
 
 - Use Node 26.13.1 per [ADR-0013](adr/0013-stack-and-dependency-policy.md) (Active LTS at phase start),

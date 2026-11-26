@@ -1,7 +1,12 @@
 # Connecting agents
 
 Cérebro exposes four tools to tokens with `read`. Tokens with `write` can call `cerebro_write` and
-`cerebro_write_guide`. Issue both scopes for an agent that searches and maintains notes. Start with `cerebro_overview` once per session, search summaries, then read
+`cerebro_write_guide`. Issue both scopes for an agent that searches and maintains notes. Core and P0 notes
+are the global rules every agent receives in the overview; creating, editing, archiving or superseding one
+also needs the `core` scope ([ADR-0022](adr/0022-core-scope.md)). Grant `core` only to agents you trust to
+change those rules, such as your own Claude Code and Codex sessions, and always together with `write`
+(`token issue <agent> --scope read --scope write --scope core`). Hubs (P1) and regular notes need only
+`write`. Start with `cerebro_overview` once per session, search summaries, then read
 a selected section or follow a link. Each agent has its own bearer token. For access from another host use
 the private HTTPS URL supplied by Tailscale Serve. Loopback HTTP below is for a development instance on this host.
 
