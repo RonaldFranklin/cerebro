@@ -256,7 +256,10 @@ one summary finding; every pattern runs in linear time on long lines.
   regardless;
 - high-entropy strings: a token of at least 32 characters from `[A-Za-z0-9+/_=-]` with letters and digits and
   Shannon entropy of at least 4.3 bits per character. Hex-only strings (commit hashes, digests), UUIDs and
-  wikilinks are never flagged.
+  wikilinks are never flagged. Neither are note ids (ids from long titles with digits look random): the note's own
+  id and, in any field or the body, a token that is exactly the id of a note the writer may read (the health report
+  reads every note). The other detectors still apply to ids, and an id of a note above the writer's ceiling is
+  scanned like any token, so the result does not reveal that the note exists.
 
 **Reports never contain the secret.** A finding carries the detector kind, the field, the line number and safe detector metadata. Thresholds are constants in the module. `parse_note`
 reports a rejected frontmatter value (or unknown key) that the scanner flags as `secret_detected` instead of

@@ -1,6 +1,8 @@
 """Shared validation of candidate notes against the content repository."""
 
+from cerebro.application.access import visible_id
 from cerebro.application.ports.notes import NoteRepository
+from cerebro.domain.access import AccessContext
 from cerebro.domain.budgets import core_budget_findings, word_count
 from cerebro.domain.cross_note import cross_note_findings, inbound_link_sensitivity_findings
 from cerebro.domain.enums import Priority
@@ -14,6 +16,7 @@ from cerebro.domain.vocabulary import Vocabulary
 def validate_candidate(
     note: Note,
     *,
+    ctx: AccessContext,
     notes: NoteRepository,
     vocabulary: Vocabulary,
     policy: SeverityPolicy,
@@ -25,6 +28,7 @@ def validate_candidate(
 
     ``base`` is the stored version of an existing note (``None`` for a new one): inbound links are checked when a note
     is new or its sensitivity rises over ``base``, and a change may not lower it unless ``forbid_lowering`` is off.
+    The secret scan treats ids of notes visible to ``ctx`` (history included) as ids, so it never reveals hidden notes.
     """
     snapshot = {ref.id: ref for ref in notes.list_refs()}
     snapshot[note.id] = NoteRef.from_note(note)
@@ -43,4 +47,10 @@ def validate_candidate(
                 message="an agent cannot lower the sensitivity of an existing note",
             )
         )
-    return validate_note(note, vocabulary, policy) + policy.report(findings)
+    report = validate_note(
+        note,
+        vocabulary,
+        policy,
+        known_id=lambda note_id: visible_id(notes, note_id, ctx, include_history=True) is not None,
+    )
+    return report + policy.report(findings)

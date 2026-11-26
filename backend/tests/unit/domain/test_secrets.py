@@ -184,11 +184,49 @@ def test_secrets_in_frontmatter_text_are_detected(field: str) -> None:
     assert [(f.code, f.field) for f in findings] == [(ViolationCode.SECRET_DETECTED, field)]
 
 
-@pytest.mark.parametrize("field", ["id", "hub", "superseded_by"])
+@pytest.mark.parametrize("field", ["hub", "superseded_by"])
 def test_high_entropy_note_ids_are_detected(field: str) -> None:
     ident = NoteId(rand(40, string.ascii_lowercase + string.digits) + "x1")
     findings = scan_note(make_note(**{field: ident}))
     assert [f.field for f in findings] == [field]
+
+
+_SLUG_ALPHABET = string.ascii_lowercase + string.digits
+LONG_TITLE_IDS = (
+    "configuring-postgresql-16-backups-with-pgbackrest-on-ubuntu-24-04-k7q2",
+    "quarterly-review-2026-q4-of-zigbee2mqtt-and-mosquitto-upgrade-x9m3",
+)
+
+
+@pytest.mark.parametrize("ident", LONG_TITLE_IDS)
+def test_ids_from_long_titles_trip_the_entropy_detector_unless_known(ident: str) -> None:
+    other = NoteId(ident)
+    assert [f.detector for f in scan_text(ident, field="id")] == ["high-entropy string"]
+    assert scan_note(make_note(id=other)) == ()  # the note's own id
+    referencing = make_note(
+        hub=other, related=(other,), superseded_by=other, body=f"See {ident} and `cerebro_read {ident}`.\n"
+    )
+    assert {f.field for f in scan_note(referencing)} == {"hub", "related", "superseded_by", "body"}
+    assert scan_note(referencing, known_id=lambda note_id: note_id == other) == ()
+
+
+def test_known_ids_exempt_only_exact_ids_from_the_entropy_detector() -> None:
+    ident = NoteId(LONG_TITLE_IDS[0])
+    local = random.Random(5678)  # keeps the shared generator sequence of the other tests
+    secret = "".join(local.choice(_SLUG_ALPHABET) for _ in range(40))
+    asked: list[NoteId] = []
+
+    def known(note_id: NoteId) -> bool:
+        asked.append(note_id)
+        return note_id == ident
+
+    body = f"{ident.value}-{secret}\n{secret}\nlabel_{secret.upper()}{secret}\n{ident.value}\n"
+    assert [f.line for f in scan_note(make_note(body=body), known_id=known)] == [1, 2, 3]
+    assert NoteId(secret) in asked  # an id-shaped token is exempt only if it names a known note
+    assert all("_" not in note_id.value for note_id in asked)  # tokens that are not ids are never looked up
+    # Other detectors still apply to a known id.
+    key_like = NoteId("sk-" + secret)
+    assert [f.detector for f in scan_note(make_note(id=key_like), known_id=lambda _: True)] == ["OpenAI API key"]
 
 
 def test_related_and_lang_are_scanned() -> None:

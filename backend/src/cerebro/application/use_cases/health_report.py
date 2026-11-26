@@ -93,7 +93,9 @@ class HealthReport:
         snapshot = {ref.id: ref for ref in (NoteRef.from_note(n) for n in notes)}
         for note in notes:
             findings = [*cross_note_findings(snapshot[note.id], snapshot)]
-            report = validate_note(note, self._vocabulary, OWNER_EDIT_POLICY) + OWNER_EDIT_POLICY.report(findings)
+            report = validate_note(
+                note, self._vocabulary, OWNER_EDIT_POLICY, known_id=snapshot.__contains__
+            ) + OWNER_EDIT_POLICY.report(findings)
             yield from (
                 HealthIssue(
                     subject=str(note.id),

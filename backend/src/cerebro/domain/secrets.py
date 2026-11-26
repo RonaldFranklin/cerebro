@@ -3,7 +3,8 @@
 Notes may say where a secret lives, never its value. ``scan_note`` looks at every text field of a note
 (title, summary, ids, ... and the body, fenced code blocks included) and returns one ``Finding`` per hit with the
 code ``SECRET_DETECTED``. Findings never contain any part of the secret: only the detector, the field and the line.
-The scanner is a heuristic, not a guarantee: see
+The note's own id and ids the caller confirmed to be readable notes are exempt from the entropy detector only:
+long titles with digits produce high-entropy ids. The scanner is a heuristic, not a guarantee: see
 ``docs/domain-model.md`` section 6 for its known limits.
 """
 
@@ -11,12 +12,13 @@ import math
 import re
 import unicodedata
 from collections import Counter
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from typing import Final
 
-from cerebro.domain.note import Note
+from cerebro.domain.note import MAX_NOTE_ID_LENGTH, Note, NoteId
 from cerebro.domain.report import Finding, ViolationCode
+from cerebro.domain.slug import is_slug
 
 ENTROPY_MIN_LENGTH: Final = 32
 """Shortest token (characters) considered by the entropy detector."""
@@ -103,8 +105,19 @@ class _Hit:
     end: int
 
 
-def scan_note(note: Note) -> tuple[Finding, ...]:
-    """Findings (code ``SECRET_DETECTED``) for every text field of ``note``; never contain the secret."""
+def scan_note(note: Note, *, known_id: Callable[[NoteId], bool] = lambda _: False) -> tuple[Finding, ...]:
+    """Findings (code ``SECRET_DETECTED``) for every text field of ``note``; never contain the secret.
+
+    A token that is exactly ``note.id``, or a note id that ``known_id`` accepts, is not reported as a high-entropy
+    string (other detectors still apply). Callers pass a ``known_id`` that accepts only notes the writer may read, so
+    the result does not reveal whether a hidden note exists.
+    """
+
+    def known(token: str) -> bool:
+        if token == note.id.value:
+            return True
+        return len(token) <= MAX_NOTE_ID_LENGTH and is_slug(token) and known_id(NoteId(token))
+
     fields: tuple[tuple[str, str], ...] = (
         ("id", str(note.id)),
         ("title", note.title),
@@ -117,18 +130,19 @@ def scan_note(note: Note) -> tuple[Finding, ...]:
         ("superseded_by", "" if note.superseded_by is None else str(note.superseded_by)),
         ("body", note.body),
     )
-    return tuple(f for name, text in fields for f in scan_text(text, field=name))
+    return tuple(f for name, text in fields for f in scan_text(text, field=name, known=known))
 
 
-def scan_text(text: str, *, field: str) -> tuple[Finding, ...]:
+def scan_text(text: str, *, field: str, known: Callable[[str], bool] = lambda _: False) -> tuple[Finding, ...]:
     """Scan one text field line by line. Line numbers are 1-based.
 
     The text is normalized first (NFKC, invisible format characters such as zero-width spaces and soft hyphens
-    removed), so look-alike or interleaved characters do not hide a secret.
+    removed), so look-alike or interleaved characters do not hide a secret. Tokens that ``known`` accepts are not
+    reported as high-entropy strings.
     """
     findings: list[Finding] = []
     for number, line in enumerate(normalize(text).splitlines(), start=1):
-        for hit in _scan_line(line):
+        for hit in _scan_line(line, known):
             if len(findings) == MAX_FINDINGS_PER_FIELD:
                 findings.append(
                     Finding(
@@ -168,7 +182,7 @@ def secret_message(detector: str | None, line: int | None) -> str:
     return f"possible {detector}{where}; notes must say where a secret lives, never its value"
 
 
-def _scan_line(line: str) -> Iterator[_Hit]:
+def _scan_line(line: str, known: Callable[[str], bool]) -> Iterator[_Hit]:
     taken: list[_Hit] = []
 
     def free(start: int, end: int) -> bool:
@@ -193,7 +207,7 @@ def _scan_line(line: str) -> Iterator[_Hit]:
                 yield _Hit(kind="credential assignment", start=m.start(group), end=m.end(group))
         masked = _WIKILINK.sub(lambda m: " " * len(m.group()), line)
         for m in _ENTROPY_CANDIDATE.finditer(masked):
-            if _is_high_entropy(m.group()):
+            if _is_high_entropy(m.group()) and not known(m.group()):
                 yield _Hit(kind="high-entropy string", start=m.start(), end=m.end())
 
     for hit in candidates():
