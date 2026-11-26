@@ -5,7 +5,7 @@
 | [0001](0001-hexagonal-architecture.md) | Hexagonal architecture with a dependency-free core | accepted |
 | [0002](0002-markdown-git-source-of-truth.md) | Markdown + git as source of truth, SQLite as derived index | accepted |
 | [0003](0003-two-repositories.md) | Two repositories — public application, private content | accepted (the application repository is currently private) |
-| [0004](0004-priority-levels-and-context-budget.md) | Priority levels and context budgets | accepted, amended by [0020](0020-direct-agent-writes.md) |
+| [0004](0004-priority-levels-and-context-budget.md) | Priority levels and context budgets | accepted, amended by [0020](0020-direct-agent-writes.md) and [0025](0025-core-word-budget.md) |
 | [0005](0005-sensitivity-and-access-ceiling.md) | Sensitivity levels and access ceiling by listener and token | accepted |
 | [0006](0006-write-path-inbox-curator.md) | Write path — Inbox, validation, curator, approval | superseded by [0020](0020-direct-agent-writes.md) |
 | [0007](0007-curator-provider-agnostic.md) | Curator is provider-agnostic and optional | superseded by [0020](0020-direct-agent-writes.md) |
@@ -23,8 +23,9 @@
 | [0019](0019-owner-browser-api.md) | Same-origin owner browser API and local web toolchain | accepted, amended by [0020](0020-direct-agent-writes.md) |
 | [0020](0020-direct-agent-writes.md) | Validated direct agent writes and owner change history | accepted, amended by [0021](0021-readable-note-ids.md) and [0022](0022-core-scope.md); compatibility requirements superseded by [0023](0023-no-legacy-compatibility.md); replay binding amended by [0024](0024-create-replay-from-git.md) |
 | [0021](0021-readable-note-ids.md) | Readable agent-created note IDs and default write quota | accepted |
-| [0022](0022-core-scope.md) | A `core` scope guards the global rules | accepted |
+| [0022](0022-core-scope.md) | A `core` scope guards the global rules | accepted, amended by [0025](0025-core-word-budget.md) |
 | [0023](0023-no-legacy-compatibility.md) | Drop compatibility with the retired Inbox | accepted |
 | [0024](0024-create-replay-from-git.md) | Detect create replays from the committed note | accepted |
+| [0025](0025-core-word-budget.md) | Reduce the combined core budget | accepted |
 
 New decisions: copy [`0000-template.md`](0000-template.md), use the next number, add it to this table.

@@ -10,6 +10,7 @@ HTTP response body, so both copies, JSON escaping and the envelope are counted.
 
 import json
 from dataclasses import dataclass
+from itertools import cycle, islice
 from pathlib import Path
 
 import pytest
@@ -33,7 +34,7 @@ LOOKUP_TOKENS = 3000
 # Bytes of one HTTP response body: the measured size of the fixture below plus roughly 25 percent of headroom.
 WIRE_BUDGETS = {
     "tools/list": 4_700,  # once per session
-    "overview": 7_300,  # grows with the core and the hubs only
+    "overview": 14_100,  # grows with the core and the hubs only
     "search": 3_700,  # five summaries (the default limit)
     "read": 9_200,  # one runbook of about 450 words
     "write_guide": 8_100,  # once per writing session
@@ -56,7 +57,7 @@ def _steps(count: int) -> str:
 
 
 def _knowledge_base(other_notes: int) -> list[Note]:
-    """A core of about 300 words, one hub per area, a runbook of about 450 words and ``other_notes`` more runbooks."""
+    """An 800-word core, one hub per area, a runbook of about 450 words and ``other_notes`` more runbooks."""
     common: dict[str, object] = {"related": (), "review_by": None, "sensitivity": Sensitivity.INTERNAL}
     core = make_note(
         **common,
@@ -66,7 +67,7 @@ def _knowledge_base(other_notes: int) -> list[Note]:
         priority=Priority.P0,
         hub=None,
         summary="Global rules every agent follows before changing anything on the owner's systems.",
-        body="\n\n".join([_PARAGRAPH] * 6),
+        body=" ".join(islice(cycle(_PARAGRAPH.split()), 800)),
     )
     hubs = [
         make_note(
@@ -159,7 +160,7 @@ def bases(tmp_path_factory: pytest.TempPathFactory) -> tuple[Responses, Response
 
 def test_the_fixture_is_realistic() -> None:
     words = {note.id: word_count(note.body) for note in _knowledge_base(0)}
-    assert words[NoteId("core-rules")] >= 300
+    assert words[NoteId("core-rules")] == 800
     assert words[_TARGET] >= 400
 
 
@@ -173,6 +174,7 @@ def test_a_lookup_of_three_calls_fits_the_token_budget(bases: tuple[Responses, R
     for responses in bases:
         assert len(json.loads(responses["search"].text)["results"]) == 5
         assert _TARGET.value in responses["search"].text  # the second call finds what the third one reads
+        assert word_count(json.loads(responses["overview"].text)["core"][0]["body"]) == 800
         spent = sum(responses[name].tokens for name in ("overview", "search", "read"))
         assert spent <= LOOKUP_TOKENS, f"a lookup costs about {spent} tokens"
 

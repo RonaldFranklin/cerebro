@@ -20,12 +20,6 @@ Manual checkpoints:
 The Phase 4 checkpoint covered the Inbox, which [ADR-0023](adr/0023-no-legacy-compatibility.md) removed; it cannot
 be run against current code. Its [record](plans/archive/phase-4.md#security-checkpoint-for-the-owner) is kept.
 
-Open decisions:
-
-- **Core budget against lookup cost.** With a core at the full 1,500-word P0 budget, a lookup (overview, search,
-  read) costs about 3.7k tokens, above the 2-3k of the [vision](vision.md#success-criteria). The response budget test
-  uses a core of about 360 words. The 1,500-word budget stays until the owner decides which figure changes.
-
 ---
 
 ## ✅ Phase 0 — Bootstrap
