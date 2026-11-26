@@ -86,9 +86,7 @@ class OwnerHistory:
             before = _lines(versions.before, self._visibility(versions.info.parent, ctx))
         after = _lines(versions.after, self._visibility(revision, ctx))
         diff, clipped = _unified_diff(before, after)
-        return ChangeDetail(
-            self._summary(versions, ctx), diff[:MAX_DIFF_CHARS], clipped or len(diff) > MAX_DIFF_CHARS
-        )
+        return ChangeDetail(self._summary(versions, ctx), diff[:MAX_DIFF_CHARS], clipped or len(diff) > MAX_DIFF_CHARS)
 
     def _readable_current(self, note_id: NoteId) -> Note | None:
         try:
