@@ -66,6 +66,31 @@ def _archive(archive: tarfile.TarFile, captured: Path, name: str) -> None:
         raise NoteWriteError("a captured entry changed while saving the quarantine")
 
 
+def _restore_entries(source: Path, root: Path, names: list[str], pending: Path) -> bool:
+    blocked = []
+    for name in names:
+        try:
+            if not _move(source, root, name) and os.path.lexists(root / name):
+                blocked.append(name)
+        except OSError:
+            blocked.append(name)
+    if blocked:
+        (pending / "unrestored-paths").write_bytes(b"".join(os.fsencode(name) + b"\0" for name in blocked))
+    return not blocked
+
+
+def _retain(captured: Path, pending: Path, dot_git: Path) -> Path:
+    # A pre-existing editor descriptor can write to a captured inode even after its tar snapshot closes.
+    try:
+        return captured.rename(pending / "originals")
+    except OSError as error:
+        if error.errno != errno.EXDEV:
+            raise
+        retained = captured.rename(dot_git / pending.with_suffix("").name)
+        _sync(dot_git)
+        return retained
+
+
 def _recover(root: Path, state: Path, git: GitRepo, head: str, status: str) -> None:
     entries = [entry for entry in status.split("\0") if entry]
     if any("U" in e[:2] or e[:2] in ("AA", "DD") for e in entries):
@@ -91,7 +116,7 @@ def _recover(root: Path, state: Path, git: GitRepo, head: str, status: str) -> N
     captured.mkdir(mode=0o700)
     restored.mkdir()
     moved: list[str] = []
-    published = False
+    archived = False
     try:
         git.prepare_quarantine_restore(indexed, head, restored, scratch / "index")
         for name in roots:
@@ -105,23 +130,13 @@ def _recover(root: Path, state: Path, git: GitRepo, head: str, status: str) -> N
         for path in pending.iterdir():
             with path.open("rb") as handle:
                 os.fsync(handle.fileno())
-        # An editor can keep writing through an already-open descriptor after the tar is closed.
-        # Retain the displaced inodes on their original filesystem as well as the immutable snapshot.
-        try:
-            captured = captured.rename(pending / "originals")
-        except OSError as error:
-            if error.errno != errno.EXDEV:
-                raise
-            captured = captured.rename(root / ".git" / complete.name)
-            _sync(root / ".git")
+        captured = _retain(captured, pending, root / ".git")
         _sync(pending)
-        pending.rename(complete)
         _sync(state)
-        published = True
+        archived = True
         if git.head() != head:
             raise NoteWriteError("the content HEAD changed during quarantine")
-        for name in roots:
-            _move(restored, root, name)
+        restored_all = _restore_entries(restored, root, roots, pending)
         # Each directory is visited once, after all files are back in place, deepest first.
         parents = {p for name in roots for p in Path(name).parents if len(p.parts) > 1}
         for path in sorted(parents, key=lambda p: len(p.parts), reverse=True):
@@ -133,14 +148,17 @@ def _recover(root: Path, state: Path, git: GitRepo, head: str, status: str) -> N
                     raise
         os.replace(scratch / "index", root / ".git/index")
         _sync(root / ".git")
+        if not restored_all:
+            raise NoteWriteError("some checkout paths could not be restored; see unrestored-paths in quarantine")
+        pending.rename(complete)
+        _sync(state)
     except BaseException:
-        if not published:
-            for name in moved:
-                _move(captured, root, name)
+        if not archived and not _restore_entries(captured, root, moved, pending) and captured.parent == scratch:
+            _retain(captured, pending, root / ".git")
         raise
     finally:
-        # If rollback met another save, leave the raw original in scratch and require the owner's inspection.
-        if published or not any(os.path.lexists(captured / name) for name in moved):
+        # Leave raw originals in place if even moving them to private storage failed.
+        if not any(os.path.lexists(scratch / "captured" / name) for name in moved):
             shutil.rmtree(scratch)
 
 

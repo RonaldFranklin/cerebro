@@ -444,3 +444,44 @@ def test_multiple_nested_siblings_are_quarantined_in_one_pass(service: Service) 
         (directory / filename).write_text(filename)
     service.narrow(NARROWINGS["archived"])
     assert not (root / "notes/drafts").exists()
+
+
+@pytest.mark.parametrize("archive_fails", [False, True])
+def test_collision_on_first_file_preserves_other_checkout_entries(
+    service: Service, monkeypatch: pytest.MonkeyPatch, archive_fails: bool
+) -> None:
+    root = service.sample.root
+    names = ["schema/areas.yaml", "schema/types.yaml"]
+    second_head = (root / names[1]).read_bytes()
+    for name in names:
+        (root / name).write_text("first draft")
+    add = tarfile.TarFile.addfile
+
+    def save_and_maybe_fail(archive: tarfile.TarFile, member: tarfile.TarInfo, fileobj: BinaryIO | None = None) -> None:
+        add(archive, member, fileobj)
+        if member.name == names[0]:
+            (root / names[0]).write_text("latest save")
+            if archive_fails:
+                raise OSError("disk full")
+
+    monkeypatch.setattr(tarfile.TarFile, "addfile", save_and_maybe_fail)
+    with pytest.raises(NoteWriteError):
+        service.container.start()
+    assert (root / names[0]).read_text() == "latest save"
+    assert (root / names[1]).read_bytes() == (b"first draft" if archive_fails else second_head)
+    [incomplete] = service.sample.state_dir.glob("quarantine-*.partial")
+    assert (incomplete / "unrestored-paths").read_bytes() == names[0].encode() + b"\0"
+
+
+def test_quarantine_restores_literal_git_pathspec_characters(service: Service) -> None:
+    name = ":(exclude)draft"
+    path = service.sample.root / name
+    path.write_text("committed")
+    git = service.sample.git()
+    git.stage([name])
+    git.commit("Add literal file name", [name])
+    path.write_text("uncommitted")
+    service.container.start()
+    assert path.read_text() == "committed"
+    [snapshot] = service.sample.state_dir.glob("quarantine-*")
+    assert (snapshot / "originals" / name).read_text() == "uncommitted"

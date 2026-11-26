@@ -508,8 +508,18 @@ class GitRepo:
         self._require_object_id(revision)
         shutil.copyfile(self._root / ".git/index", index_file)
         if paths:
+            pathspecs = index_file.parent / "paths"
+            pathspecs.write_bytes(b"".join(os.fsencode(path) + b"\0" for path in paths))
             self._run(
-                [f"--work-tree={worktree}", "restore", f"--source={revision}", "--staged", "--worktree", "--", *paths],
+                [
+                    f"--work-tree={worktree}",
+                    "restore",
+                    f"--source={revision}",
+                    "--staged",
+                    "--worktree",
+                    f"--pathspec-from-file={pathspecs}",
+                    "--pathspec-file-nul",
+                ],
                 index_file=index_file,
                 umask=0o077,
             )

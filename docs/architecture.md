@@ -240,6 +240,8 @@ Filesystem repository, operating notes (Phase 2):
   `cerebro-quarantine-in-progress` from external state and filesystem backups. Git pushes exclude them.
   Recovery installs HEAD without replacing a later editor save. After an interruption inspect the state directory
   and `.git/cerebro-quarantine-in-progress`. Health lists completed and incomplete (`.partial`) snapshots.
+  If another save prevents restoration, `unrestored-paths` lists the affected names separated by NUL bytes.
+  Independent paths are restored before the error is reported.
   The service never prunes them.
   Listings check before and after reading; `get` checks after reading and, when the file looks uncommitted, waits for
   any running `apply` and checks again. Residual risk: index flags set by hand (`assume-unchanged`, `skip-worktree`)
