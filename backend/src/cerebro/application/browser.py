@@ -20,6 +20,10 @@ class AuthenticationFailed(ApplicationError):  # noqa: N818
         self.retry_after = retry_after
 
 
+class CsrfRejected(AuthenticationFailed):
+    """An authenticated session received an invalid synchronizer token."""
+
+
 @dataclass(frozen=True, slots=True)
 class BrowserBinding:
     listener: str
@@ -126,6 +130,6 @@ class BrowserAuth:
         if csrf is not None and (
             len(csrf) > 128 or not csrf.isascii() or not hmac.compare_digest(row.csrf_token, csrf)
         ):
-            raise AuthenticationFailed()
+            raise CsrfRejected()
         row.last_used = now
         return row

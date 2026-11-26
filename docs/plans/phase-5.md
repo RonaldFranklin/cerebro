@@ -4,7 +4,7 @@
 
 ## 1. Delivery sequence
 
-PR 1 records the decision in [ADR-0019](../adr/0019-owner-browser-api.md). PR 2 pins the approved inventory. PR 3 implements owner authentication. PRs 4–11 are planned. Start each branch from current main after the preceding PR merges. The owner authorizes merges for all eleven PRs, including security and dependency changes, with independent review, findings resolved, completed green CI and scripts/merge-pr.sh. The dependency, ADR and privileged setup boundaries are recorded in §6.
+PR 1 records the decision in [ADR-0019](../adr/0019-owner-browser-api.md). PR 2 pins the approved inventory. PR 3 implements owner authentication. PR 4 mounts the authenticated browser service. PRs 5–11 are planned. Start each branch from current main after the preceding PR merges. The owner authorizes merges for all eleven PRs, including security and dependency changes, with independent review, findings resolved, completed green CI and scripts/merge-pr.sh. The dependency, ADR and privileged setup boundaries are recorded in §6.
 
 | PR and branch | Deliverable | Verification before merge |
 |---|---|---|
@@ -266,3 +266,22 @@ The five-attempt window survives restart and expires individual attempts after f
 The browser service shares a process-local table across listeners. It keeps up to 64 sessions, evicting
 the least recently used at capacity. An authenticated request checks the exact verifier generation,
 listener, origin and expiry. Restart, logout and external password rotation invalidate prior sessions.
+
+### PR 4 delivery record
+
+The installed `cerebro-mcp` serves the browser API and MCP on the same numeric loopback sockets. Set
+`--private-origin` to the canonical external HTTPS origin served by the TLS terminator. Preserve its
+Host header on the loopback hop. With `--enable-public`, set `--public-origin` to the second origin.
+Defaults are HTTPS on localhost at the respective configured ports. Proxy headers cannot select the
+listener or ceiling. Pass `--web-dist` to serve a local production build; the API and MCP work without it.
+
+POST `/api/login` with a JSON password, the exact Origin and `X-Cerebro-Request: 1`. Login and
+GET `/api/session` return the listener ceiling and session-bound `csrf_token`. Send `X-CSRF-Token`
+and the exact Origin on mutations, including POST `/api/logout`. Each origin receives its own
+host-only Secure, HttpOnly, SameSite=Strict cookie. Logout returns 204. API and shell responses
+use no-store. The HTML carries the CSP nonce in a `cerebro-style-nonce` meta element.
+
+Integration tests use two test-only TLS terminators forwarding to real private and public loopback
+sockets. They exercise the same-host cookies, socket-bound authorization, logout, host/origin checks
+and the nonce-bearing shell. Existing installed MCP tests cover both credential scopes, the disabled
+public listener, bounded requests and the SDK lifespan.
