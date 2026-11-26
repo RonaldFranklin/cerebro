@@ -80,6 +80,6 @@ Use the matching block each time you launch a client in WSL Bash. Paste that cli
 )
 ```
 
-Before running project commands, ask each client to execute `test -z "${CEREBRO_CODEX_TOKEN-}" && test -z "${cerebro_secret-}"` in its shell. Expect success; stop if either credential is inherited. This check prints no secret.
+Before running project commands, ask each client to execute `test -z "${CEREBRO_CODEX_TOKEN-}" && test -z "${cerebro_secret-}"` in its shell. Expect success; stop if either credential is inherited. This checks only the two named variables without printing a secret. A project command running as your user can still follow `CEREBRO_HEADERS_FILE` and read the Claude bearer during the session.
 
 Open `/mcp` in each client. Confirm that `cerebro` connects and offers six tools. Ask the agent to call `cerebro_overview` once and report whether it succeeded. An empty overview is valid for fresh content. To verify write discovery without modifying content, ask it to call `cerebro_write_guide`. If authentication fails, confirm that the launch token belongs to this client and environment. Ask the owner to revoke and reissue any exposed token. [Agent integration and fixture checks](agent-integration.md)
