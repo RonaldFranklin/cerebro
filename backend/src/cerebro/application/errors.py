@@ -65,13 +65,18 @@ class DecryptionError(ApplicationError):
 
 class SectionNotFound(ApplicationError):  # noqa: N818
     """A **visible** note has no heading with this title. Only raised after the visibility check, so it never
-    reveals anything about hidden notes.
+    reveals anything about hidden notes. ``headings`` are the ones the caller can ask for instead, redacted like the
+    body and bounded; ``headings_truncated`` says that some were left out. Neither is part of the message.
     """
 
-    def __init__(self, note_id: NoteId, section: str) -> None:
+    def __init__(
+        self, note_id: NoteId, section: str, headings: tuple[str, ...] = (), *, headings_truncated: bool = False
+    ) -> None:
         super().__init__("section not found")
         self.note_id = note_id
         self.section = section
+        self.headings = headings
+        self.headings_truncated = headings_truncated
 
 
 class PasswordDurabilityError(ApplicationError):

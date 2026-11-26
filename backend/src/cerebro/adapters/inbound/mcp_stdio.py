@@ -71,8 +71,8 @@ def bridge(source: BinaryIO, sink: BinaryIO, *, host: str, port: int, secret: st
                     version = result["protocolVersion"]
             finally:
                 conn.close()
-        except InvalidToolArguments:
-            reply = invalid_arguments(rpc_id)
+        except InvalidToolArguments as error:
+            reply = invalid_arguments(rpc_id, error)
         except ValueError, RecursionError:
             reply = {"jsonrpc": "2.0", "id": rpc_id, "error": {"code": -32600, "message": "Invalid request."}}
         except PermissionError:

@@ -268,6 +268,39 @@ class TestReadNote:
                 ReadNoteRequest(note_id=NID("server-ssh-access"), section="Nope"), ctx()
             )
         assert error.value.section == "Nope"
+        assert error.value.headings == ("SSH", "Verify", "Other")
+        assert error.value.headings_truncated is False
+
+    def test_listed_headings_are_redacted_and_can_be_requested(self, world: World) -> None:
+        world.add(id=NID("with-links"), body="## See [[vault-layout]]\n\nText.\n```\n## Not a heading\n```\n")
+        read = ReadNote(world.notes, world.graph)
+        with pytest.raises(SectionNotFound) as error:
+            read.execute(ReadNoteRequest(note_id=NID("with-links"), section="Nope"), ctx(INTERNAL))
+        assert error.value.headings == (f"See {REDACTED_LINK}",)
+        # A hidden id cannot be confirmed by naming it in a heading request.
+        with pytest.raises(SectionNotFound):
+            read.execute(ReadNoteRequest(note_id=NID("with-links"), section="See [[vault-layout]]"), ctx(INTERNAL))
+        view = read.execute(ReadNoteRequest(note_id=NID("with-links"), section=error.value.headings[0]), ctx(INTERNAL))
+        assert "Text." in view.body
+
+    @pytest.mark.parametrize(
+        ("body", "listed"),
+        [
+            ("".join(f"## Part {n}\n" for n in range(100)), 40),
+            ("".join(f"## {n} {'x' * 200}\n" for n in range(40)), 10),
+            (f"## {'é' * 200}\n## Short\n## Short\n## \n", 1),
+        ],
+        ids=["count", "total-bytes", "unrequestable-and-repeated"],
+    )
+    def test_listed_headings_are_bounded(self, world: World, body: str, listed: int) -> None:
+        world.add(id=NID("long-note"), body=body)
+        with pytest.raises(SectionNotFound) as error:
+            ReadNote(world.notes, world.graph).execute(
+                ReadNoteRequest(note_id=NID("long-note"), section="Nope"), ctx(INTERNAL)
+            )
+        assert len(error.value.headings) == listed
+        assert sum(len(h.encode()) for h in error.value.headings) <= 2048
+        assert error.value.headings_truncated is True
 
     def test_hidden_and_missing_notes_fail_identically(self, world: World) -> None:
         read = ReadNote(world.notes, world.graph)

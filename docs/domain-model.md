@@ -135,7 +135,9 @@ Structure and rule details enforced by the domain:
   `related`, `superseded_by` and the wikilinks already extracted from the body.
 - **Sections.** `ReadNote` reads one section by heading: ATX headings (`#` to `######`), matched ignoring case
   and extra whitespace, first match wins; the section includes its sub-sections and ends at the next heading of
-  the same or a higher level. Headings in fenced code blocks do not count.
+  the same or a higher level. Headings in fenced code blocks do not count. Sections are taken from the redacted body.
+  Asking a readable note for a heading it lacks lists the available ones (bounded); a hidden note and a missing note
+  fail identically, with or without a section.
 
 ### Hubs
 

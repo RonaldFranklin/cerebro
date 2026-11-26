@@ -8,7 +8,27 @@ from cerebro.application.ports.notes import NoteRepository
 from cerebro.domain.access import AccessContext, Scope, is_visible
 from cerebro.domain.links import LinkKind
 from cerebro.domain.note import Note, NoteId
-from cerebro.domain.sections import extract_section
+from cerebro.domain.sections import extract_headings, extract_section
+
+_MAX_HEADINGS = 40
+_MAX_HEADINGS_BYTES = 2048
+_MAX_HEADING_BYTES = 256  # longer than any section a transport accepts
+
+
+def _available_headings(body: str) -> tuple[tuple[str, ...], bool]:
+    """The distinct headings of ``body`` in order, whole, within the bounds; and whether any was left out."""
+    titles = tuple(dict.fromkeys(h.title for h in extract_headings(body) if h.title))
+    listed: list[str] = []
+    size = 0
+    for title in titles:
+        length = len(title.encode("utf-8"))
+        if length > _MAX_HEADING_BYTES:
+            continue
+        if len(listed) == _MAX_HEADINGS or size + length > _MAX_HEADINGS_BYTES:
+            break
+        listed.append(title)
+        size += length
+    return tuple(listed), len(listed) < len(titles)
 
 
 class ReadNote:
@@ -24,13 +44,14 @@ class ReadNote:
     def execute(self, request: ReadNoteRequest, ctx: AccessContext) -> NoteView:
         require_scope(ctx, Scope.READ)
         note = visible_note(self._notes, request.note_id, ctx, include_history=True)
-        body = note.body
+        # Redact first: sections, and the headings offered instead, are those of the body the caller may see.
+        body = redacted_body(self._notes, ctx, note.body, include_history=True)
         if request.section is not None:
-            found = extract_section(note.body, request.section)
+            found = extract_section(body, request.section)
             if found is None:
-                raise SectionNotFound(note.id, request.section)
+                headings, truncated = _available_headings(body)
+                raise SectionNotFound(note.id, request.section, headings, headings_truncated=truncated)
             body = found
-        body = redacted_body(self._notes, ctx, body, include_history=True)
         members = self._members(note, ctx, request.include_history) if note.is_hub else None
         return NoteView.from_note(
             note,

@@ -1,9 +1,11 @@
 """The authenticated read and write tools. Transport identity comes from the request's authentication callback."""
 
 import asyncio
+import contextlib
 import json
 from collections.abc import Callable
 from dataclasses import dataclass
+from enum import StrEnum
 
 from mcp import MCPError, types
 from mcp.server import Server, ServerRequestContext
@@ -34,7 +36,7 @@ from cerebro.application.use_case import ContextUseCase
 from cerebro.domain.access import AccessContext, Scope
 from cerebro.domain.enums import Priority, Status
 from cerebro.domain.errors import DomainError
-from cerebro.domain.note import NoteId
+from cerebro.domain.note import MAX_NOTE_ID_LENGTH, NoteId
 from cerebro.domain.vocabulary import Area, NoteType, Vocabulary
 
 type ToolRequest = (
@@ -48,10 +50,11 @@ type ToolRequest = (
 
 
 class InvalidToolArguments(ValueError):  # noqa: N818
-    """A fixed diagnostic used also by transport preflight."""
+    """A diagnostic used also by transport preflight. ``problem`` names the field and what it accepts; it is built
+    from the tool schema only, never from a received value or key."""
 
-    def __init__(self) -> None:
-        super().__init__("Invalid tool arguments.")
+    def __init__(self, problem: str) -> None:
+        super().__init__(f"Invalid tool arguments: {problem}.")
 
 
 def _tool(name: str, description: str, properties: dict[str, object], *required: str) -> types.Tool:
@@ -115,53 +118,84 @@ def parse_tool(name: str, arguments: object) -> ToolRequest:
     """Validate field sizes and types before invoking authentication or a read use case."""
     args = {} if arguments is None else arguments
     tool = _TOOLS.get(name)
-    if tool is None or not isinstance(args, dict):
-        raise InvalidToolArguments
+    if tool is None:
+        raise InvalidToolArguments("unknown tool")
+    if not isinstance(args, dict):
+        raise InvalidToolArguments("arguments must be an object")
     if name == WRITE_TOOL.name:
         return write_request(args)
-    if args.keys() - tool.input_schema["properties"].keys():
-        raise InvalidToolArguments
+    properties = tool.input_schema["properties"]
+    if args.keys() - properties.keys():
+        accepted = ", ".join(properties) or "no arguments"
+        raise InvalidToolArguments(f"unknown argument; {name} accepts {accepted}")
 
-    def text(key: str, limit: int = MAX_FIELD_BYTES) -> str:
-        val = args.get(key)
-        if not isinstance(val, str):
-            raise InvalidToolArguments
-        return bounded_text(val, limit)
+    def text(key: str, expected: str = "a string", limit: int = MAX_FIELD_BYTES) -> str:
+        value = args.get(key)
+        if isinstance(value, str):
+            with contextlib.suppress(ValueError):  # too long, or not encodable as UTF-8
+                return bounded_text(value, limit)
+        raise InvalidToolArguments(f"{key} must be {expected} of at most {limit} UTF-8 bytes")
 
-    def integer(key: str, default: int) -> int:
-        value = args.get(key, default)
+    def kebab[T](key: str, build: Callable[[str], T]) -> frozenset[T]:
+        if key not in args:
+            return frozenset()
+        expected = "a kebab-case string"
+        value = text(key, expected)
+        with contextlib.suppress(DomainError):
+            return frozenset([build(value)])
+        raise InvalidToolArguments(f"{key} must be {expected} of at most {MAX_FIELD_BYTES} UTF-8 bytes")
+
+    def choice[E: StrEnum](key: str, kind: type[E]) -> frozenset[E]:
+        if key not in args:
+            return frozenset()
+        for member in kind:
+            if args[key] == member.value:
+                return frozenset([member])
+        raise InvalidToolArguments(f"{key} must be one of {', '.join(member.value for member in kind)}")
+
+    def note_id() -> NoteId:
+        value = args.get("id")
+        if isinstance(value, str):
+            with contextlib.suppress(DomainError):
+                return NoteId(value)
+        raise InvalidToolArguments(f"id must be a kebab-case note id of at most {MAX_NOTE_ID_LENGTH} characters")
+
+    def integer(key: str) -> int:
+        schema = properties[key]
+        value = args.get(key, schema["default"])
         # JSON Schema treats numbers such as 1.0 as integers. JSON booleans are a separate type.
-        if type(value) is int:
-            return value
-        if type(value) is float and value.is_integer():
+        whole = type(value) is int or (type(value) is float and value.is_integer())
+        if whole and schema["minimum"] <= value <= schema["maximum"]:
             return int(value)
-        raise InvalidToolArguments
+        raise InvalidToolArguments(f"{key} must be an integer from {schema['minimum']} to {schema['maximum']}")
 
-    try:
-        if name == "cerebro_write_guide":
-            return GetVocabularyRequest()
-        if name == "cerebro_overview":
-            return GetOverviewRequest()
-        if name == "cerebro_search":
-            return SearchNotesRequest(
-                text=text("query", MAX_QUERY_BYTES),
-                areas=frozenset([Area(text("area"))]) if "area" in args else frozenset(),
-                types=frozenset([NoteType(text("type"))]) if "type" in args else frozenset(),
-                priorities=frozenset([Priority(text("priority"))]) if "priority" in args else frozenset(),
-                statuses=frozenset([Status(text("status"))]) if "status" in args else frozenset(),
-                include_history=args.get("include_history", False),
-                limit=integer("limit", 5),
-            )
-        note_id = NoteId(text("id"))
-        if name == "cerebro_read":
-            return ReadNoteRequest(note_id=note_id, section=text("section") if "section" in args else None)
-        depth = integer("depth", 1)
-        if not 1 <= depth <= 2:
-            raise InvalidToolArguments
-        return GetNeighborsRequest(note_id=note_id, hops=depth)
-    except DomainError, ValueError:
-        pass
-    raise InvalidToolArguments
+    if name == "cerebro_write_guide":
+        return GetVocabularyRequest()
+    if name == "cerebro_overview":
+        return GetOverviewRequest()
+    if name == "cerebro_search":
+        include_history = args.get("include_history", False)
+        if type(include_history) is not bool:
+            raise InvalidToolArguments("include_history must be true or false")
+        return SearchNotesRequest(
+            text=text("query", limit=MAX_QUERY_BYTES),
+            areas=kebab("area", Area),
+            types=kebab("type", NoteType),
+            priorities=choice("priority", Priority),
+            statuses=choice("status", Status),
+            include_history=include_history,
+            limit=integer("limit"),
+        )
+    target = note_id()
+    if name == "cerebro_neighbors":
+        return GetNeighborsRequest(note_id=target, hops=integer("depth"))
+    section = None
+    if "section" in args:
+        expected = "a non-blank string"
+        section = text("section", expected)
+        if not section.strip():
+            raise InvalidToolArguments(f"section must be {expected} of at most {MAX_FIELD_BYTES} UTF-8 bytes")
+    return ReadNoteRequest(note_id=target, section=section)
 
 
 def _neighbors(result: GraphView) -> dict[str, object]:
@@ -188,6 +222,14 @@ def _findings(findings: tuple[WriteFinding, ...]) -> list[dict[str, str]]:
 
 def _error(message: str) -> types.CallToolResult:
     return types.CallToolResult(is_error=True, content=[types.TextContent(text=message)])
+
+
+def _structured_error(details: dict[str, object]) -> types.CallToolResult:
+    return types.CallToolResult(
+        is_error=True,
+        content=[types.TextContent(text=json.dumps(details, ensure_ascii=False))],
+        structured_content=details,
+    )
 
 
 def tool_scope(name: str) -> Scope:
@@ -245,15 +287,22 @@ class MCPTools:
             return types.CallToolResult(
                 content=[types.TextContent(text=json.dumps(output, ensure_ascii=False))], structured_content=output
             )
-        except InvalidToolArguments, DomainError:
+        except InvalidToolArguments as error:
+            return _error(str(error))
+        except DomainError:
             return _error("Invalid tool arguments.")
         except WriteRejected as error:
-            details = {"findings": _findings(error.findings)}
-            return types.CallToolResult(
-                is_error=True, content=[types.TextContent(text=json.dumps(details))], structured_content=details
-            )
-        except NoteNotFound, SectionNotFound:
+            return _structured_error({"findings": _findings(error.findings)})
+        except NoteNotFound:
             return _error("Not found.")
+        except SectionNotFound as error:
+            return _structured_error(
+                {
+                    "error": "Section not found.",
+                    "headings": list(error.headings),
+                    "headings_truncated": error.headings_truncated,
+                }
+            )
         except PermissionDenied, AuthenticationFailed:
             return _error("Access denied.")
         except Exception:
