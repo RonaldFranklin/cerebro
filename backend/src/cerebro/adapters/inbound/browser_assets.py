@@ -15,7 +15,7 @@ from starlette.types import ASGIApp, Receive, Scope, Send
 from cerebro.domain.note import MAX_NOTE_ID_LENGTH
 from cerebro.domain.slug import is_slug
 
-_NAVIGATION = frozenset({"/", "/login", "/search", "/graph", "/inbox", "/health"})
+_NAVIGATION = frozenset({"/", "/login", "/search", "/graph", "/health"})
 _ASSET = re.compile(r"/assets/([A-Za-z0-9_][A-Za-z0-9_.-]*-[A-Za-z0-9_-]{8,64}\.([a-z0-9]+))", re.ASCII)
 _TYPES = {
     "js": "text/javascript",
