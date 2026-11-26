@@ -22,7 +22,7 @@ HTTPS for the private listener as specified in [ADR-0010](0010-network-access.md
 ## Consequences
 
 Containers sharing the service's bridge can reach its listeners directly. Keep unrelated containers off this network.
-The deployment checks the resolved port bindings before startup and verifies the running container's published ports.
+Before startup, the deployment checks the resolved bridge network mode and requires a loopback publication for each enabled listener. It verifies the running container's network mode and published ports.
 
 ## Alternatives considered
 
