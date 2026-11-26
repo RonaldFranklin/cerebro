@@ -34,6 +34,7 @@ def test_attributed_update_reads_the_exact_versions(real: bool, tmp_path: Path) 
     change = store.change(revision)
     assert change is not None
     assert change.parent is not None
+    assert store.recent(change.parent)[0] == change.parent
     assert change.actor == "codex"
     assert change.operation == "update"
     assert store.note_at(revision, after.id) == after
@@ -65,3 +66,5 @@ def test_unknown_revisions_and_unreadable_blobs_fail_closed(real: bool, tmp_path
         store.note_at(unknown, VAULT_ID)
     with pytest.raises(ChangeUnavailable):
         store.change(unknown)
+    with pytest.raises(ChangeUnavailable):
+        store.recent(unknown)

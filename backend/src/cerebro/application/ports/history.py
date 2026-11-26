@@ -7,8 +7,10 @@ from cerebro.domain.note import Note, NoteId
 
 
 class ChangeHistory(Protocol):
-    def recent(self) -> tuple[str, ...]:
-        """At most RECENT_WINDOW first-parent revisions reachable from HEAD."""
+    def recent(self, cursor: str | None = None) -> tuple[str, ...]:
+        """Start at cursor (or HEAD), returning at most RECENT_WINDOW revisions plus one continuation id.
+
+        A cursor outside the first-parent history raises ChangeUnavailable."""
         ...
 
     def change(self, revision: str) -> HistoryVersion | None:

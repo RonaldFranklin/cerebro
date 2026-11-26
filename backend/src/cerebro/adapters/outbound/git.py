@@ -389,12 +389,22 @@ class GitRepo:
             raise GitError("commit left no HEAD")
         return commit_id
 
-    def recent_revisions(self, limit: int) -> tuple[str, ...]:
+    def recent_revisions(self, limit: int, cursor: str | None = None) -> tuple[str, ...]:
         if not 1 <= limit <= 64:
             raise GitError("invalid history window")
-        if not self.head():
+        head = self.head()
+        if cursor is not None:
+            self._require_object_id(cursor)
+            if not head:
+                raise GitError("history cursor unavailable")
+            # At this distance the first-parent chain must land on the cursor itself.
+            _, count = self._run(["rev-list", "--first-parent", "--count", f"{cursor}..{head}", "--"])
+            _, ancestor = self._run(["rev-parse", "--verify", f"{head}~{int(count)}"])
+            if ancestor.strip() != cursor:
+                raise GitError("history cursor unavailable")
+        if not head:
             return ()
-        _, output = self._run(["rev-list", "--first-parent", f"--max-count={limit}", "HEAD", "--"])
+        _, output = self._run(["rev-list", "--first-parent", f"--max-count={limit}", cursor or head, "--"])
         revisions = tuple(output.splitlines())
         for revision in revisions:
             self._require_object_id(revision)

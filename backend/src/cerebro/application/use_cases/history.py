@@ -15,6 +15,7 @@ from cerebro.application.history import (
     MAX_DIFF_CHARS,
     RECENT_WINDOW,
     ChangeDetail,
+    ChangePage,
     ChangeSummary,
     ChangeUnavailable,
     HistoryRequest,
@@ -52,23 +53,26 @@ class OwnerHistory:
         self._notes = notes
         self._history = history
 
-    def list(self, ctx: AccessContext) -> tuple[ChangeSummary, ...]:
+    def list(self, ctx: AccessContext, cursor: str | None = None) -> ChangePage:
         require_owner(ctx, "inspect change history")
         with self._guard():
-            return self._list(ctx)
+            return self._list(ctx, cursor)
 
-    def _list(self, ctx: AccessContext) -> tuple[ChangeSummary, ...]:
-        rows = []
-        for revision in self._history.recent()[:RECENT_WINDOW]:
+    def _list(self, ctx: AccessContext, cursor: str | None) -> ChangePage:
+        rows: list[ChangeSummary] = []
+        if cursor is not None and not is_revision(cursor):
+            raise ChangeUnavailable()
+        revisions = self._history.recent(cursor)
+        for index, revision in enumerate(revisions):
+            if index == RECENT_WINDOW or len(rows) == MAX_CHANGES:
+                return ChangePage(tuple(rows), revision)
             try:
                 versions = self._authorized(revision, ctx)
                 if versions:
                     rows.append(self._summary(versions, ctx))
             except ChangeUnavailable:
                 continue
-            if len(rows) == MAX_CHANGES:
-                break
-        return tuple(rows)
+        return ChangePage(tuple(rows), None)
 
     def detail(self, request: HistoryRequest, ctx: AccessContext) -> ChangeDetail:
         require_owner(ctx, "inspect change history")
@@ -76,7 +80,7 @@ class OwnerHistory:
             return self._detail(request.revision, ctx)
 
     def _detail(self, revision: str, ctx: AccessContext) -> ChangeDetail:
-        if not is_revision(revision) or revision not in self._history.recent()[:RECENT_WINDOW]:
+        if not is_revision(revision) or not self._history.recent(revision):
             raise ChangeUnavailable()
         versions = self._authorized(revision, ctx)
         if versions is None:

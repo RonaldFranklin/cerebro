@@ -47,6 +47,12 @@ class ChangeSummary:
 
 
 @dataclass(frozen=True, slots=True)
+class ChangePage:
+    changes: tuple[ChangeSummary, ...]
+    next_cursor: str | None
+
+
+@dataclass(frozen=True, slots=True)
 class ChangeDetail:
     change: ChangeSummary
     diff: str

@@ -11,8 +11,12 @@ from cerebro.application.use_cases.history import OwnerHistory
 
 def install_browser_history(app: FastAPI, history: OwnerHistory) -> None:
     @app.get("/api/changes")
-    def list_changes(request: Request) -> JSONResponse:
-        return JSONResponse({"changes": [asdict(row) for row in history.list(request.state.ctx)]})
+    def list_changes(request: Request, cursor: str | None = None) -> JSONResponse:
+        try:
+            page = history.list(request.state.ctx, cursor)
+        except ChangeUnavailable:
+            return JSONResponse({"error": "Change unavailable."}, status_code=404)
+        return JSONResponse(asdict(page))
 
     @app.get("/api/changes/{revision}")
     def change_detail(revision: str, request: Request) -> JSONResponse:

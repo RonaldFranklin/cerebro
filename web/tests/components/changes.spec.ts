@@ -64,3 +64,16 @@ test("lower-ceiling sessions cannot navigate to or request history", async ({pag
   await expect(page.getByRole("navigation").getByRole("link", {name:"Recent changes"})).toHaveCount(0);
   expect(reads).toEqual([]);
 });
+
+test("Load more appends the next page and disappears at the end", async ({page}) => {
+  await owner(page);
+  await page.route("**/api/changes", route => route.fulfill({json:{changes:[row], next_cursor:row.revision}}));
+  await page.route("**/api/changes?cursor=" + row.revision, route => route.fulfill({json:{
+    changes:[{...row, revision:"b".repeat(40), title:"Older note"}], next_cursor:null,
+  }}));
+  await page.goto("/changes");
+  await page.getByRole("button", {name:"Load more"}).click({timeout:3000});
+  await expect(page.getByRole("button", {name:/Older note/})).toBeVisible();
+  await expect(page.getByRole("button", {name:/Island hub/})).toBeVisible();
+  await expect(page.getByRole("button", {name:"Load more"})).toHaveCount(0);
+});

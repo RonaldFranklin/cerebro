@@ -108,7 +108,7 @@ backend/
 | `Credentials`, `LoginAttempts`, `SessionStore` | Owner browser login: password verifier, shared attempt throttle, listener-bound sessions ([ADR-0019](adr/0019-owner-browser-api.md)) | crypto, SQLite, in-memory sessions; fakes |
 | `Clock`, `IdGenerator` | `now()`; note ids, token ids and token secrets, for deterministic tests | system / fixed fakes |
 
-Recent changes scans at most 32 first-parent revisions and shows up to 20 attributable note changes. The application
+Recent changes scans at most 32 first-parent revisions and shows up to 20 attributable note changes per page. The next cursor identifies the first unexamined revision. The application
 checks current and historical visibility before returning the actor, timestamp, note and unified diff. Whole
 documents are compared, and only the returned diff is bounded (16,384 characters), with clipping marked as
 truncated; a clipped diff gives removed lines at most half of that bound. When the changed regions of both versions
