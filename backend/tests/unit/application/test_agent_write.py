@@ -170,3 +170,23 @@ def test_update_cannot_move_between_core_hubs_and_regular_notes() -> None:
     with pytest.raises(WriteRejected, match="invalid_field"):
         write.execute(moved, ctx)
     assert kit.world.notes.head() == receipt.revision
+
+
+def test_replay_cannot_confirm_a_former_reference_after_its_reclassification() -> None:
+    kit = Kit()
+    write = writer(kit)
+    ctx = replace(agent_ctx(Sensitivity.PUBLIC, frozenset({Scope.WRITE})), token_id="token")
+    ref = kit.world.add(id=NoteId("temporarily-public"))
+    original = replace(request(), body="See [[temporarily-public]].")
+    receipt = write.execute(original, ctx)
+    note = kit.world.notes.get(receipt.note_id)
+    assert note is not None
+    kit.world.notes.apply(
+        [NoteChange(note=replace(note, body="See the owner guide."), expected_hash=content_hash(note))], MESSAGE
+    )
+    kit.world.notes.apply(
+        [NoteChange(note=replace(ref, sensitivity=Sensitivity.RESTRICTED), expected_hash=content_hash(ref))], MESSAGE
+    )
+    for guess in (original, replace(original, body="See [[never-existed]].")):
+        with pytest.raises(WriteRejected, match="broken_link"):
+            write.execute(guess, ctx)

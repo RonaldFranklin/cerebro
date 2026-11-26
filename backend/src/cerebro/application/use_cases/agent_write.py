@@ -95,6 +95,8 @@ class AgentWrite:
             raise
         if not ctx.ceiling.allows(candidate.sensitivity):
             raise WriteRejected(WriteFinding("outside_ceiling", "sensitivity", "Choose an authorized sensitivity."))
+        if not self._references_visible(candidate, ctx):
+            raise WriteRejected(_REFERENCE)
         if key is not None:
             # Canonical user-controlled content, independent of service timestamps and allocated identifiers.
             fingerprint = content_hash(replace(candidate, id=NoteId("create"), created=date.min, updated=date.min))
@@ -108,8 +110,6 @@ class AgentWrite:
             )
         if base and replace(candidate, updated=base.updated) == base:
             raise WriteRejected(WriteFinding("unchanged", "request", "The stored note already contains these changes."))
-        if not self._references_visible(candidate, ctx):
-            raise WriteRejected(_REFERENCE)
         report = validate_candidate(
             candidate, notes=self._notes, vocabulary=self._vocabulary, policy=PROPOSAL_POLICY, base=base
         )
