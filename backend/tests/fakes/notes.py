@@ -2,6 +2,8 @@
 
 from collections.abc import Sequence
 
+from cerebro.adapters.outbound.filesystem import NoteWriteError
+from cerebro.adapters.outbound.filesystem.repository import folder_for
 from cerebro.application.errors import NoteReadError
 from cerebro.application.ports.notes import CommittedCreate, FileProblem, NoteChange, NoteScan, check_agent_commit
 from cerebro.domain.commit_message import AgentWriteCommit, OwnerCommit
@@ -17,11 +19,12 @@ class InMemoryNoteRepository:
         self.commits: list[tuple[str, OwnerCommit | AgentWriteCommit, tuple[NoteId, ...]]] = []
         self._creates: dict[str, CommittedCreate] = {}
         self.apply_error: Exception | None = None
-        """Raised by the next ``apply`` before it writes anything, like the real ``NoteWriteError``."""
+        """Raised by the next ``apply`` before it writes anything; the real adapter raises ``NoteWriteError``."""
         self.problems: list[FileProblem] = []
         """Problem files reported by ``scan`` (and by the strict listings, which then raise)."""
         self.unreadable: set[NoteId] = set()
-        """Ids whose ``get`` raises ``NoteReadError``, like a real note file that differs from ``HEAD``."""
+        """Ids of note files that differ from ``HEAD``: ``get`` raises ``NoteReadError``; ``scan`` leaves them out and
+        reports them as not stable."""
 
     def get(self, note_id: NoteId) -> Note | None:
         if note_id in self.unreadable:
@@ -38,7 +41,14 @@ class InMemoryNoteRepository:
         return scan.notes
 
     def scan(self) -> NoteScan:
-        return NoteScan(notes=tuple(self._notes[i] for i in sorted(self._notes)), problems=tuple(self.problems))
+        uncommitted = tuple(
+            FileProblem(f"{folder_for(self._notes[i])}/{i.value}.md", "differs from the last commit", stable=False)
+            for i in sorted(self.unreadable)
+        )
+        return NoteScan(
+            notes=tuple(self._notes[i] for i in sorted(self._notes) if i not in self.unreadable),
+            problems=(*self.problems, *uncommitted),
+        )
 
     def head(self) -> str | None:
         return self.commits[-1][0] if self.commits else None
@@ -47,6 +57,12 @@ class InMemoryNoteRepository:
         if not is_content_hash(request_key):
             raise InvalidValueError("request_key", "expected a SHA-256 digest")
         return self._creates.get(request_key)
+
+    def commit_by_hand(self, note: Note) -> None:
+        """A manual commit in the content repository, which may do what ``apply`` refuses (move a note's folder)."""
+        self._notes[note.id] = note
+        revision = f"rev-{len(self.commits) + 1:04d}"
+        self.commits.append((revision, OwnerCommit(subject="Manual edit"), (note.id,)))
 
     def apply(self, changes: Sequence[NoteChange], message: OwnerCommit | AgentWriteCommit) -> str:
         if isinstance(message, AgentWriteCommit):
@@ -66,8 +82,12 @@ class InMemoryNoteRepository:
                     raise ContentConflict("", content_hash(stored))
             elif stored is None:
                 raise ContentConflict(change.expected_hash, "")
+            elif folder_for(stored) != folder_for(change.note):
+                raise InvalidValueError("type", "a note cannot move between core/, hubs/ and notes/")
             elif content_hash(stored) != change.expected_hash:
                 raise ContentConflict(change.expected_hash, content_hash(stored))
+        if all(self._notes.get(c.note.id) == c.note for c in changes):
+            raise NoteWriteError("nothing to commit: every note is unchanged")
         for change in changes:
             self._notes[change.note.id] = change.note
         revision = f"rev-{len(self.commits) + 1:04d}"

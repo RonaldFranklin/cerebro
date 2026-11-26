@@ -4,6 +4,7 @@ from datetime import timedelta
 
 import pytest
 
+from cerebro.adapters.outbound.filesystem import NoteWriteError
 from cerebro.application.agent_write import AgentWriteRequest, WriteRejected
 from cerebro.application.dto import GetVocabularyRequest
 from cerebro.application.errors import NoteReadError, PermissionDenied
@@ -427,7 +428,7 @@ def test_create_replay_is_refused_once_the_stored_note_became_core() -> None:
     note = kit.world.notes.get(receipt.note_id)
     assert note is not None
     promoted = replace(note, type=CORE, priority=Priority.P0, hub=None)
-    kit.world.notes.apply([NoteChange(note=promoted, expected_hash=content_hash(note))], MESSAGE)
+    kit.world.notes.commit_by_hand(promoted)  # the owner moved the file into core/
     with pytest.raises(WriteRejected, match="core_scope_required"):
         write.execute(request(), ctx)
 
@@ -439,8 +440,8 @@ def test_a_failed_commit_leaves_the_indexes_untouched_and_fresh(change: dict[str
     ctx = replace(agent_ctx(Sensitivity.RESTRICTED, frozenset({Scope.WRITE})), token_id="token-one")
     created = writer(kit).execute(request(), ctx)
     indexed = w.search.search(_query(ctx))
-    w.notes.apply_error = OSError("synthetic write failure")
-    with pytest.raises(OSError, match="synthetic"):
+    w.notes.apply_error = NoteWriteError("synthetic write failure")
+    with pytest.raises(NoteWriteError, match="synthetic"):
         writer(kit).execute(update_of(created.note_id.value, kit, **change), ctx)
     assert w.notes.head() == created.revision
     assert not index_is_stale(w.notes, w.search, w.graph)
