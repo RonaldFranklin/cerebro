@@ -14,6 +14,7 @@ from cerebro.adapters.inbound.input_limits import MAX_INPUT_BYTES
 from cerebro.application.browser import AuthenticationFailed, BrowserAuth, BrowserBinding, CsrfRejected, SessionInfo
 from cerebro.domain.access import AccessCeiling, AccessContext
 from cerebro.domain.enums import Sensitivity
+from cerebro.domain.errors import InvalidValueError
 
 _NO_STORE = {"Cache-Control": "no-store"}
 _SESSION_PATHS = frozenset({"/api/login", "/api/logout", "/api/session"})
@@ -166,7 +167,8 @@ def browser_api(auth: BrowserAuth, binding: BrowserBinding, ceiling: AccessCeili
         return response
 
     @app.exception_handler(RequestValidationError)
-    async def invalid_fields(request: Request, exc: RequestValidationError) -> Response:
+    @app.exception_handler(InvalidValueError)
+    async def invalid_input(request: Request, exc: Exception) -> Response:
         return _error(422, "Invalid request.")
 
     @app.post("/api/login")

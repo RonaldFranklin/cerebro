@@ -7,9 +7,18 @@ from fastapi import APIRouter, Depends, FastAPI, Query, Request
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from starlette.responses import JSONResponse
 
-from cerebro.adapters.inbound import browser_read_models as models
 from cerebro.adapters.inbound.input_limits import MAX_FIELD_BYTES, MAX_QUERY_BYTES, bounded_text
-from cerebro.adapters.inbound.read_views import health_view, overview_view, read_view, search_view
+from cerebro.adapters.inbound.read_views import (
+    GraphResponse,
+    HealthResponse,
+    NoteResponse,
+    OverviewResponse,
+    SearchResponse,
+    health_view,
+    overview_view,
+    read_view,
+    search_view,
+)
 from cerebro.application.dto import (
     GetGraphRequest,
     GetNeighborsRequest,
@@ -66,11 +75,8 @@ class Search(Filters):
         return bounded_text(value, MAX_QUERY_BYTES) if value else ""
 
 
-class Graph(Filters):
+class Neighbors(Filters):
     sensitivity: Sensitivity | None = None
-
-
-class Neighbors(Graph):
     hops: int = Field(default=1, ge=1, le=2)
 
 
@@ -83,7 +89,7 @@ class ReadNote(History):
         return bounded_text(value, MAX_FIELD_BYTES) if value is not None else None
 
 
-def _graph_view(graph: GraphView, filters: Graph) -> models.GraphResponse:
+def _neighborhood(graph: GraphView, filters: Neighbors) -> GraphView:
     visible = {
         node.id: node
         for node in graph.nodes
@@ -94,17 +100,22 @@ def _graph_view(graph: GraphView, filters: Graph) -> models.GraphResponse:
         and (filters.sensitivity is None or node.sensitivity is filters.sensitivity)
     }
     edges = [edge for edge in graph.edges if edge.source in visible and edge.target in visible]
-    if graph.center is not None and isinstance(filters, Neighbors):
-        # Keep local paths within the selected filters, including intermediate nodes on a two-hop path.
-        reached = {graph.center} & visible.keys()
-        for _ in range(filters.hops):
-            added = {edge.target for edge in edges if edge.source in reached}
-            added.update(edge.source for edge in edges if edge.target in reached)
-            reached.update(added)
-        visible = {key: node for key, node in visible.items() if key in reached}
-        edges = [edge for edge in edges if edge.source in reached and edge.target in reached]
+    # Keep local paths within the selected filters, including intermediate nodes on a two-hop path.
+    reached = {node_id for node_id in visible if node_id == graph.center}
+    for _ in range(filters.hops):
+        added = {edge.target for edge in edges if edge.source in reached}
+        added.update(edge.source for edge in edges if edge.target in reached)
+        reached.update(added)
+    return GraphView(
+        nodes=tuple(node for node_id, node in visible.items() if node_id in reached),
+        edges=tuple(edge for edge in edges if edge.source in reached and edge.target in reached),
+        center=graph.center if graph.center in reached else None,
+    )
+
+
+def _graph_view(graph: GraphView) -> GraphResponse:
     return {
-        "center": graph.center.value if graph.center in visible and graph.center is not None else None,
+        "center": graph.center.value if graph.center else None,
         "nodes": [
             {
                 "id": n.id.value,
@@ -116,11 +127,11 @@ def _graph_view(graph: GraphView, filters: Graph) -> models.GraphResponse:
                 "status": n.status.value,
                 "sensitivity": n.sensitivity.value,
             }
-            for n in visible.values()
+            for n in graph.nodes
         ],
         "edges": [
             {"source": e.source.value, "target": e.target.value, "kind": e.kind.value, "section": e.section}
-            for e in edges
+            for e in graph.edges
         ],
     }
 
@@ -142,17 +153,13 @@ def install_browser_reads(app: FastAPI, cases: BrowserReads) -> None:
     async def denied(request: Request, error: PermissionDenied) -> JSONResponse:
         return JSONResponse({"error": "Access denied."}, 403)
 
-    @app.exception_handler(InvalidValueError)
-    async def invalid(request: Request, error: InvalidValueError) -> JSONResponse:
-        return JSONResponse({"error": "Invalid request."}, 422)
-
-    @router.get("/overview", response_model=models.OverviewResponse)
-    def overview(request: Request, params: Annotated[Parameters, Query()]) -> dict[str, object]:
+    @router.get("/overview", response_model=OverviewResponse)
+    def overview(request: Request, params: Annotated[Parameters, Query()]) -> OverviewResponse:
         result = cases.get_overview.execute(GetOverviewRequest(), request.state.ctx)
         return {**overview_view(result), "core_words": result.core_words}
 
-    @router.get("/search", response_model=models.SearchResponse)
-    def search(request: Request, params: Annotated[Search, Query()]) -> dict[str, object]:
+    @router.get("/search", response_model=SearchResponse)
+    def search(request: Request, params: Annotated[Search, Query()]) -> SearchResponse:
         query = SearchNotesRequest(
             text=params.q,
             areas=frozenset([Area(params.area)]) if params.area else frozenset(),
@@ -164,8 +171,8 @@ def install_browser_reads(app: FastAPI, cases: BrowserReads) -> None:
         )
         return {"results": search_view(cases.search_notes.execute(query, request.state.ctx))}
 
-    @router.get("/notes/{note_id}", response_model=models.NoteResponse)
-    def note(request: Request, note_id: str, params: Annotated[ReadNote, Query()]) -> dict[str, object]:
+    @router.get("/notes/{note_id}", response_model=NoteResponse)
+    def note(request: Request, note_id: str, params: Annotated[ReadNote, Query()]) -> NoteResponse:
         query = ReadNoteRequest(
             note_id=NoteId(note_id), section=params.section, include_history=params.history == "true"
         )
@@ -181,17 +188,17 @@ def install_browser_reads(app: FastAPI, cases: BrowserReads) -> None:
         return view
 
     @router.get("/graph")
-    def graph(request: Request, params: Annotated[Graph, Query()]) -> models.GraphResponse:
+    def graph(request: Request, params: Annotated[History, Query()]) -> GraphResponse:
         query = GetGraphRequest(include_history=params.history == "true")
-        return _graph_view(cases.get_graph.execute(query, request.state.ctx), params)
+        return _graph_view(cases.get_graph.execute(query, request.state.ctx))
 
     @router.get("/notes/{note_id}/neighbors")
-    def neighbors(request: Request, note_id: str, params: Annotated[Neighbors, Query()]) -> models.GraphResponse:
+    def neighbors(request: Request, note_id: str, params: Annotated[Neighbors, Query()]) -> GraphResponse:
         query = GetNeighborsRequest(note_id=NoteId(note_id), include_history=params.history == "true", hops=params.hops)
-        return _graph_view(cases.get_neighbors.execute(query, request.state.ctx), params)
+        return _graph_view(_neighborhood(cases.get_neighbors.execute(query, request.state.ctx), params))
 
-    @router.get("/health", response_model=models.HealthResponse)
-    def health(request: Request, params: Annotated[Parameters, Query()]) -> dict[str, object]:
+    @router.get("/health", response_model=HealthResponse)
+    def health(request: Request, params: Annotated[Parameters, Query()]) -> HealthResponse:
         return health_view(cases.health_report.execute(HealthReportRequest(), request.state.ctx))
 
     app.include_router(router)
