@@ -9,6 +9,7 @@ import tarfile
 from collections.abc import Callable, Sequence
 from dataclasses import replace
 from pathlib import Path
+from typing import BinaryIO
 
 import pytest
 
@@ -332,3 +333,77 @@ def test_quarantine_failure_keeps_all_original_files(service: Service, monkeypat
         service.container.start()
     assert (root / "draft.txt").read_text() == "keep this"
     assert not list(service.sample.state_dir.glob("quarantine-*"))
+
+
+@pytest.mark.parametrize("operation", ["MERGE_HEAD", "rebase-merge"])
+def test_resume_leaves_git_operations_untouched(service: Service, operation: str) -> None:
+    root = service.sample.root
+    marker = root / ".git" / operation
+    if operation == "MERGE_HEAD":
+        marker.write_text(str(service.sample.git().head()) + "\n")
+    else:
+        marker.mkdir()
+    (root / "draft").write_text("working on merge")
+    with pytest.raises(NoteWriteError):
+        service.container.start()
+    assert (root / "draft").read_text() == "working on merge"
+    assert marker.exists()
+
+
+def test_dirty_file_replaced_by_directory_is_quarantined(service: Service) -> None:
+    path = service.sample.root / "schema/types.yaml"
+    before = path.read_bytes()
+    path.unlink()
+    path.mkdir()
+    (path / "draft").write_text("keep this")
+    service.container.start()
+    assert path.read_bytes() == before
+    [snapshot] = service.sample.state_dir.glob("quarantine-*")
+    with tarfile.open(snapshot / "worktree.tar") as archive:
+        entry = archive.extractfile("schema/types.yaml/draft")
+        assert entry is not None
+        assert entry.read() == b"keep this"
+
+
+@pytest.mark.parametrize("relative", ["draft", "schema/types.yaml"])
+def test_new_save_during_recovery_is_preserved(
+    service: Service, monkeypatch: pytest.MonkeyPatch, relative: str
+) -> None:
+    root = service.sample.root
+    draft = root / relative
+    draft.write_text("first version")
+    original = tarfile.TarFile.addfile
+
+    def save_after_copy(archive: tarfile.TarFile, member: tarfile.TarInfo, fileobj: BinaryIO | None = None) -> None:
+        original(archive, member, fileobj)
+        if member.name == relative:
+            draft.write_text("new version")
+
+    monkeypatch.setattr(tarfile.TarFile, "addfile", save_after_copy)
+    with contextlib.suppress(NoteWriteError):
+        service.container.start()
+    assert draft.read_text() == "new version"
+
+
+def test_building_container_for_an_admin_command_leaves_checkout_untouched(service: Service) -> None:
+    draft = service.sample.root / "draft"
+    draft.write_text("work in progress")
+    built = build_container(service.sample.settings)
+    assert built.use_cases.health_report.execute(HealthReportRequest(), OWNER).notes_checked > 0
+    assert draft.read_text() == "work in progress"
+
+
+def test_dirty_directory_replaced_by_file_is_quarantined(service: Service) -> None:
+    root = service.sample.root
+    for schema_file in (root / "schema").iterdir():
+        schema_file.unlink()
+    (root / "schema").rmdir()
+    (root / "schema").write_text("saved replacement")
+    service.container.start()
+    assert (root / "schema/types.yaml").is_file()
+    assert (root / "schema/areas.yaml").is_file()
+    [snapshot] = service.sample.state_dir.glob("quarantine-*")
+    with tarfile.open(snapshot / "worktree.tar") as archive:
+        entry = archive.extractfile("schema")
+        assert entry is not None
+        assert entry.read() == b"saved replacement"

@@ -1,7 +1,9 @@
-"""Preserve both versions of a dirty content checkout outside Git before restoring the last commit."""
+"""Capture dirty checkout entries, save them under state and restore HEAD without replacing later editor saves."""
 
+import ctypes
 import errno
 import os
+import shutil
 import stat
 import tarfile
 import tempfile
@@ -11,106 +13,151 @@ from pathlib import Path
 from cerebro.adapters.outbound.filesystem.errors import NoteWriteError
 from cerebro.adapters.outbound.filesystem.lock import file_lock
 from cerebro.adapters.outbound.filesystem.repository import LOCK_FILE
-from cerebro.adapters.outbound.filesystem.safeio import open_directory, remove_file
+from cerebro.adapters.outbound.filesystem.safeio import open_directory
 from cerebro.adapters.outbound.git import GitError, GitRepo
 
+_OPERATIONS = (
+    "MERGE_HEAD",
+    "CHERRY_PICK_HEAD",
+    "REVERT_HEAD",
+    "rebase-merge",
+    "rebase-apply",
+    "sequencer",
+    "BISECT_START",
+)
+_SCRATCH = "cerebro-quarantine-in-progress"
 
-def _identity(info: os.stat_result) -> tuple[int, int, int]:
-    return info.st_dev, info.st_ino, info.st_ctime_ns
 
-
-def _archive_entry(archive: tarfile.TarFile, root: Path, name: str) -> tuple[int, int, int] | None:
+def _move(source: Path, target: Path, name: str) -> bool:
+    """Atomically capture or publish an entry (file, symlink or directory), without ever replacing another entry."""
     parts = Path(name).parts
-    # All names originate in git porcelain. Refuse a submodule or any non-file entry before restoring anything.
-    if not parts or name.startswith("/") or ".." in parts or ".git" in parts or name.endswith("/"):
+    try:
+        with open_directory(source, parts[:-1]) as src:
+            leaf = os.fsencode(parts[-1])
+            os.stat(leaf, dir_fd=src, follow_symlinks=False)
+            with open_directory(target, parts[:-1], create=True) as dst:
+                # Linux/WSL renameat2(..., RENAME_NOREPLACE); a save racing with recovery stays exactly where it landed.
+                if ctypes.CDLL(None, use_errno=True).renameat2(src, leaf, dst, leaf, 1):
+                    error = ctypes.get_errno()
+                    raise OSError(error, os.strerror(error))
+                os.fsync(src)
+                os.fsync(dst)
+                return True
+    except FileNotFoundError:
+        return False
+
+
+def _sync(directory: Path) -> None:
+    with open_directory(directory, ()) as fd:
+        os.fsync(fd)
+
+
+def _archive(archive: tarfile.TarFile, captured: Path, name: str) -> None:
+    """Tar skips some special files silently. Refuse them so no captured entry can disappear."""
+    path = captured / name
+    info = path.lstat()
+    if path.name == ".git" or not any(check(info.st_mode) for check in (stat.S_ISDIR, stat.S_ISREG, stat.S_ISLNK)):
+        raise NoteWriteError("cannot quarantine a special file or nested content repository")
+    archive.add(path, name, recursive=False)
+    if stat.S_ISDIR(info.st_mode):
+        for child in sorted(path.iterdir()):
+            _archive(archive, captured, f"{name}/{child.name}")
+    if path.lstat().st_ctime_ns != info.st_ctime_ns:
+        raise NoteWriteError("a captured entry changed while saving the quarantine")
+
+
+def _recover(root: Path, state: Path, git: GitRepo, head: str, status: str) -> None:
+    entries = [entry for entry in status.split("\0") if entry]
+    if any("U" in e[:2] or e[:2] in ("AA", "DD") for e in entries):
+        raise NoteWriteError("resolve the content repository merge before quarantining changes")
+    names = {e[3:] for e in entries}
+    if any(
+        not name or name.startswith("/") or name.endswith("/") or {".git", ".."} & set(Path(name).parts)
+        for name in names
+    ):
         raise NoteWriteError("cannot quarantine an unsupported content path")
+    # If a file replaced a directory (or the reverse), capture the entire replacement exactly once.
+    roots = sorted(name for name in names if not any(str(parent) in names for parent in Path(name).parents))
+    indexed = sorted({e[3:] for e in entries if e[:2] not in ("??", "!!")})
+    stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%S.%fZ")
+    pending = Path(tempfile.mkdtemp(prefix=f".quarantine-{stamp}-", dir=state))
+    (pending / "status").write_bytes(head.encode() + b"\0" + os.fsencode(status))
+    git.save_staged_patch(pending / "staged.patch")
+    # Same filesystem as the content checkout even when state lives on another mounted volume.
+    scratch = root / ".git" / _SCRATCH
+    scratch.mkdir(mode=0o700)
+    captured, restored = scratch / "captured", scratch / "restored"
+    captured.mkdir()
+    restored.mkdir()
+    moved: list[str] = []
+    published = False
     try:
-        with open_directory(root, parts[:-1]) as directory:
-            info = os.stat(parts[-1], dir_fd=directory, follow_symlinks=False)
-            entry = tarfile.TarInfo(name)
-            entry.mode = stat.S_IMODE(info.st_mode)
-            entry.mtime = info.st_mtime
-            if stat.S_ISLNK(info.st_mode):
-                entry.type = tarfile.SYMTYPE
-                entry.linkname = os.readlink(parts[-1], dir_fd=directory)
-                archive.addfile(entry)
-            elif stat.S_ISREG(info.st_mode):
-                flags = os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK
-                with os.fdopen(os.open(parts[-1], flags, dir_fd=directory), "rb") as source:
-                    if _identity(os.fstat(source.fileno())) != _identity(info):
-                        raise NoteWriteError("content changed during quarantine")
-                    entry.size = info.st_size
-                    archive.addfile(entry, source)
-            else:
-                raise NoteWriteError("cannot quarantine a non-file content entry")
-            return _identity(info)
-    except FileNotFoundError:
-        return None  # Deleted paths are recorded in status, and staged bytes in staged.patch.
-
-
-def _current_identity(root: Path, name: str) -> tuple[int, int, int] | None:
-    parts = Path(name).parts
-    try:
-        with open_directory(root, parts[:-1]) as directory:
-            return _identity(os.stat(parts[-1], dir_fd=directory, follow_symlinks=False))
-    except FileNotFoundError:
-        return None
+        git.prepare_quarantine_restore(indexed, head, restored, scratch / "index")
+        for name in roots:
+            moved.append(name)
+            if not _move(root, captured, name):
+                moved.pop()
+        # Archive the entries actually removed, including a version saved between status and the atomic move.
+        with tarfile.open(pending / "worktree.tar", "w") as archive:
+            for name in moved:
+                _archive(archive, captured, name)
+        for path in pending.iterdir():
+            with path.open("rb") as handle:
+                os.fsync(handle.fileno())
+        _sync(pending)
+        pending.rename(state / pending.name[1:])
+        _sync(state)
+        published = True
+        if git.head() != head:
+            raise NoteWriteError("the content HEAD changed during quarantine")
+        for name in roots:
+            _move(restored, root, name)
+            # Remove only empty nested directories left by quarantined untracked files.
+            parts = Path(name).parts[:-1]
+            while len(parts) > 1:
+                with open_directory(root, parts[:-1]) as parent:
+                    try:
+                        os.rmdir(parts[-1], dir_fd=parent)
+                    except OSError as error:
+                        if error.errno in (errno.ENOTEMPTY, errno.ENOENT):
+                            break
+                        raise
+                parts = parts[:-1]
+        os.replace(scratch / "index", root / ".git/index")
+        _sync(root / ".git")
+    except BaseException:
+        if not published:
+            for name in moved:
+                _move(captured, root, name)
+        raise
+    finally:
+        # If rollback met another save, leave the raw original in scratch and require the owner's inspection.
+        if published or not any(os.path.lexists(captured / name) for name in moved):
+            shutil.rmtree(scratch)
 
 
 def quarantine_changes(root: Path, state: Path, git: GitRepo, timeout: float) -> None:
     if state.resolve().is_relative_to(root.resolve()):
         raise NoteWriteError("quarantine requires a state directory outside the content repository")
-    with file_lock(root / ".git" / LOCK_FILE, exclusive=True, timeout=timeout):
+    dot_git = root / ".git"
+    with file_lock(dot_git / LOCK_FILE, exclusive=True, timeout=timeout):
+        if any(os.path.lexists(dot_git / marker) for marker in (*_OPERATIONS, _SCRATCH)):
+            raise NoteWriteError("inspect the unfinished git operation or .git/cerebro-quarantine-in-progress")
         try:
-            status = git.working_changes()
-            if not status:
+            if not git.working_changes():
                 return
-            head = git.head()
-            if not head or os.path.lexists(root / ".git/index.lock"):
-                raise NoteWriteError("quarantine requires a committed HEAD and an unlocked git index")
-            index_before = _current_identity(root, ".git/index")
-            entries = [entry for entry in status.split("\0") if entry]
-            if any("U" in e[:2] or e[:2] in ("AA", "DD") for e in entries):
-                raise NoteWriteError("resolve the content repository merge before quarantining changes")
-            names = sorted({e[3:] for e in entries})
-            indexed = sorted({e[3:] for e in entries if e[:2] not in ("??", "!!")})
-            # A unique private directory, published only once every byte is durable. Failed copies are retained too.
-            stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%S.%fZ")
-            pending = Path(tempfile.mkdtemp(prefix=f".quarantine-{stamp}-", dir=state))
-            (pending / "status").write_bytes(head.encode() + b"\0" + os.fsencode(status))
-            git.save_staged_patch(pending / "staged.patch")
-            with tarfile.open(pending / "worktree.tar", "w") as archive:
-                saved = {name: _archive_entry(archive, root, name) for name in names}
-            for path in pending.iterdir():
-                with path.open("rb") as handle:
-                    os.fsync(handle.fileno())
-            with open_directory(pending, ()) as directory:
-                os.fsync(directory)
-            pending.rename(state / pending.name[1:])
-            with open_directory(state, ()) as directory:
-                os.fsync(directory)
-            if (
-                git.head() != head
-                or git.working_changes() != status
-                or _current_identity(root, ".git/index") != index_before
-                or any(_current_identity(root, name) != identity for name, identity in saved.items())
-            ):
-                raise NoteWriteError("content changed during quarantine")
-            git.restore_quarantined(indexed, head)
-            for name in set(names).difference(indexed):
-                remove_file(root, name)
-                # An empty nested directory in a flat note folder would still block writes.
-                parts = Path(name).parts[:-1]
-                while len(parts) > 1:
-                    with open_directory(root, parts[:-1]) as parent:
-                        try:
-                            os.rmdir(parts[-1], dir_fd=parent)
-                        except OSError as error:
-                            if error.errno == errno.ENOTEMPTY:
-                                break
-                            raise
-                    parts = parts[:-1]
+            lock = dot_git / "index.lock"
+            with lock.open("xb"):
+                try:
+                    status = git.working_changes()
+                    if status:
+                        head = git.head()
+                        if not head or any(os.path.lexists(dot_git / marker) for marker in _OPERATIONS):
+                            raise NoteWriteError("quarantine requires a committed HEAD and no active git operation")
+                        _recover(root, state, git, head, status)
+                finally:
+                    lock.unlink()
         except GitError, OSError, tarfile.TarError:
             raise NoteWriteError(
-                "could not quarantine and restore the content repository; inspect the state directory"
+                "could not quarantine and restore content; inspect state and the content checkout"
             ) from None

@@ -40,6 +40,7 @@ def test_search_and_read_as_local_owner(config: str) -> None:
 
 
 def test_reindex_and_health(config: str) -> None:
+    (Path(config).parent / "content/schema/types.yaml").write_text("invalid yaml [")
     result = invoke("--config", config, "reindex")
     assert result.returncode == 0, result.stderr
     assert json.loads(result.stdout) == {"notes_indexed": 8, "files_excluded": 0}

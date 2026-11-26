@@ -222,16 +222,22 @@ class Container:
             quarantine_changes(settings.content_repo, state_dir, git, settings.writer_lock_timeout)
 
         self._quarantine = quarantine
-        with self.writer_lock.held():
-            quarantine()
-            self.vocabulary: Vocabulary = load_vocabulary(settings.content_repo)
+        self._git = git
         self.search: SearchIndex = SqliteSearchIndex(state_dir / INDEX_FILE)
         self.graph: GraphIndex = SqliteGraphIndex(state_dir / INDEX_FILE)
         self.tokens: TokenStore = SqliteTokenStore(state_dir / STATE_FILE)
 
+        self._rebuild = RebuildIndex(self.notes, self.search, self.graph)
+
+    @cached_property
+    def vocabulary(self) -> Vocabulary:
+        return load_vocabulary(self.settings.content_repo)
+
+    @cached_property
+    def use_cases(self) -> UseCases:
+        state_dir = self.settings.state_dir
         notes, search, graph = self.notes, self.search, self.graph
         clock, ids, vocabulary, lock = self.clock, self.ids, self.vocabulary, self.writer_lock
-        self._rebuild = RebuildIndex(notes, search, graph)
         write = AgentWrite(
             notes,
             search,
@@ -240,10 +246,10 @@ class Container:
             clock,
             ids,
             vocabulary,
-            settings.writes_per_hour,
+            self.settings.writes_per_hour,
         )
         fresh, fresh_locked = self.refresh, self._refresh_locked
-        self.use_cases = UseCases(
+        return UseCases(
             agent_write=Serialized(Refreshed(write, fresh_locked), lock),
             get_overview=Refreshed(GetOverview(notes, search), fresh),
             search_notes=Refreshed(SearchNotes(search), fresh),
@@ -251,11 +257,11 @@ class Container:
             get_neighbors=Refreshed(GetNeighbors(notes, graph), fresh),
             get_graph=Refreshed(GetGraph(graph), fresh),
             get_vocabulary=GetVocabulary(vocabulary),
-            history=OwnerHistory(notes, GitChangeHistory(git, self.cipher), lock.held),
+            history=OwnerHistory(notes, GitChangeHistory(self._git, self.cipher), lock.held),
             owner_edit_note=Serialized(
                 Refreshed(OwnerEditNote(notes, search, graph, clock, vocabulary), fresh_locked), lock
             ),
-            rebuild_index=Serialized(Refreshed(self._rebuild, quarantine), lock),
+            rebuild_index=Serialized(Refreshed(self._rebuild, self._quarantine), lock),
             health_report=HealthReport(
                 notes,
                 search,
@@ -280,6 +286,11 @@ class Container:
             self.clock,
             self.ids,
         )
+
+    def prepare_checkout(self) -> None:
+        """Allow an explicit CLI reindex to restore the schema before its use cases load the vocabulary."""
+        with self.writer_lock.held():
+            self._quarantine()
 
     def start(self) -> bool:
         """Reindex when either index was not built from the repository's current revision (never built, an

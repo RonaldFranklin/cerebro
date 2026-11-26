@@ -227,6 +227,7 @@ class GitRepo:
         redact: Sequence[str] = (),
         init: bool = False,
         umask: int = -1,
+        index_file: Path | None = None,
     ) -> tuple[int, str]:
         if not init:
             git_dir = self._root / ".git"
@@ -241,7 +242,7 @@ class GitRepo:
             process = subprocess.Popen(  # argument list, never a shell
                 command,
                 cwd=self._root,
-                env=self._env,
+                env=self._env if index_file is None else {**self._env, "GIT_INDEX_FILE": str(index_file)},
                 stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
@@ -502,11 +503,16 @@ class GitRepo:
             ]
         )
 
-    def restore_quarantined(self, paths: Sequence[str], revision: str) -> None:
-        """Restore inspected, backed-up indexed paths. A restored restricted note must be private immediately."""
+    def prepare_quarantine_restore(self, paths: Sequence[str], revision: str, worktree: Path, index_file: Path) -> None:
+        """Prepare HEAD files and the restored index in private scratch space. Never overwrite an editor's save."""
         self._require_object_id(revision)
+        shutil.copyfile(self._root / ".git/index", index_file)
         if paths:
-            self._run(["restore", f"--source={revision}", "--staged", "--worktree", "--", *paths], umask=0o077)
+            self._run(
+                [f"--work-tree={worktree}", "restore", f"--source={revision}", "--staged", "--worktree", "--", *paths],
+                index_file=index_file,
+                umask=0o077,
+            )
 
     def staged_paths(self) -> tuple[str, ...]:
         """Paths whose index entry differs from ``HEAD`` (before the first commit: every path in the index)."""
