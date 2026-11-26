@@ -124,6 +124,7 @@ def test_real_listener_credentials_limits_and_logs(tmp_path: Path) -> None:
 
     tid, privileged = issue(Sensitivity.RESTRICTED)
     _, internal = issue(Sensitivity.INTERNAL)
+    _, writer = issue(Sensitivity.RESTRICTED, Scope.WRITE)  # write without read
     private, public = free_port(), free_port()
     read = call("cerebro_read", {"id": VAULT_ID.value})
     with serving(config, private, public):
@@ -133,6 +134,7 @@ def test_real_listener_credentials_limits_and_logs(tmp_path: Path) -> None:
             assert status == 200
             assert b"Not found." in body
             assert body == post(port, secret, call("cerebro_read", {"id": "missing"}))[1]
+        assert post(private, writer, read)[0] == 403
         assert post(private, internal, call("cerebro_write_guide", {}))[0] == 403
         args: dict[str, object] = {
             "operation": "create",
@@ -158,12 +160,18 @@ def test_real_listener_credentials_limits_and_logs(tmp_path: Path) -> None:
                 Client(streamable_http_client(f"http://127.0.0.1:{private}/mcp", http_client=http)) as client,
             ):
                 await assert_read_contract(client)
+            async with (
+                httpx2.AsyncClient(headers={"Authorization": "Bearer " + writer}, trust_env=False) as http,
+                Client(streamable_http_client(f"http://127.0.0.1:{private}/mcp", http_client=http)) as client,
+            ):
+                listed = {tool.name for tool in (await client.list_tools()).tools}
+                assert listed == {"cerebro_write", "cerebro_write_guide"}
 
         asyncio.run(run_http())
         container.use_cases.revoke_agent_token.execute(RevokeAgentTokenRequest(token_id=tid), owner)
         assert post(private, privileged, read)[0] == 401
     logs = config.with_suffix(".log").read_bytes()
-    for value in (privileged, internal, RESTRICTED_MARKER, "fixture-marker"):
+    for value in (privileged, internal, writer, RESTRICTED_MARKER, "fixture-marker"):
         assert value.encode() not in logs
 
 

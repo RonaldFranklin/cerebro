@@ -21,7 +21,8 @@ compatibility code costs review time and attack surface, and it holds rules that
 - **One state schema.** `state.sqlite` has a single schema (version 5) with tokens, login attempts and write
   attempts. There is no `proposals` table and no migration. A new empty file is initialised. Any other version,
   including 1-4 from earlier releases, is refused with `StateSchemaError` naming the path and version and telling
-  the owner to move the file aside and issue new tokens. The file is never deleted, upgraded or modified.
+  the owner to move the file aside and issue new tokens. The file is never deleted or upgraded and its contents
+  (schema, version and rows) are not modified; opening it may still switch the SQLite header to WAL mode.
 - **Scopes.** `read`, `write` and `core` only. `propose` is no longer a scope; a stored row naming it is a damaged
   row.
 - **Settings.** `proposals_per_hour` and `proposals_pending` are unknown keys and fail configuration loading.
