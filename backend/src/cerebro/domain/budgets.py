@@ -7,7 +7,7 @@ from cerebro.domain.note import Note, NoteId
 from cerebro.domain.report import Finding, ViolationCode
 from cerebro.domain.vocabulary import CORE
 
-CORE_BUDGET_WORDS = 1500
+CORE_BUDGET_WORDS = 800
 """All current P0 notes together."""
 HUB_BUDGET_WORDS = 800
 """Each hub introduction (ADR-0015)."""

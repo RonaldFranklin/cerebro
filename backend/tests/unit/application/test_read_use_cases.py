@@ -98,11 +98,11 @@ class TestGetOverview:
         assert [str(a) for a in high.areas] == ["infrastructure", "secret-area"]
 
     def test_stops_at_the_core_budget(self, world: World) -> None:
-        world.add(id=NID("core-a"), type=CORE, priority=Priority.P0, body=" ".join(["w"] * 1400))
+        world.add(id=NID("core-a"), type=CORE, priority=Priority.P0, body=" ".join(["w"] * 800))
         world.add(id=NID("core-b"), type=CORE, priority=Priority.P0, body=" ".join(["w"] * 200))
         overview = GetOverview(world.notes, world.search).execute(GetOverviewRequest(), ctx())
         assert [c.id.value for c in overview.core] == ["core-a"]
-        assert overview.core_words == 1400
+        assert overview.core_words == 800
         assert overview.core_truncated
 
     def test_trusts_the_repository_over_a_stale_index(self, world: World) -> None:
