@@ -13,7 +13,9 @@ def _repository_directory(path: Path, installed_module: Path) -> bool:
     # Explicit --work-tree checkouts can have no Git marker. Recognize the running source
     # checkout and the standard application source layout when running an installed wheel.
     source = path / _SOURCE_MODULE
-    if source == installed_module or ((path / "backend/pyproject.toml").is_file() and source.is_file()):
+    if source == installed_module or (
+        (path / "backend/pyproject.toml").is_file() and source.is_file() and source.resolve() == source
+    ):
         return True
     # Ordinary and linked worktrees have a .git directory or gitfile. Inspect the destination's
     # ancestors as well, since separate and bare Git directories can live outside every checkout.
@@ -27,7 +29,10 @@ def _repository_directory(path: Path, installed_module: Path) -> bool:
 def owner_credentials(settings: Settings) -> OwnerCredentials:
     directory = settings.state_dir.resolve()
     installed_module = Path(__file__).resolve()
-    if directory.is_relative_to(settings.content_repo.resolve()) or any(
+    excluded = [settings.content_repo.resolve()]
+    if explicit_worktree := os.environ.get("GIT_WORK_TREE"):
+        excluded.append(Path(explicit_worktree).resolve())
+    if any(directory.is_relative_to(root) for root in excluded) or any(
         _repository_directory(ancestor, installed_module) for ancestor in (directory, *directory.parents)
     ):
         raise ConfigurationError("owner credentials require a state directory outside repositories")

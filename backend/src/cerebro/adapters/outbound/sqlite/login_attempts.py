@@ -1,4 +1,4 @@
-"""Durable, instance-wide login reservations. Only admitted attempt timestamps are stored."""
+"""Durable, instance-wide login reservations. Store up to five admitted timestamps."""
 
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -19,16 +19,14 @@ class SqliteLoginAttempts:
     def reserve(self, clock: Clock) -> int:
         with self._db.write() as conn:
             current = (clock.now() - _EPOCH) // _MICROSECOND
-            conn.execute("DELETE FROM login_attempts WHERE reserved_us <= ?", (current - _WINDOW_US,))
-            count, oldest, newest = conn.execute(
-                "SELECT count(*), min(reserved_us), max(reserved_us) FROM login_attempts"
-            ).fetchone()
-            # A forward jump may have pruned history. Do not admit an earlier timestamp on rollback.
-            available_at = int(newest) if count else current
-            if count >= 5:
-                available_at = max(available_at, int(oldest) + _WINDOW_US)
-            if available_at > current:
-                remaining_us = min(_WINDOW_US, available_at - current)
-                return (remaining_us + _SECOND_US - 1) // _SECOND_US
+            slots = conn.execute("SELECT rowid, reserved_us FROM login_attempts ORDER BY reserved_us").fetchall()
+            if len(slots) >= 5:
+                oldest_id, oldest_time = slots[0]
+                remaining_us = int(oldest_time) + _WINDOW_US - current
+                if remaining_us > 0:
+                    return min(900, (remaining_us + _SECOND_US - 1) // _SECOND_US)
+                # Replace only this expired slot. On rollback its newer replacement still
+                # counts, so jumping ahead never discards the other four reservations.
+                conn.execute("DELETE FROM login_attempts WHERE rowid = ?", (oldest_id,))
             conn.execute("INSERT INTO login_attempts (reserved_us) VALUES (?)", (current,))
         return 0

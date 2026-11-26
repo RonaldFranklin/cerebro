@@ -147,3 +147,34 @@ def test_refuses_explicit_application_worktree_without_gitfile(
     with pytest.raises(ConfigurationError, match="outside repositories"):
         owner_credentials(_settings(tmp_path / "content", state))
     assert not state.parent.exists()
+
+
+def test_declared_sparse_checkout_is_excluded(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+
+    checkout = tmp_path / "sparse"
+    checkout.mkdir()
+    git_dir = tmp_path / "metadata"
+    _git(tmp_path, "init", "--bare", str(git_dir))
+    (checkout / "README.md").write_text("Fixture sparse tree\n")
+    explicit = ["--git-dir", str(git_dir), "--work-tree", str(checkout)]
+    _git(tmp_path, *explicit, "add", "--", str(checkout / "README.md"))
+    _git(tmp_path, *explicit, "-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "-m", "Test")
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("GIT_WORK_TREE", "sparse")
+    with pytest.raises(ConfigurationError, match="outside repositories"):
+        owner_credentials(_settings(tmp_path / "content", checkout / "state"))
+    assert not (checkout / "state").exists()
+
+
+def test_backend_symlink_does_not_mark_its_parent_as_a_checkout(tmp_path: Path) -> None:
+    checkout = tmp_path / "application"
+    source = checkout / "backend/src/cerebro/bootstrap/browser.py"
+    source.parent.mkdir(parents=True)
+    source.touch()
+    (checkout / "backend/pyproject.toml").touch()
+    home = tmp_path / "home"
+    home.mkdir()
+    (home / "backend").symlink_to(checkout / "backend", target_is_directory=True)
+    state = home / ".local/state"
+    owner_credentials(_settings(tmp_path / "content", state))
+    assert state.is_dir()

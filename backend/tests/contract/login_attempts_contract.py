@@ -44,10 +44,30 @@ class LoginAttemptsContract:
         clock.set(NOW - timedelta(days=2))
         assert attempts.reserve(clock) == 900
         clock.set(NOW + timedelta(minutes=1))
-        assert attempts.reserve(clock) == 900
-        clock.set(NOW + timedelta(minutes=16, microseconds=-1))
+        assert attempts.reserve(clock) == 840
+        clock.set(NOW + timedelta(minutes=15, microseconds=-1))
         assert attempts.reserve(clock) == 1
         clock.advance(timedelta(microseconds=1))
         for _ in range(4):
             assert attempts.reserve(clock) == 0
         assert attempts.reserve(clock) == 900
+
+    def test_a_future_reservation_occupies_just_one_slot_without_pruning(self, attempts: LoginAttempts) -> None:
+        clock = FixedClock(NOW + timedelta(days=2))
+        assert attempts.reserve(clock) == 0
+        clock.set(NOW)
+        for _ in range(4):
+            assert attempts.reserve(clock) == 0
+        assert attempts.reserve(clock) == 900
+        clock.advance(timedelta(minutes=15))
+        assert attempts.reserve(clock) == 0
+
+    def test_forward_jump_before_capacity_keeps_unexpired_history(self, attempts: LoginAttempts) -> None:
+        clock = FixedClock(NOW)
+        for _ in range(3):
+            assert attempts.reserve(clock) == 0
+        clock.advance(timedelta(days=2))
+        assert attempts.reserve(clock) == 0
+        clock.set(NOW + timedelta(minutes=2))
+        assert attempts.reserve(clock) == 0
+        assert attempts.reserve(clock) == 13 * 60
