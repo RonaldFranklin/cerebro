@@ -35,7 +35,8 @@ Inbox, which are validated, curated and approved before becoming notes.
   and local owner review. The [delivery record and security checkpoint](docs/plans/phase-4.md#5-final-report)
   and [manual proposal checks](docs/agent-integration.md#3-propose-in-both-clients-and-approve-locally)
   are ready for the owner.
-- **Next delivery sequence:** plan Phase 5 (API and web UI) for owner approval before coding. Phase 7
+- **Phase 5 is in progress.** Follow the [approved plan and owner adjustments](docs/plans/phase-5.md), including the single
+  privileged WSL setup hand-off at the start of PR 2. Phase 7
   (curator) follows Phase 5. Finish with Phase 6 (deploy), first validating Docker in WSL dev with sample
   content, then validating hml and promoting the same image to prod on the server.
 - **Phase 2 decisions (2026-11-25):** the owner declined a MAC for token rows and accepted the
