@@ -21,7 +21,9 @@ Use a local password prompt and an owner-only, versioned scrypt verifier with a 
 attempt in SQLite before hashing. Share the five-attempt rolling fifteen-minute window across processes
 and cap concurrent hashes. Issue an opaque random session id and store its digest in bounded process
 memory. Rotate on login, revoke on logout or password reset, and expire at 30 idle minutes or eight hours
-absolute. Use separate host-only Secure, HttpOnly, SameSite=Strict cookies for the two listeners. Validate
+absolute. Bind each session to the verifier generation sampled at login. On each authenticated request read
+the current generation from the protected verifier, fail closed if unavailable, and reject sessions created
+before an external CLI password rotation. Test a reset outside the issuing process. Use separate host-only Secure, HttpOnly, SameSite=Strict cookies for the two listeners. Validate
 the exact configured Origin and session-bound CSRF token on authenticated mutations. Require same-origin
 JSON and a custom header at login. Keep session and API responses out of caches.
 
