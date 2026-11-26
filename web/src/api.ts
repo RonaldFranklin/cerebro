@@ -2,6 +2,7 @@ export type Ceiling = "public" | "internal" | "restricted";
 export interface Session {
   ceiling: Ceiling;
   csrf_token: string;
+  absolute_remaining_seconds: number;
 }
 export interface Overview {
   core: { id: string; title: string; summary: string; body: string }[];

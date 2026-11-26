@@ -9,7 +9,7 @@ const overview = {
 };
 
 test("owner overview links visible content and exposes private navigation", async ({ page }) => {
-  await page.route("**/api/session", route => route.fulfill({ json: { ceiling: "restricted", csrf_token: "test" } }));
+  await page.route("**/api/session", route => route.fulfill({ json: { ceiling: "restricted", csrf_token: "test", absolute_remaining_seconds: 28800 } }));
   await page.route("**/api/overview", route => route.fulfill({ json: overview }));
   await page.goto("/");
   await expect(page.getByRole("heading", { name: "Overview", exact: true })).toBeVisible();
@@ -20,7 +20,7 @@ test("owner overview links visible content and exposes private navigation", asyn
 });
 
 test("lower-ceiling navigation omits private destinations and empty overview shows useful states", async ({ page }) => {
-  await page.route("**/api/session", route => route.fulfill({ json: { ceiling: "internal", csrf_token: "test" } }));
+  await page.route("**/api/session", route => route.fulfill({ json: { ceiling: "internal", csrf_token: "test", absolute_remaining_seconds: 28800 } }));
   await page.route("**/api/overview", route => route.fulfill({ json: { ...overview, core: [], hubs: [], areas: [] } }));
   await page.goto("/");
   await expect(page.getByRole("heading", { name: "Overview", exact: true })).toBeVisible();

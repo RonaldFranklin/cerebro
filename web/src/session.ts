@@ -7,7 +7,7 @@ const ABSOLUTE_MS = 8 * 60 * 60_000;
 type State =
   | { kind: "checking" | "offline" | "signing-out" | "logout-failed" }
   | { kind: "anonymous"; notice?: string }
-  | { kind: "active"; generation: number; session: Session; queries: QueryClient; api: ApiClient };
+  | { kind: "active"; generation: number; checking: boolean; session: Session; queries: QueryClient; api: ApiClient };
 
 export class BrowserSession {
   private generation = 0;
@@ -60,28 +60,35 @@ export class BrowserSession {
     this.idleTimer = window.setTimeout(this.expire, IDLE_MS);
   };
 
-  private activate(session: Session) {
-    if (!["internal", "restricted"].includes(session.ceiling) || !session.csrf_token) {
+  private activate(session: Session, started: number) {
+    if (!["internal", "restricted"].includes(session.ceiling) || !session.csrf_token
+      || !Number.isFinite(session.absolute_remaining_seconds) || session.absolute_remaining_seconds > ABSOLUTE_MS / 1000) {
       this.reset({ kind: "offline" });
       return;
     }
     this.reset({ kind: "checking" });
+    const remaining = session.absolute_remaining_seconds * 1000 - (performance.now() - started);
+    if (remaining <= 0) {
+      this.expire();
+      return;
+    }
     this.set({
-      kind: "active", generation: ++this.generation, session,
+      kind: "active", checking: false, generation: ++this.generation, session,
       queries: new QueryClient({ defaultOptions: { queries: { retry: false, refetchOnWindowFocus: false } } }),
       api: new ApiClient(session, this.lifetime.signal, this.expire, this.activity),
     });
     this.activity();
-    this.absoluteTimer = window.setTimeout(this.expire, ABSOLUTE_MS);
+    this.absoluteTimer = window.setTimeout(this.expire, remaining);
   }
 
   restore = async () => {
     if (this.pendingLogout) return;
     this.reset({ kind: "checking" });
     const signal = this.lifetime.signal;
+    const started = performance.now();
     try {
       const session = await currentSession(signal);
-      if (!signal.aborted) this.activate(session);
+      if (!signal.aborted) this.activate(session, started);
     } catch (error) {
       if (signal.aborted) return;
       this.reset(error instanceof ApiError && error.status === 401 ? { kind: "anonymous" } : { kind: "offline" });
@@ -89,14 +96,19 @@ export class BrowserSession {
   };
 
   revalidate = async () => {
-    if (this.state.kind !== "active") return;
+    if (this.state.kind !== "active" || this.state.checking) return;
+    this.set({ ...this.state, checking: true });
     const signal = this.lifetime.signal;
+    const started = performance.now();
     try {
       const session = await currentSession(signal);
       if (signal.aborted || this.state.kind !== "active") return;
       if (session.csrf_token !== this.state.session.csrf_token || session.ceiling !== this.state.session.ceiling) {
-        this.activate(session);
-      } else this.activity();
+        this.activate(session, started);
+      } else {
+        this.activity();
+        this.set({ ...this.state, checking: false });
+      }
     } catch (error) {
       if (!signal.aborted) {
         if (error instanceof ApiError && error.status === 401) this.expire();
@@ -107,9 +119,10 @@ export class BrowserSession {
 
   signIn = async (password: string) => {
     const signal = this.lifetime.signal;
+    const started = performance.now();
     const session = await login(password, signal);
     if (!signal.aborted) {
-      this.activate(session);
+      this.activate(session, started);
       this.channel?.postMessage("changed");
     }
   };
@@ -117,9 +130,15 @@ export class BrowserSession {
   signOut = async () => {
     if (this.state.kind === "active") this.pendingLogout = this.state.session.csrf_token;
     if (!this.pendingLogout || this.state.kind === "signing-out") return;
+    const retry = this.state.kind === "logout-failed";
     this.reset({ kind: "signing-out" });
     const signal = this.lifetime.signal;
     try {
+      if (retry) {
+        const session = await currentSession(signal);
+        signal.throwIfAborted();
+        this.pendingLogout = session.csrf_token;
+      }
       await logout(this.pendingLogout, signal);
     } catch (error) {
       if (signal.aborted) return;

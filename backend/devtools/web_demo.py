@@ -11,6 +11,7 @@ import subprocess
 import sys
 import time
 from contextlib import ExitStack
+from dataclasses import replace
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
@@ -18,13 +19,14 @@ from tests.integration.content_kit import ISLAND_ID
 
 from cerebro.adapters.inbound.cli_owner import set_owner_password
 from cerebro.application.browser import ProvisionOwnerPassword
-from cerebro.application.dto import SubmitProposalRequest
+from cerebro.application.dto import OwnerEditNoteRequest, SubmitProposalRequest
 from cerebro.bootstrap.browser import owner_credentials
 from cerebro.bootstrap.container import build_container
 from cerebro.bootstrap.settings import load_settings
 from cerebro.domain.access import AccessCeiling, AccessContext, Agent, Scope
 from cerebro.domain.content_hash import content_hash
 from cerebro.domain.enums import Sensitivity
+from cerebro.domain.note import NoteId
 from cerebro.domain.proposal import ProposalKind, ProposedContent
 from devtools.mcp_sample import create_sample
 from devtools.web_tls import certificate, tls_relay
@@ -44,6 +46,19 @@ def _populate(config: Path, *, automation: bool) -> bool:
         return False
     note = container.notes.get(ISLAND_ID)
     assert note
+    restricted_hub = replace(
+        note,
+        id=NoteId("fixture-vault-catalog"),
+        title="Synthetic vault catalog",
+        summary="Private topic hub for the synthetic vault notes in this disposable browser fixture.",
+        body="Restricted catalog for the browser demonstration.\n",
+        sensitivity=Sensitivity.RESTRICTED,
+    )
+    created = container.use_cases.owner_edit_note.execute(
+        OwnerEditNoteRequest(note=restricted_hub), AccessContext.for_owner(AccessCeiling(Sensitivity.RESTRICTED))
+    )
+    if not created.validation.ok:
+        raise RuntimeError("Invalid fixture hub")
     submitted = container.use_cases.submit_proposal.execute(
         SubmitProposalRequest(
             kind=ProposalKind.UPDATE,

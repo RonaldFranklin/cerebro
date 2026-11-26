@@ -65,11 +65,12 @@ function App() {
       const title = routeTitles[path] ?? (path.startsWith("/notes/") ? "Note reader" : "Owner editor");
       const denied = state.session.ceiling !== "restricted" && (path === "/inbox" || path === "/health" || path.startsWith("/editor/"));
       return <QueryClientProvider key={state.generation} client={state.queries}>
-        <Shell path={home ? "/" : path} ceiling={state.session.ceiling} onNavigate={navigate} onLogout={manager.signOut}>
+        {state.checking && <Status>Checking session…</Status>}
+        <div hidden={state.checking}><Shell path={home ? "/" : path} ceiling={state.session.ceiling} onNavigate={navigate} onLogout={manager.signOut}>
           {home ? <Home api={state.api}/> : <section className="pending-view"><h1>{title}</h1>
             <p>{denied ? "This view requires the private listener." : "This view is not yet available."}</p>
             <a href="/">Back to overview</a></section>}
-        </Shell>
+        </Shell></div>
       </QueryClientProvider>;
     }
   }
