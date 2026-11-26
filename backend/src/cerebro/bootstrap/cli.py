@@ -5,7 +5,9 @@ import sys
 
 from cerebro.adapters.inbound.cli import parse_arguments, run_read_command
 from cerebro.adapters.inbound.cli_inbox import run_inbox_command
+from cerebro.adapters.inbound.cli_owner import set_owner_password
 from cerebro.adapters.inbound.cli_tokens import run_token_command
+from cerebro.application.browser import ProvisionOwnerPassword
 from cerebro.application.dto import ReadNoteRequest, SearchNotesRequest
 from cerebro.application.errors import (
     NoteNotFound,
@@ -14,6 +16,7 @@ from cerebro.application.errors import (
     ProposalNotFound,
     SectionNotFound,
 )
+from cerebro.bootstrap.browser import owner_credentials
 from cerebro.bootstrap.container import build_container
 from cerebro.bootstrap.init_content import InitializationError, initialize_content
 from cerebro.bootstrap.settings import ConfigurationError, load_settings
@@ -30,6 +33,8 @@ def main() -> int:
         if options.command == "init-content":
             initialize_content(settings)
             return 0
+        if options.command == "owner-password":
+            return set_owner_password(ProvisionOwnerPassword(owner_credentials(settings)).execute)
         container = build_container(settings)
         ctx = AccessContext.for_owner(AccessCeiling(Sensitivity.RESTRICTED))
         if options.command == "inbox":

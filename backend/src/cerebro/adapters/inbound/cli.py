@@ -57,6 +57,7 @@ def parse_arguments(args: Sequence[str]) -> argparse.Namespace:
 
     commands = parser.add_subparsers(dest="command")
     commands.add_parser("init-content", help="initialize the private content repository")
+    commands.add_parser("owner-password", help="set or rotate the local owner password interactively")
 
     search = commands.add_parser("search", help="find note summaries")
     search.add_argument("query", nargs="?", default="", type=lambda text: bounded_text(text, MAX_QUERY_BYTES))

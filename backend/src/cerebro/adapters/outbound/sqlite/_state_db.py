@@ -1,4 +1,4 @@
-"""Connection handling for ``state.sqlite``: proposals (sealed) and agent tokens.
+"""Connection handling for ``state.sqlite``: sealed proposals, agent tokens and the owner login attempt window.
 
 Unlike the disposable search index, this file is the only copy of the proposal audit trail and of the token
 records, so nothing here ever deletes, recreates or "repairs" it: an unknown schema version or a damaged file
@@ -21,7 +21,7 @@ from contextlib import closing, contextmanager, suppress
 from pathlib import Path
 from typing import Final
 
-SCHEMA_VERSION: Final = 2
+SCHEMA_VERSION: Final = 3
 BUSY_TIMEOUT_MS: Final = 5000
 
 _SCHEMA_V1: Final = """
@@ -55,12 +55,34 @@ CREATE INDEX tokens_by_created ON tokens (created_key, id);
 """
 
 
+_UPGRADE_V2: Final = """
+ALTER TABLE proposals ADD COLUMN admission_token_id TEXT;
+ALTER TABLE proposals ADD COLUMN admitted_key TEXT;
+CREATE INDEX proposals_by_admission ON proposals(admission_token_id, admitted_key);
+CREATE INDEX pending_by_token ON proposals(admission_token_id) WHERE status NOT IN ('rejected','applied');
+"""
+
+
+def _apply_schema(conn: sqlite3.Connection, script: str) -> None:
+    # executescript would commit the surrounding migration transaction.
+    for statement in script.split(";"):
+        if statement.strip():
+            conn.execute(statement)
+
+
+def _schema_statements(conn: sqlite3.Connection) -> set[str]:
+    return {
+        row[0]
+        for row in conn.execute("SELECT sql FROM sqlite_schema WHERE sql IS NOT NULL AND name NOT GLOB 'sqlite_*'")
+    }
+
+
 class StateStoreError(RuntimeError):
     """``state.sqlite`` cannot be used. Messages name the path, never contents."""
 
 
 class StateSchemaError(StateStoreError):
-    """The file has a schema version this build does not know. Only the known v1 to v2 upgrade is supported."""
+    """The file has a schema version this build does not know."""
 
 
 class StateCorruptionError(StateStoreError):
@@ -181,7 +203,7 @@ class StateDatabase:
         version = int(conn.execute("PRAGMA user_version").fetchone()[0])
         if version == SCHEMA_VERSION:
             return
-        if version not in (0, 1):
+        if version not in (0, 1, 2):
             raise StateSchemaError(
                 f"{self._path} has schema version {version}; this build understands {SCHEMA_VERSION}"
             )
@@ -194,18 +216,12 @@ class StateDatabase:
             if version == 0:
                 if conn.execute("SELECT count(*) FROM sqlite_master").fetchone()[0] != 0:
                     raise StateSchemaError(f"{self._path} holds tables but no schema version; refusing to touch it")
-                for statement in _SCHEMA_V1.split(";"):
-                    if statement.strip():
-                        conn.execute(statement)
-            elif version != 1 or not self._matches_v1(conn):
+                _apply_schema(conn, _SCHEMA_V1)
+            elif version not in (1, 2) or not self._matches_previous(conn, version):
                 raise StateSchemaError("unexpected state schema during migration")
-            conn.execute("ALTER TABLE proposals ADD COLUMN admission_token_id TEXT")
-            conn.execute("ALTER TABLE proposals ADD COLUMN admitted_key TEXT")
-            conn.execute("CREATE INDEX proposals_by_admission ON proposals(admission_token_id, admitted_key)")
-            conn.execute(
-                "CREATE INDEX pending_by_token ON proposals(admission_token_id) "
-                "WHERE status NOT IN ('rejected','applied')"
-            )
+            if version < 2:
+                _apply_schema(conn, _UPGRADE_V2)
+            conn.execute("CREATE TABLE login_attempts (reserved_us INTEGER NOT NULL) STRICT")
             conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
         except BaseException:
             conn.execute("ROLLBACK")
@@ -213,11 +229,10 @@ class StateDatabase:
         conn.execute("COMMIT")
 
     @staticmethod
-    def _matches_v1(conn: sqlite3.Connection) -> bool:
-        """Only upgrade the schema this application created. SQLite normalizes the CREATE statement prefix."""
-        expected = {statement.strip() for statement in _SCHEMA_V1.split(";") if statement.strip()}
-        actual = {
-            row[0]
-            for row in conn.execute("SELECT sql FROM sqlite_schema WHERE sql IS NOT NULL AND name NOT GLOB 'sqlite_*'")
-        }
-        return expected == actual
+    def _matches_previous(conn: sqlite3.Connection, version: int) -> bool:
+        """Compare SQLite's normalized DDL against the previous application's own schema."""
+        with closing(sqlite3.connect(":memory:")) as reference:
+            _apply_schema(reference, _SCHEMA_V1)
+            if version == 2:
+                _apply_schema(reference, _UPGRADE_V2)
+            return _schema_statements(reference) == _schema_statements(conn)

@@ -4,7 +4,7 @@
 
 ## 1. Delivery sequence
 
-PR 1 records the decision in [ADR-0019](../adr/0019-owner-browser-api.md). PR 2 pins the approved inventory. PRs 3–11 are planned. Start each branch from current main after the preceding PR merges. The owner authorizes merges for all eleven PRs, including security and dependency changes, with independent review, findings resolved, completed green CI and scripts/merge-pr.sh. The dependency, ADR and privileged setup boundaries are recorded in §6.
+PR 1 records the decision in [ADR-0019](../adr/0019-owner-browser-api.md). PR 2 pins the approved inventory. PR 3 implements owner authentication. PRs 4–11 are planned. Start each branch from current main after the preceding PR merges. The owner authorizes merges for all eleven PRs, including security and dependency changes, with independent review, findings resolved, completed green CI and scripts/merge-pr.sh. The dependency, ADR and privileged setup boundaries are recorded in §6.
 
 | PR and branch | Deliverable | Verification before merge |
 |---|---|---|
@@ -248,3 +248,16 @@ matches the approved inventory, and the Python lock adds only FastAPI and annota
 TypeScript 7 checks Vite, Playwright and CodeMirror types in strict mode. The native Vite build
 bundles a Markdown editor. Playwright opens it over fixture HTTPS and verifies editor styling under the browser CSP. On x86-64 WSL Ubuntu, run this compatibility check with
 `cd web && pnpm install --frozen-lockfile && pnpm exec playwright install chromium && pnpm run test:toolchain`.
+
+### PR 3 delivery record
+
+Run `cerebro --config /path/to/instance.toml owner-password` in a local terminal to provision or rotate
+the browser password. Its UTF-8 encoding must fit in 1–1024 bytes. Keep the configured state directory
+outside both repositories. The CLI atomically replaces its protected verifier and uses a persistent
+sibling lock to limit the instance to one simultaneous scrypt operation. On WSL2 a real login took
+0.203 seconds, with 155 MiB peak process RSS. Every attempted login reserves a slot before verification.
+The five-attempt window survives restart and expires individual attempts after fifteen minutes.
+
+The browser service shares a process-local table across listeners. It keeps up to 64 sessions, evicting
+the least recently used at capacity. An authenticated request checks the exact verifier generation,
+listener, origin and expiry. Restart, logout and external password rotation invalidate prior sessions.
