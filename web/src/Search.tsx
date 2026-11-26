@@ -54,6 +54,7 @@ export function SearchScreen({api}: {api: ApiClient}) {
   const [invalid, setInvalid] = useState(false);
   const [expanded, setExpanded] = useState<string | null>(null);
   const metadata = useVisibleGraph(api, draft.history);
+  const resultMetadata = useVisibleGraph(api, criteria.history);
   const options = useMemo(() => {
     if (!metadata.data) return undefined;
     const nodes = metadata.data.nodes;
@@ -68,9 +69,9 @@ export function SearchScreen({api}: {api: ApiClient}) {
   });
 
   const visibleIds = useMemo(() => {
-    const notes = draft.history === criteria.history && metadata.data ? metadata.data.nodes : results.data?.results;
+    const notes = resultMetadata.data?.nodes ?? results.data?.results;
     return new Set(notes?.map(note => note.id));
-  }, [draft.history, criteria.history, metadata.data, results.data]);
+  }, [resultMetadata.data, results.data]);
 
   const awaitingOptions = metadata.isPending && filters.some(key => draft[key] !== "");
 

@@ -14,7 +14,7 @@ test("semantic prose, sections, wikilinks and technical translation boundaries",
   for (const token of ["git status", "./notes/demo.md", "uv run pytest", "note-id", "docker compose up -d", "git clean"]) {
     await expect(body.getByText(token, {exact:true})).toHaveAttribute("translate", "no");
   }
-  await expect(body.locator('[translate="no"]').filter({hasText: /before continuing|git is/})).toHaveCount(0);
+  await expect(body.locator('[translate="no"]').filter({hasText: /before continuing|git is|git stores/})).toHaveCount(0);
   await expect(body.getByRole("link", {name: "[[missing-note]]"})).toHaveCount(0);
   await expect(body.locator('[translate="no"]').filter({hasText: "step-by-step"})).toHaveCount(0);
   const title = page.locator(".plain-fixture");

@@ -88,10 +88,16 @@ export function markdownHeadings(body: string): MarkdownHeading[] {
 }
 
 // Preserve technical tokens in prose. Authors use code spans for arbitrary shell syntax.
-// The command word is open-ended. A small set of tool namespaces takes a second word.
-const tool = /(?:docker[ \t]+compose|(?:pnpm|npm|uv)[ \t]+(?:run|exec)|cerebro[ \t]+(?:inbox|token)|python3?[ \t]+-m|git|pnpm|npm|uv|docker|cerebro|python3?)/;
-const commandWord = /(?!(?:is|are|was|and|or|in|on|with|for|to|from|before|after)\b)(?:[a-z][\w.:-]*|--?[a-zA-Z][\w-]*)/;
-const shellCommand = new RegExp(`\\b${tool.source}[ \\t]+${commandWord.source}\\b(?:[ \\t]+--?[a-zA-Z][\\w-]*(?:=[\\w.-]+)?)*`);
+const commands = [
+  /git (?:add|branch|checkout|clean|clone|commit|config|diff|fetch|init|log|merge|pull|push|rebase|restore|rev-parse|show|status|switch|tag|worktree)/,
+  /docker (?:compose (?:build|config|down|logs|ps|pull|restart|start|stop|up)|build|images|ps|run)/,
+  /(?:pnpm|npm) (?:run [a-z][\w:-]*|exec [a-z][\w-]*|build|install|lint|test)/,
+  /uv (?:run [a-z][\w-]*|lock|sync)/,
+  /cerebro (?:inbox (?:amend|approve|list|reject)|token (?:issue|list|revoke)|health|init-content|owner-password|read|reindex|search)/,
+  /python3? -m [a-z][\w.]*/,
+  /(?:git|docker|pnpm|npm|uv|cerebro|python3?) --(?:help|version)/,
+].map(pattern => pattern.source.replaceAll(" ", "[ \\t]+")).join("|");
+const shellCommand = new RegExp(`\\b(?:${commands})(?![\\w-])(?:[ \\t]+--?[a-zA-Z][\\w-]*(?:=[\\w.-]+)?)*`);
 const pathToken = /(?<![\w./~-])(?:~\/|\.\.?\/|\/|[\w.-]+\/)(?:[\w.-]+\/)*[\w.-]*[\w-]/;
 const optionOrFile = /(?<!\w)--[a-z][\w-]*|\b[\w-]+\.(?:md|toml|yaml|yml|json|sh|py|ts|tsx|js|css|html|sqlite)\b/;
 const possibleId = /(?<![\w-])(?<id>[a-z0-9]+(?:-[a-z0-9]+)*)(?![\w-])/;

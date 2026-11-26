@@ -118,6 +118,6 @@ export function ReaderScreen({ api, id, history, section }: {
   const outlineStatus = section && !full.data && (full.isError
     ? <div><p role="status">Could not load sections.</p><button onClick={() => void full.refetch()}>Retry sections</button></div>
     : <p role="status">Loading sections…</p>);
-  return <Document note={result.data} history={history} outlineBody={full.data?.body ?? ""}
+  return <Document note={result.data} history={history} outlineBody={full.data?.body ?? result.data.body}
     outlineStatus={outlineStatus} visibleIds={visibleIds}/>;
 }

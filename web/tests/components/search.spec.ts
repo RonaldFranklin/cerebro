@@ -192,3 +192,26 @@ test("cached searches with equal result counts announce the new criteria", async
     await expect(status).toContainText(text);
   }
 });
+
+test("editing history keeps displayed results bound to their submitted graph", async ({page}) => {
+  await session(page);
+  await page.route("**/api/graph?history=*", route => {
+    const nodes = [note, {...note, id: "reference"}];
+    if (new URL(route.request().url()).searchParams.get("history") === "true") nodes.push({...note, id: "archival"});
+    return route.fulfill({json: {nodes, edges: []}});
+  });
+  await page.route("**/api/search?*", route => route.fulfill({
+    json: {results: [{...note, summary: "Check reference and archival for context."}]},
+  }));
+  await page.goto("/search");
+  const results = page.getByRole("region", {name: "Results"});
+  const reference = results.getByText("reference", {exact: true});
+  await expect(reference).toHaveAttribute("translate", "no");
+  const graph = page.waitForResponse(r => r.url().endsWith("/api/graph?history=true"));
+  await page.getByLabel("Include history").check();
+  await graph;
+  await expect(reference).toHaveAttribute("translate", "no");
+  await expect(results.getByText("archival", {exact: true})).toHaveCount(0);
+  await page.getByRole("button", {name: "Search notes"}).click();
+  await expect(results.getByText("archival", {exact: true})).toHaveAttribute("translate", "no");
+});

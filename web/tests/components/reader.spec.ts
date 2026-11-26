@@ -26,6 +26,7 @@ test("reader preserves history across sections and masks unavailable notes", asy
   await page.goto("/notes/fixture-guide?history=true&section=Working+copy");
   await expect(page.getByText("Selected Working copy.")).toBeVisible();
   await expect(page.getByText("Could not load sections.")).toBeVisible();
+  await expect(page.getByRole("navigation", {name:"Sections"}).getByRole("link", {name:"Working copy"})).toBeVisible();
   failOutline = false;
   await page.getByRole("button", {name:"Retry sections"}).click();
   await expect(page.getByRole("navigation", {name:"Sections"}).getByRole("link", {name:"Other section"})).toBeVisible();
