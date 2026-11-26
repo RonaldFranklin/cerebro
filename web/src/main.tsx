@@ -14,7 +14,6 @@ const GraphScreen = lazy(() => import("./GraphScreen"));
 
 const EditorScreen = lazy(() => import("./Editor").then(module => ({default: module.EditorScreen})));
 const HealthScreen = lazy(() => import("./Health").then(module => ({default: module.HealthScreen})));
-const InboxScreen = lazy(() => import("./Inbox").then(module => ({default: module.InboxScreen})));
 
 function Status({children, action, label}: {children: ReactNode; action?: () => void; label?: string}) {
   return <main className="session-status"><h1>Cérebro</h1><p role="status">{children}</p>
@@ -29,7 +28,7 @@ function Home({api}: {api: ApiClient}) {
   return <OverviewScreen data={result.data}/>;
 }
 
-const routeTitles: Record<string,string> = {"/graph":"Graph", "/search":"Search", "/inbox":"Inbox", "/health":"Health"};
+const routeTitles: Record<string,string> = {"/graph":"Graph", "/search":"Search", "/health":"Health"};
 
 function address() { return location.pathname + location.search + location.hash; }
 
@@ -76,22 +75,21 @@ function App() {
     case "anonymous": return <Login onSubmit={manager.signIn} notice={state.notice}/>;
     case "active": {
       const home = path === "/" || path === "/login";
-      const title = routeTitles[path] ?? (path.startsWith("/notes/") ? "Note reader" : "Owner editor");
-      const denied = state.session.ceiling !== "restricted" && (path === "/inbox" || path === "/health" || path.startsWith("/editor/"));
+      const title = routeTitles[path] ?? (path.startsWith("/notes/") ? "Note reader" : path.startsWith("/editor/") ? "Owner editor" : "Page unavailable");
+      const denied = state.session.ceiling !== "restricted" && (path === "/health" || path.startsWith("/editor/"));
       return <QueryClientProvider key={state.generation} client={state.queries}>
         {state.checking && <Status>Checking session…</Status>}
         <div hidden={state.checking}><Shell path={home ? "/" : path} ceiling={state.session.ceiling} onNavigate={navigate} onLogout={manager.signOut}>
           {denied ? <section className="pending-view"><h1>{title}</h1><p>This view requires the private listener.</p>
             <a href="/">Back to overview</a></section> : home ? <Home api={state.api}/> :
             path === "/health" ? <Suspense fallback={<p role="status">Loading health report…</p>}><HealthScreen api={state.api}/></Suspense> :
-            path === "/inbox" ? <Suspense fallback={<p role="status">Loading Inbox…</p>}><InboxScreen api={state.api}/></Suspense> :
             path.startsWith("/editor/") ? <Suspense fallback={<p role="status">Loading editor…</p>}><EditorScreen
               key={path} api={state.api} id={path.slice("/editor/".length)} history={url.searchParams.get("history") === "true"}/></Suspense> :
             path === "/graph" ? <Suspense fallback={<p role="status">Loading graph…</p>}><GraphScreen api={state.api}/></Suspense> :
             path === "/search" ? <SearchScreen api={state.api}/> :
             path.startsWith("/notes/") ? <ReaderScreen api={state.api} id={path.slice("/notes/".length)}
               history={url.searchParams.get("history") === "true"} section={url.searchParams.get("section")}/> : <section className="pending-view"><h1>{title}</h1>
-            <p>This view is not yet available.</p>
+            <p>This page could not be found.</p>
             <a href="/">Back to overview</a></section>}
         </Shell></div>
       </QueryClientProvider>;

@@ -1,4 +1,4 @@
-"""The read and proposal tools. Transport identity comes from the request's authentication callback."""
+"""The authenticated read and write tools. Transport identity comes from the request's authentication callback."""
 
 import asyncio
 import json
@@ -9,10 +9,11 @@ from mcp import MCPError, types
 from mcp.server import Server, ServerRequestContext
 
 from cerebro.adapters.inbound.input_limits import MAX_FIELD_BYTES, MAX_QUERY_BYTES, bounded_text
-from cerebro.adapters.inbound.mcp_proposal import PROPOSE_TOOL, parse_proposal
+from cerebro.adapters.inbound.mcp_write import WRITE_TOOL, write_request
 from cerebro.adapters.inbound.read_views import overview_view, read_view, search_view
+from cerebro.adapters.inbound.write_guide import read_write_guide
+from cerebro.application.agent_write import AgentWriteRequest, AgentWriteResult, WriteFinding, WriteRejected
 from cerebro.application.dto import (
-    AdmissionResult,
     GetNeighborsRequest,
     GetOverviewRequest,
     GraphView,
@@ -21,13 +22,11 @@ from cerebro.application.dto import (
     ReadNoteRequest,
     SearchNotesRequest,
     SearchResults,
-    SubmitProposalRequest,
 )
 from cerebro.application.errors import (
     AuthenticationFailed,
     NoteNotFound,
     PermissionDenied,
-    ProposalLimitReached,
     SectionNotFound,
 )
 from cerebro.application.use_case import ContextUseCase
@@ -37,8 +36,19 @@ from cerebro.domain.errors import DomainError
 from cerebro.domain.note import NoteId
 from cerebro.domain.vocabulary import Area, NoteType
 
+
+@dataclass(frozen=True, slots=True)
+class WriteGuideRequest:
+    """Fetch the static guidance without reading note content."""
+
+
 type ToolRequest = (
-    GetOverviewRequest | SearchNotesRequest | ReadNoteRequest | GetNeighborsRequest | SubmitProposalRequest
+    GetOverviewRequest
+    | SearchNotesRequest
+    | ReadNoteRequest
+    | GetNeighborsRequest
+    | AgentWriteRequest
+    | WriteGuideRequest
 )
 
 
@@ -66,7 +76,8 @@ _TEXT = {"type": "string", "maxLength": MAX_FIELD_BYTES, "description": f"Up to 
 _TOOLS = {
     tool.name: tool
     for tool in (
-        PROPOSE_TOOL,
+        WRITE_TOOL,
+        _tool("cerebro_write_guide", "Read the writing rules before creating or updating a note.", {}),
         _tool("cerebro_overview", "Read core notes and visible hubs.", {}),
         _tool(
             "cerebro_search",
@@ -109,7 +120,11 @@ def parse_tool(name: str, arguments: object) -> ToolRequest:
     """Validate field sizes and types before invoking authentication or a read use case."""
     args = {} if arguments is None else arguments
     tool = _TOOLS.get(name)
-    if tool is None or not isinstance(args, dict) or args.keys() - tool.input_schema["properties"].keys():
+    if tool is None or not isinstance(args, dict):
+        raise InvalidToolArguments
+    if name == WRITE_TOOL.name:
+        return write_request(args)
+    if args.keys() - tool.input_schema["properties"].keys():
         raise InvalidToolArguments
 
     def text(key: str, limit: int = MAX_FIELD_BYTES) -> str:
@@ -128,8 +143,8 @@ def parse_tool(name: str, arguments: object) -> ToolRequest:
         raise InvalidToolArguments
 
     try:
-        if name == PROPOSE_TOOL.name:
-            return parse_proposal(args)
+        if name == "cerebro_write_guide":
+            return WriteGuideRequest()
         if name == "cerebro_overview":
             return GetOverviewRequest()
         if name == "cerebro_search":
@@ -172,12 +187,16 @@ def _neighbors(result: GraphView) -> dict[str, object]:
     }
 
 
+def _findings(findings: tuple[WriteFinding, ...]) -> list[dict[str, str]]:
+    return [{"code": item.code, "field": item.field, "hint": item.hint} for item in findings]
+
+
 def _error(message: str) -> types.CallToolResult:
     return types.CallToolResult(is_error=True, content=[types.TextContent(text=message)])
 
 
 def tool_scope(name: str) -> Scope:
-    return Scope.PROPOSE if name == PROPOSE_TOOL.name else Scope.READ
+    return Scope.WRITE if name in {WRITE_TOOL.name, "cerebro_write_guide"} else Scope.READ
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -187,7 +206,7 @@ class MCPTools:
     read_note: ContextUseCase[ReadNoteRequest, NoteView]
     get_neighbors: ContextUseCase[GetNeighborsRequest, GraphView]
 
-    submit_proposal: ContextUseCase[SubmitProposalRequest, AdmissionResult]
+    agent_write: ContextUseCase[AgentWriteRequest, AgentWriteResult]
 
     def list_tools(self, ctx: AccessContext) -> types.ListToolsResult:
         if ctx.is_owner:
@@ -207,11 +226,18 @@ class MCPTools:
             elif isinstance(request, ReadNoteRequest):
                 view = self.read_note.execute(request, ctx)
                 output = read_view(view)
-                if ctx.can(Scope.PROPOSE) and view.visible_content_hash is not None:
-                    output["base_hash"] = view.visible_content_hash
-            elif isinstance(request, SubmitProposalRequest):
-                admitted = self.submit_proposal.execute(request, ctx)
-                output = {"proposal_id": admitted.proposal_id, "valid": admitted.valid}
+                if ctx.can(Scope.WRITE) and view.base_hash is not None:
+                    output["base_hash"] = view.base_hash
+            elif isinstance(request, AgentWriteRequest):
+                receipt = self.agent_write.execute(request, ctx)
+                output = {
+                    "note_id": receipt.note_id.value,
+                    "revision": receipt.revision,
+                    "findings": _findings(receipt.findings),
+                    "warnings": [{"code": w.code.value, "message": w.message} for w in receipt.warnings],
+                }
+            elif isinstance(request, WriteGuideRequest):
+                output = {"guide": read_write_guide()}
             else:
                 output = _neighbors(self.get_neighbors.execute(request, ctx))
             return types.CallToolResult(
@@ -219,8 +245,11 @@ class MCPTools:
             )
         except InvalidToolArguments, DomainError:
             return _error("Invalid tool arguments.")
-        except ProposalLimitReached as error:
-            return _error(str(error))
+        except WriteRejected as error:
+            details = {"findings": _findings(error.findings)}
+            return types.CallToolResult(
+                is_error=True, content=[types.TextContent(text=json.dumps(details))], structured_content=details
+            )
         except NoteNotFound, SectionNotFound:
             return _error("Not found.")
         except PermissionDenied, AuthenticationFailed:

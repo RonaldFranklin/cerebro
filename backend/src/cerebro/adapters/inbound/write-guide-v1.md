@@ -1,0 +1,9 @@
+# Cérebro writing guide v1
+
+Save knowledge another session can act on: a decision and its rationale, a configuration, an architectural constraint, a procedure that worked, or a project convention. Skip secrets, transient conversations, raw logs, obvious facts and duplicates.
+
+1. Search with `cerebro_search` before creating. Prefer updating an existing note. Read it in full with `cerebro_read`.
+2. Write in English. Send `frontmatter` and a Markdown `body`. Supply a one-line `title` (up to 120 characters), a clear standalone `summary` (40–300 characters), a configured `area` and `type`, `priority`, and `sensitivity` (public, internal or restricted). Link regular notes to an existing `hub`. Use visible ids for links; targets must be at or below the note’s sensitivity.
+3. Reserve P0 for core rules (1,500 words across current P0 notes), P1 for hubs (800 words each), and P2/P3 for regular notes (aim for 1,500 words, maximum 3,000). The body limit is 48 KiB in UTF-8. Use at most 32 `related` ids.
+4. Call `cerebro_write`. For `create`, send a unique `request_id` (1–64 letters, digits, underscores or hyphens). After a lost response, repeat the identical request with that id and token. The service assigns the note id and dates.
+5. For `update`, send the note id as `target` and the full read’s `base_hash`. Replace the whole body and carry forward writable frontmatter, including optional `related`, `lang`, `status`, `superseded_by` and `review_by` when present. Omit server fields and `request_id`. If the hash is absent, stop. On a stale hash, read again and reconcile edits. Follow field hints on rejection; wait for quota capacity on a rate limit.

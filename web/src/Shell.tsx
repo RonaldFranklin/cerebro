@@ -7,7 +7,6 @@ const destinations = [
   { path: "/", label: "Overview", icon: "overview" },
   { path: "/search", label: "Search", icon: "search" },
   { path: "/graph", label: "Graph", icon: "graph" },
-  { path: "/inbox", label: "Inbox", icon: "inbox", private: true },
   { path: "/health", label: "Health", icon: "health", private: true },
 ];
 

@@ -38,9 +38,9 @@ test("owner sessions stay on their issuing HTTPS listener", async ({ page, conte
   await signIn(publicPage, demo.password);
   const publicChecks = await publicPage.evaluate(async () => ({
     ceiling: (await (await fetch("/api/session")).json()).ceiling,
-    inboxStatus: (await fetch("/api/inbox")).status,
+    healthStatus: (await fetch("/api/health")).status,
   }));
-  expect(publicChecks).toEqual({ ceiling: "internal", inboxStatus: 403 });
+  expect(publicChecks).toEqual({ ceiling: "internal", healthStatus: 403 });
   const publicOverview = await publicPage.evaluate(async () => (await fetch("/api/overview")).json());
   expect(JSON.stringify(publicOverview).includes(marker)).toBe(false);
   expect(JSON.stringify(publicOverview).includes("fixture-vault-catalog")).toBe(false);

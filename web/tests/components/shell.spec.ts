@@ -15,7 +15,7 @@ test("owner overview links visible content and exposes private navigation", asyn
   await expect(page.getByRole("heading", { name: "Overview", exact: true })).toBeVisible();
   await expect(page.getByRole("link", { name: "Example note" })).toHaveAttribute("href", "/notes/example-note");
   await expect(page.getByRole("link", { name: "Research hub" })).toHaveAttribute("href", "/notes/research-hub");
-  await expect(page.getByRole("navigation").getByRole("link", { name: "Inbox" })).toBeVisible();
+  await expect(page.getByRole("navigation").getByRole("link", { name: "Health" })).toBeVisible();
   await expect(page.getByRole("link", { name: "Overview", exact: true })).toHaveAttribute("aria-current", "page");
 });
 

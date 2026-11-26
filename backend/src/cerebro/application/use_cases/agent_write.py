@@ -61,6 +61,15 @@ class AgentWrite:
         if not self._attempts.reserve(ctx.token_id, now, self._limit):
             raise WriteRejected(WriteFinding("rate_limited", "request", "Wait for a rolling-hour quota slot."))
 
+        if request.has_unexpected_fields:
+            raise WriteRejected(
+                WriteFinding(
+                    "unknown_field",
+                    "request",
+                    "Use operation, frontmatter and body, plus request_id on create or target and base_hash on update.",
+                )
+            )
+
         key = fingerprint = None
         base = None
         receipt = None

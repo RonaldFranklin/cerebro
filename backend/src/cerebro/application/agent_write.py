@@ -16,6 +16,7 @@ class AgentWriteRequest:
     target: str | None = None
     base_hash: str | None = None
     request_id: str | None = None
+    has_unexpected_fields: bool = False
 
 
 @dataclass(frozen=True, slots=True)

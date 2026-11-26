@@ -16,7 +16,7 @@ def test_issue_list_and_revoke(tmp_path: Path) -> None:
     config.write_text(SAMPLE.replace("keys/fernet.key", "secrets/cerebro.key"))
     command = ("--config", str(config), "token")
     assert json.loads(invoke(*command, "list").stdout) == []
-    issued = invoke(*command, "issue", "fixture-agent", "--ceiling", "internal", "--scope", "read")
+    issued = invoke(*command, "issue", "fixture-agent", "--ceiling", "internal", "--scope", "read", "--scope", "write")
     assert issued.returncode == 0
     assert issued.stderr == ""
     secret = issued.stdout.strip()
@@ -25,7 +25,7 @@ def test_issue_list_and_revoke(tmp_path: Path) -> None:
     listing = invoke(*command, "list")
     (row,) = json.loads(listing.stdout)
     assert set(row) == {"token_id", "agent", "scopes", "ceiling", "created_at", "expires_at", "revoked_at"}
-    assert (row["agent"], row["scopes"], row["ceiling"]) == ("fixture-agent", ["read"], "internal")
+    assert (row["agent"], row["scopes"], row["ceiling"]) == ("fixture-agent", ["read", "write"], "internal")
     assert row["expires_at"] is None
     assert row["revoked_at"] is None
     first = invoke(*command, "revoke", row["token_id"])
@@ -46,6 +46,7 @@ def test_issue_list_and_revoke(tmp_path: Path) -> None:
     [
         ("issue", "owner"),
         ("issue", "a", "--scope", "owner"),
+        ("issue", "a", "--scope", "propose"),
         ("issue", "a", "--expires-at", "2030-01-01"),
         ("issue", "a", "--ceiling", "secret"),
         ("revoke", "é" * 129),

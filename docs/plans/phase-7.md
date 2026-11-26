@@ -44,4 +44,9 @@ compares both index revisions with HEAD and rebuilds after interrupted indexing.
 
 **Tested.** Application tests and shared fake/real storage contracts exercise scope, quota, replay,
 ceilings and Git attribution. Real-container tests cover two writers sharing a base, interrupted indexing
-and recovery on restart. MCP cutover, browser history and manual client acceptance are pending.
+and recovery on restart. The step 3 MCP cutover exposes `cerebro_write` and the packaged `cerebro_write_guide`
+only to agents with `write`. The CLI issues `read` and `write` grants and retires its Inbox commands.
+Owner browser review mutations also retire at cutover, leaving historical proposal rows inert. The SDK checks discovery, creates,
+idempotent retries, updates across HTTP and stdio, Git attribution, stale hashes, validation and quotas.
+An offline wheel installation serves the same guide as the source tree. Browser history and manual
+verification in Claude Code and Codex are pending.

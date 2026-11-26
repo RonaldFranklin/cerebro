@@ -29,9 +29,7 @@ def dist(tmp_path: Path) -> Path:
     return directory
 
 
-@pytest.mark.parametrize(
-    "route", ["/", "/login", "/search", "/graph", "/inbox", "/health", "/notes/n-1", "/editor/n-1"]
-)
+@pytest.mark.parametrize("route", ["/", "/login", "/search", "/graph", "/health", "/notes/n-1", "/editor/n-1"])
 def test_known_navigation_gets_nonce_and_no_cache(dist: Path, route: str) -> None:
     browser = client(dist)
     response = browser.get(route + "?q=example")
@@ -50,6 +48,7 @@ def test_known_navigation_gets_nonce_and_no_cache(dist: Path, route: str) -> Non
         "/api/unknown",
         "/mcp",
         "/unknown",
+        "/inbox",
         "/assets/plain.js",
         "/assets/a-12345678.map",
         "/assets/a-12345678.html",
