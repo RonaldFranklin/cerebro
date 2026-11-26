@@ -4,7 +4,7 @@
 
 ## 1. Delivery sequence
 
-PR 1 records the decision in [ADR-0019](../adr/0019-owner-browser-api.md). PR 2 pins the approved inventory. PR 3 implements owner authentication. PR 4 mounts the authenticated browser service. PR 5 implements browser reads. PR 6 implements private owner writes. PRs 7–11 are planned. Start each branch from current main after the preceding PR merges. The owner authorizes merges for all eleven PRs, including security and dependency changes, with independent review, findings resolved, completed green CI and scripts/merge-pr.sh. The dependency, ADR and privileged setup boundaries are recorded in §6.
+PR 1 records the decision in [ADR-0019](../adr/0019-owner-browser-api.md). PR 2 pins the approved inventory. PR 3 implements owner authentication. PR 4 mounts the authenticated browser service. PR 5 implements browser reads. PR 6 implements private owner writes. PR 7 delivers the browser foundation. PRs 8–11 are planned. Start each branch from current main after the preceding PR merges. The owner authorizes merges for all eleven PRs, including security and dependency changes, with independent review, findings resolved, completed green CI and scripts/merge-pr.sh. The dependency, ADR and privileged setup boundaries are recorded in §6.
 
 | PR and branch | Deliverable | Verification before merge |
 |---|---|---|
@@ -329,3 +329,28 @@ Amend also takes a replacement Markdown `body`. Reject requires a `reason`. Appr
 proposal and its target, then applies the approved revision under the writer lock. If interrupted, reload
 the listing and resume the approved revision. Applying an already-applied current revision returns
 `already_applied`. Successful changes report the commit and any restricted-history warning.
+
+### PR 7 delivery record
+
+The production Vite build serves the sign-in page and workspace overview from the backend origin.
+The overview lists the session's visible core notes, hubs and areas. The navigation shows Inbox and
+Health on the private listener. An authenticated deep link retains its path during sign-in. Later
+screen PRs replace the unavailable views at their existing paths.
+
+The browser API client sends same-origin requests, uses the session's CSRF token for mutations and
+keeps credentials in memory. Each session owns a cancellable request lifetime and its own TanStack
+Query cache. Sign-out removes workspace data immediately. If the server cannot confirm revocation,
+the screen offers an authenticated retry. A 401 clears the current workspace, as do the local
+30-minute idle and eight-hour absolute timers. Returning to the page rechecks server authorization;
+a restored browser history snapshot starts with a fresh session check.
+
+Run `pnpm run typecheck`, `pnpm run build`, `pnpm run test:component` and `pnpm run test:e2e` in
+`web/` after the locked backend and frontend installs in §5. The component fixture mounts the real
+application in isolation with intercepted requests. E2E uses the installed backend and a disposable
+HTTPS instance with synthetic notes. To open this build manually, run
+`uv run --locked python -m devtools.web_demo --dist ../web/dist` from `backend/`. Choose a disposable
+password at the terminal prompt and open the printed private HTTPS origin. Inspect the local
+certificate's SHA-256 fingerprint against the terminal output before accepting it. Ctrl+C removes
+the instance. The owner installation and global browser trust configuration are untouched.
+
+[Sign-in](../screenshots/phase-5/07-login.png) · [Overview](../screenshots/phase-5/07-overview.png)

@@ -130,7 +130,7 @@ Phase 8 remains the later backlog.
 Owner-approved delivery plan, dependencies, verification and adjustments: [phase-5.md](plans/phase-5.md).
 The toolchain is pinned. Local password provisioning, the durable login throttle and the browser session
 lifecycle are implemented and tested. Both sockets serve the authenticated browser API and local web
-assets alongside MCP. Typed read endpoints serve search, overview, notes, graph neighborhoods and private health. The private API supports owner edits and revision-checked Inbox review. The browser UI starts in PR 7.
+assets alongside MCP. Typed read endpoints serve search, overview, notes, graph neighborhoods and private health. The private API supports owner edits and revision-checked Inbox review. The browser now provides owner sign-in and a session-scoped overview.
 
 - Use Node 26.13.1 per [ADR-0013](adr/0013-stack-and-dependency-policy.md) (Active LTS at phase start),
   pin it (`package.json` `engines`, `.nvmrc`, CI) and record it with the frontend versions in
