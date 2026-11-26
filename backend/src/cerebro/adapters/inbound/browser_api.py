@@ -1,0 +1,144 @@
+"""Owner browser JSON API for a single, immutable listener binding."""
+
+import asyncio
+import json
+
+from fastapi import FastAPI, Request
+from fastapi.exceptions import RequestValidationError
+from mcp.server.transport_security import RequestBodyLimitMiddleware
+from starlette.middleware.base import RequestResponseEndpoint
+from starlette.responses import JSONResponse, Response
+
+from cerebro.adapters.inbound.input_limits import MAX_INPUT_BYTES
+from cerebro.application.browser import AuthenticationFailed, BrowserAuth, BrowserBinding, CsrfRejected
+from cerebro.domain.access import AccessCeiling, AccessContext
+
+_NO_STORE = {"Cache-Control": "no-store"}
+_SESSION_PATHS = frozenset({"/api/login", "/api/logout", "/api/session"})
+_COOKIE_NAMES = {"private": "__Host-cerebro_private", "public": "__Host-cerebro_public"}
+
+
+def _error(status: int, message: str) -> JSONResponse:
+    return JSONResponse({"error": message}, status_code=status, headers=_NO_STORE)
+
+
+def _header(request: Request, name: str) -> str | None:
+    values = request.headers.getlist(name)
+    return values[0] if len(values) == 1 else None
+
+
+def _session_cookie(request: Request, name: str) -> str | None:
+    session_id: str | None = None
+    for header in request.headers.getlist("cookie"):
+        for item in header.split(";"):
+            key, separator, value = item.strip().partition("=")
+            if key == name:
+                if not separator or session_id is not None or len(value) > 128:
+                    raise AuthenticationFailed()
+                session_id = value
+    return session_id
+
+
+def _unique_object(pairs: list[tuple[str, object]]) -> dict[str, object]:
+    fields = dict(pairs)
+    if len(fields) != len(pairs):
+        raise ValueError
+    return fields
+
+
+def _password(body: bytes) -> bytes:
+    fields = json.loads(body.decode("utf-8"), object_pairs_hook=_unique_object)
+    if not isinstance(fields, dict) or fields.keys() != {"password"} or not isinstance(fields["password"], str):
+        raise ValueError
+    password = fields["password"].encode("utf-8")
+    if not 1 <= len(password) <= 1024:
+        raise ValueError
+    return password
+
+
+def browser_api(auth: BrowserAuth, binding: BrowserBinding, ceiling: AccessCeiling) -> FastAPI:
+    app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None, redirect_slashes=False)
+    cookie_name = _COOKIE_NAMES[binding.listener]
+
+    def session_data(csrf: str) -> dict[str, str]:
+        return {"csrf_token": csrf, "ceiling": ceiling.level.value}
+
+    @app.middleware("http")
+    async def authenticate(request: Request, call_next: RequestResponseEndpoint) -> Response:
+        path = request.scope["path"]
+        if path in _SESSION_PATHS and request.scope["query_string"]:
+            return _error(422, "Invalid request.")
+        session_id = _session_cookie(request, cookie_name)
+        if request.method == "POST" and path == "/api/login":
+            if _header(request, "origin") != binding.origin or _header(request, "x-cerebro-request") != "1":
+                return _error(403, "Access denied.")
+            request.state.previous = session_id
+        else:
+            if not session_id:
+                return _error(401, "Authentication required.")
+            csrf = None
+            if request.method not in {"GET", "HEAD"}:
+                csrf = _header(request, "x-csrf-token")
+                if _header(request, "origin") != binding.origin or not csrf:
+                    return _error(403, "Access denied.")
+            request.state.csrf_token = await asyncio.to_thread(auth.session, binding, session_id, csrf=csrf)
+            request.state.ctx = AccessContext.for_owner(ceiling)
+            request.state.session_id = session_id
+        return await call_next(request)
+
+    app.add_middleware(RequestBodyLimitMiddleware, max_body_size=MAX_INPUT_BYTES)
+
+    @app.middleware("http")
+    async def responses(request: Request, call_next: RequestResponseEndpoint) -> Response:
+        try:
+            response = await call_next(request)
+        except CsrfRejected:
+            return _error(403, "Access denied.")
+        except AuthenticationFailed as exc:
+            if exc.retry_after:
+                response = _error(429, "Try again later.")
+                response.headers["Retry-After"] = str(exc.retry_after)
+                return response
+            return _error(401, "Authentication required.")
+        except Exception:
+            # No credentials, note fields or proposal contents may reach server error logs.
+            return _error(503, "Service unavailable.")
+        if response.status_code == 413:
+            return _error(413, "Request body too large.")
+        response.headers["Cache-Control"] = "no-store"
+        return response
+
+    @app.exception_handler(RequestValidationError)
+    async def invalid_fields(request: Request, exc: RequestValidationError) -> Response:
+        return _error(422, "Invalid request.")
+
+    @app.post("/api/login")
+    async def login(request: Request) -> Response:
+        media = _header(request, "content-type")
+        if not media or media.lower() not in {"application/json", "application/json; charset=utf-8"}:
+            return _error(415, "JSON required.")
+        try:
+            password = _password(await request.body())
+        except ValueError, RecursionError:
+            return _error(422, "Invalid request.")
+        issued = await asyncio.to_thread(auth.login, binding, password, request.state.previous)
+        response = JSONResponse(session_data(issued.csrf_token))
+        response.set_cookie(cookie_name, issued.session_id, path="/", httponly=True, secure=True, samesite="strict")
+        return response
+
+    @app.get("/api/session")
+    async def session(request: Request) -> Response:
+        if await request.body():
+            return _error(422, "Invalid request.")
+        return JSONResponse(session_data(request.state.csrf_token))
+
+    @app.post("/api/logout")
+    async def logout(request: Request) -> Response:
+        if await request.body():
+            return _error(422, "Invalid request.")
+        await asyncio.to_thread(auth.logout, binding, request.state.session_id, request.state.csrf_token)
+        response = Response(status_code=204)
+        response.delete_cookie(cookie_name, path="/", httponly=True, secure=True, samesite="strict")
+        return response
+
+    return app

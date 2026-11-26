@@ -9,14 +9,19 @@ import socket
 import sys
 from contextlib import ExitStack
 from pathlib import Path
+from urllib.parse import urlsplit
 
 import uvicorn
 
+from cerebro.adapters.inbound.browser_api import browser_api
+from cerebro.adapters.inbound.browser_assets import browser_assets
+from cerebro.adapters.inbound.browser_http import BrowserListener, browser_http
 from cerebro.adapters.inbound.cli import ArgumentParser
 from cerebro.adapters.inbound.input_limits import MAX_INPUT_BYTES
 from cerebro.adapters.inbound.mcp_http import http_app
 from cerebro.adapters.inbound.mcp_stdio import bridge
 from cerebro.adapters.inbound.mcp_tools import MCPTools
+from cerebro.application.browser import BrowserBinding
 from cerebro.bootstrap.container import build_container
 from cerebro.bootstrap.settings import load_settings
 from cerebro.domain.access import AccessCeiling
@@ -37,6 +42,34 @@ def _port(value: str) -> int:
     return port
 
 
+def _origin(value: str) -> str:
+    """Accept canonical browser-serialized HTTPS origins, including bracketed IPv6."""
+    if not value.isascii() or any(c.isspace() or ord(c) < 32 or ord(c) == 127 for c in value):
+        raise ValueError("invalid browser origin")
+    parsed = urlsplit(value)
+    host = parsed.hostname or ""
+    if ":" in host:
+        host = f"[{ipaddress.IPv6Address(host).compressed}]"
+    elif re.fullmatch(r"[0-9]+|0x[0-9a-f]*", host.rsplit(".", 1)[-1]):
+        # Browsers parse domains ending in a number as IPv4, including hex/octal and shortened forms.
+        # The configured origin must already use the canonical dotted-decimal spelling.
+        try:
+            host = str(ipaddress.IPv4Address(host))
+        except ipaddress.AddressValueError:
+            raise ValueError("invalid browser origin") from None
+    elif not all(re.fullmatch(r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?", label) for label in host.split(".")):
+        raise ValueError("invalid browser origin")
+    port = parsed.port
+    canonical = f"https://{host}" + (f":{port}" if port and port != 443 else "")
+    if len(host) > 253 or "%" in host or value != canonical:
+        raise ValueError("invalid browser origin")
+    return canonical
+
+
+def _local_origin(port: int) -> str:
+    return "https://localhost" if port == 443 else f"https://localhost:{port}"
+
+
 def _arguments(*, stdio: bool) -> argparse.Namespace:
     parser = ArgumentParser(prog="cerebro-mcp-stdio" if stdio else "cerebro-mcp", allow_abbrev=False)
     parser.add_argument("--host", type=_loopback, default="127.0.0.1", help="numeric loopback address")
@@ -45,11 +78,19 @@ def _arguments(*, stdio: bool) -> argparse.Namespace:
         parser.add_argument("--config", type=Path)
         parser.add_argument("--public-port", type=_port, default=8766)
         parser.add_argument("--enable-public", action="store_true")
+        parser.add_argument("--private-origin", type=_origin, help="external private HTTPS origin")
+        parser.add_argument("--public-origin", type=_origin, help="external public HTTPS origin")
+        parser.add_argument("--web-dist", type=Path, help="directory containing the built browser application")
     if sum(len(os.fsencode(item)) + 1 for item in sys.argv[1:]) > MAX_INPUT_BYTES:
         parser.error("argument limit exceeded")
     options = parser.parse_args()
     if not stdio and options.private_port == options.public_port:
         parser.error("ports must differ")
+    if not stdio:
+        options.private_origin = options.private_origin or _local_origin(options.private_port)
+        options.public_origin = options.public_origin or _local_origin(options.public_port)
+        if options.enable_public and options.private_origin == options.public_origin:
+            parser.error("browser origins must differ")
     return options
 
 
@@ -81,7 +122,17 @@ def serve() -> int:
                 get_neighbors=cases.get_neighbors,
                 submit_proposal=cases.submit_proposal,
             )
-            app = http_app(tools, cases.authenticate_token, listeners)
+            auth = container.browser_auth
+            browsers = {}
+            for port, ceiling in listeners.items():
+                private = port == options.private_port
+                binding = BrowserBinding(
+                    "private" if private else "public", options.private_origin if private else options.public_origin
+                )
+                browsers[port] = BrowserListener(binding, browser_api(auth, binding, ceiling))
+            app = browser_http(
+                http_app(tools, cases.authenticate_token, listeners), browsers, browser_assets(options.web_dist)
+            )
             config = uvicorn.Config(
                 app, proxy_headers=False, access_log=False, log_config=None, ws="none", http="h11", lifespan="on"
             )

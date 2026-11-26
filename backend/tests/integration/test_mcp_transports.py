@@ -37,9 +37,9 @@ def free_port() -> int:
 
 @contextmanager
 def serving(
-    config: Path, private: int, public: int | None = None, *, enable_public: bool = True
+    config: Path, private: int, public: int | None = None, *, enable_public: bool = True, extra: tuple[str, ...] = ()
 ) -> Iterator[subprocess.Popen[bytes]]:
-    args = [SERVER, "--config", str(config), "--private-port", str(private)]
+    args = [SERVER, "--config", str(config), "--private-port", str(private), *extra]
     if public is not None:
         args.extend(["--public-port", str(public)])
         if enable_public:
