@@ -19,7 +19,7 @@ class WriteAttemptsContract:
     def test_competing_calls_reserve_at_most_the_limit(self, attempts: WriteAttemptStore) -> None:
         with ThreadPoolExecutor(max_workers=6) as pool:
             results = list(pool.map(lambda _: attempts.reserve("one", NOW, 3), range(10)))
-        assert results.count(True) == 3
+        assert sum(result is not None for result in results) == 3
 
     def test_clock_rewind_and_reduced_limit(self, attempts: WriteAttemptStore) -> None:
         for minutes in (0, 5, 10):
@@ -30,10 +30,27 @@ class WriteAttemptsContract:
         assert attempts.reserve("a", NOW + timedelta(minutes=70), 2)
 
     def test_release_returns_only_one_matching_slot(self, attempts: WriteAttemptStore) -> None:
-        assert attempts.reserve("a", NOW, 2)
+        release = attempts.reserve("a", NOW, 2)
+        assert release is not None
         assert attempts.reserve("a", NOW, 2)
         assert attempts.reserve("b", NOW, 1)
-        attempts.release("a", NOW)
+        release()
         assert attempts.reserve("a", NOW, 2)
         assert not attempts.reserve("a", NOW, 2)
         assert not attempts.reserve("b", NOW, 1)
+
+    def test_refund_restores_a_replaced_reservation_across_clock_rewind(self, attempts: WriteAttemptStore) -> None:
+        assert attempts.reserve("a", NOW, 1)
+        later = NOW + timedelta(minutes=61)
+        release = attempts.reserve("a", later, 1)
+        assert release is not None
+        release()
+        assert not attempts.reserve("a", NOW + timedelta(minutes=30), 1)
+
+    def test_releasing_a_replaced_reservation_keeps_the_newer_one(self, attempts: WriteAttemptStore) -> None:
+        release = attempts.reserve("a", NOW, 1)
+        assert release is not None
+        later = NOW + timedelta(minutes=61)
+        assert attempts.reserve("a", later, 1)
+        release()
+        assert not attempts.reserve("a", later, 1)

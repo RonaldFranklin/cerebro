@@ -65,7 +65,8 @@ class AgentWrite:
         if ctx.token_id is None or not isinstance(ctx.principal, Agent):
             raise PermissionDenied("write without an authenticated agent token")
         now = self._clock.now()
-        if not self._attempts.reserve(ctx.token_id, now, self._limit):
+        release = self._attempts.reserve(ctx.token_id, now, self._limit)
+        if release is None:
             raise WriteRejected(WriteFinding("rate_limited", "request", "Wait for a rolling-hour quota slot."))
 
         try:
@@ -73,10 +74,10 @@ class AgentWrite:
             return self._write(request, ctx, ctx.token_id, ctx.principal, now.date(), scan)
         except WriteRejected as error:
             if error.server_failure:
-                self._attempts.release(ctx.token_id, now)
+                release()
             raise
         except Exception:
-            self._attempts.release(ctx.token_id, now)
+            release()
             raise
 
     def _write(
