@@ -11,10 +11,11 @@ interface Demo {
   public_origin: string;
   certificate_public_key_pin: string;
   password: string;
+  content_repo: string;
 }
 
-export const test = base.extend<{}, { demo: Demo }>({
-  demo: [async ({}, use) => {
+export const test = base.extend<{ demo: Demo }>({
+  demo: async ({}, use) => {
     const backend = fileURLToPath(new URL("../../../backend/", import.meta.url));
     const password = randomBytes(32).toString("base64url");
     const child = spawn(join(backend, ".venv/bin/python"), [
@@ -42,13 +43,14 @@ export const test = base.extend<{}, { demo: Demo }>({
         clearTimeout(terminate);
       }
     }
-  }, { scope: "worker" }],
-  browser: async ({ playwright, demo }, use) => {
+  },
+  context: async ({ playwright, demo, viewport, deviceScaleFactor }, use) => {
     const browser = await playwright.chromium.launch({
       args: [`--ignore-certificate-errors-spki-list=${demo.certificate_public_key_pin}`],
     });
     try {
-      await use(browser);
+      const context = await browser.newContext({viewport, deviceScaleFactor});
+      await use(context);
     } finally {
       await browser.close();
     }

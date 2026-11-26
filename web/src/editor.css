@@ -1,0 +1,36 @@
+.owner-editor { max-width: 86rem; margin: auto; }
+.editor-head, .editor-section-heading, .editor-switch { display: flex; align-items: center; justify-content: space-between; gap: .65rem; }
+.editor-head { border-bottom: 1px solid var(--line); padding-bottom: 1.45rem; margin-bottom: 1.5rem; }
+.editor-head h1 { margin-top: .5rem; }
+.editor-head a { color: var(--muted); font: .84rem "IBM Plex Mono", monospace; }
+.editor-panels { display: grid; grid-template-columns: minmax(0, 2fr) minmax(13rem, .95fr); gap: 1rem; align-items: start; }
+.editor-writing, .editor-properties, .editor-conflict { background: var(--surface); border: 1px solid var(--line); padding: 1.25rem; border-radius: .65rem; min-width: 0; }
+.editor-properties h2, .editor-section-heading { margin-bottom: 1.15rem; }
+.editor-field { min-width: 0; margin-top: .85rem; }
+.editor-field label, .editor-field > span, .comparison-pair strong { display: block; margin-bottom: .4rem; color: var(--muted); font-size: .8rem; font-weight: 570; }
+.editor-field :is(input, select, textarea) { background: var(--ink); color: var(--text); padding: .55rem .65rem; border-radius: .35rem; border: 1px solid var(--line); width: 100%; }
+.editor-field textarea { resize: vertical; }
+.editor-property-grid { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 0 .7rem; }
+.editor-property-grid :is(.field-hub, .field-related, .field-superseded_by, .field-review_by) { grid-column: 1 / -1; }
+.editor-switch { gap: .2rem; }
+.editor-switch button, .editor-conflict button { background: var(--ink); color: var(--muted); border: 1px solid var(--line); border-radius: .35rem; padding: .42rem .65rem; }
+.editor-switch button[aria-pressed="true"] { background: #27392f; color: var(--accent); border-color: #637e69; }
+.owner-code { background: var(--ink); color: var(--text); border: 1px solid var(--line); border-radius: .35rem; overflow: hidden; }
+.owner-code:focus-within { border-color: var(--accent); }
+.owner-code .cm-editor { min-height: 15rem; }
+.owner-code .cm-scroller { max-height: 32rem; overflow: auto; }
+.owner-code .cm-content { min-height: 15rem; width: 100%; padding: .7rem 0; caret-color: var(--text); }
+.owner-code .cm-line { padding: 0 .75rem; }
+.owner-code .cm-tooltip { background: var(--panel); color: var(--text); border-color: var(--line); }
+.owner-code .cm-tooltip-autocomplete ul li[aria-selected] { background: var(--accent); color: var(--ink); }
+.editor-preview { min-height: 15rem; padding: 1rem; border: 1px solid var(--line); border-radius: .35rem; }
+.field-problem, .editor-feedback { color: #eac9a4; line-height: 1.5; margin-block: .5rem; }
+.field-problem { font-size: .85rem; }
+.editor-conflict { border-color: #876f53; margin-bottom: 1rem; }
+.editor-conflict > p, .editor-conflict > button, .comparison-list { margin-top: .85rem; }
+.comparison-pair { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: .8rem; }
+.comparison-pair pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 14rem; overflow-y: auto; margin-block: .3rem; }
+.comparison-list > div { border-top: 1px solid var(--line); padding-block: .75rem; }
+.comparison-list h3 { margin-bottom: .5rem; }
+@media(max-width: 1050px) { .editor-panels { grid-template-columns: minmax(0,1fr); } }
+@media(max-width: 520px) { .comparison-pair { grid-template-columns: minmax(0,1fr); } .editor-writing, .editor-properties { padding: .9rem; } }

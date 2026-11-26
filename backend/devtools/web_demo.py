@@ -88,7 +88,10 @@ def _populate(config: Path, *, automation: bool) -> bool:
             kind=ProposalKind.UPDATE,
             target=note.id,
             base_hash=content_hash(note),
-            content=ProposedContent(body="Updated guidance for the synthetic infrastructure island.\n"),
+            content=ProposedContent(
+                summary="Index of the planned infrastructure handover notes in the disposable fixture.",
+                body="## Handover\n\nCollect the infrastructure handover notes here.\n",
+            ),
         ),
         AccessContext(
             principal=Agent("fixture-agent"),
@@ -188,6 +191,7 @@ def main() -> int:
                             "private_origin": private_origin,
                             "public_origin": public_origin,
                             "certificate_public_key_pin": trust.public_key_pin,
+                            "content_repo": str(load_settings(config, {}).content_repo),
                         }
                     ),
                     flush=True,

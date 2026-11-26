@@ -391,3 +391,26 @@ graph unmounts. Graph settings and selection live in session memory.
 
 [Global graph](../screenshots/phase-5/09-graph.png) ·
 [Local neighborhood](../screenshots/phase-5/09-neighborhood.png)
+
+### PR 10 delivery record
+
+The private Inbox shows the proposer, review status, validation, curator decision and the
+field and Markdown diff for the inspected revision. New notes start from an empty base.
+A changed base is labelled as current. The owner can amend the body, reject with a reason,
+approve and apply, or resume an approved proposal. Conflicts require another inspection.
+
+Open the editor from a complete private note. CodeMirror loads its styles with the response
+nonce and suggests wikilinks from the visible graph for the selected history mode. The preview uses the reader's Markdown
+renderer. Saving sends the inspected content hash. After a conflict, compare the stored note
+with the draft, choose which changes to retain, then save explicitly. Drafts live in component
+memory. Leaving the editor or ending the session discards them.
+
+The Chromium acceptance test reads a synthetic note, explores its neighborhood, approves a
+proposal, edits a note, and checks the parent and all three attribution trailers for both commits
+in the disposable content repository. Two-tab tests cover conflict recovery and disposal of an
+unsaved draft when another tab replaces the owner session. The lower-ceiling
+listener displays a denial for the owner workspaces.
+
+[Inbox](../screenshots/phase-5/10-inbox.png) · [Proposal review](../screenshots/phase-5/10-review.png) ·
+[Owner editor](../screenshots/phase-5/10-editor.png) · [Markdown preview](../screenshots/phase-5/10-preview.png) ·
+[Conflict comparison](../screenshots/phase-5/10-conflict.png)

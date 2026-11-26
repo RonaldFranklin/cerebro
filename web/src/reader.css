@@ -26,3 +26,4 @@
 .reader-members li span { font-size: .75rem; margin-left: .5rem; color: var(--muted); }
 .reader-members li p { margin: .45rem 0 0; color: var(--muted); line-height: 1.5; }
 @media(max-width: 55rem) { .reader-columns { grid-template-columns: minmax(0,1fr); } .reader-aside { border-left: 0; padding-left: 0; border-top: 1px solid var(--line); padding-top: 1.4rem; } }
+.edit-note-link { color: var(--accent); text-underline-offset: .2em; }
