@@ -1,6 +1,6 @@
 # ADR-0022: A `core` scope guards the global rules
 
-- **Status:** accepted
+- **Status:** accepted, amended by [ADR-0025](0025-core-word-budget.md) (combined P0 budget)
 - **Date:** 2026-11-26
 - **Amends:** [ADR-0020](0020-direct-agent-writes.md), for authority over core and P0 notes.
 

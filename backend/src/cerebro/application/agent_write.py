@@ -44,7 +44,7 @@ class AgentWriteResult:
 # Only fixed remediation text crosses the agent boundary for those rules.
 _HINTS = {
     ViolationCode.LINK_TO_HIGHER_SENSITIVITY: "Keep linked notes in compatible sensitivity tiers.",
-    ViolationCode.CORE_OVER_BUDGET: "Shorten the core note to fit the combined 1500-word budget.",
+    ViolationCode.CORE_OVER_BUDGET: "Shorten the core note to fit the combined 800-word budget.",
     ViolationCode.HUB_CHAIN_TOO_DEEP: "Use a hub chain of at most three hubs.",
     ViolationCode.HUB_CHAIN_CYCLE: "Select a hub outside this chain.",
     ViolationCode.SUPERSEDED_BY_CYCLE: "Select a successor outside this chain.",
