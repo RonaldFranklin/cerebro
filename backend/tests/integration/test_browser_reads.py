@@ -224,3 +224,19 @@ def test_note_file_problems_are_listed_in_health_and_logged_without_content(
     assert [i["severity"] for i in health.json()["issues"] if i["code"] == "changes_quarantined"] == ["warning"]
     assert RESTRICTED_MARKER not in repr([i for i in health.json()["issues"] if i["code"] == "changes_quarantined"])
     assert RESTRICTED_MARKER not in capsys.readouterr().err
+
+
+def test_health_can_display_a_filename_with_non_utf8_bytes(service: Service) -> None:
+    filename = b"draft-\xff.md".decode("utf-8", "surrogateescape")
+    stray = service.container.settings.content_repo / "notes" / filename
+    literal = stray.with_name(r"draft-\xff.md")
+    stray.write_text("draft")
+    literal.write_text("draft")
+    try:
+        response = service.private.get("/api/health")
+        assert response.status_code == 200
+        subjects = {issue["subject"] for issue in response.json()["issues"]}
+        assert {r"notes/draft-\xff.md", r"notes/draft-\\xff.md"} <= subjects
+    finally:
+        stray.unlink()
+        literal.unlink()
