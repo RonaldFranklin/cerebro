@@ -61,3 +61,62 @@ def test_accepts_private_sibling_of_git_metadata(tmp_path: Path) -> None:
     state = tmp_path / "private"
     owner_credentials(_settings(content, state))
     assert state.is_dir()
+
+
+def test_first_verifier_flushes_directory_entries_during_concurrent_retry(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import os
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Event
+
+    directory = tmp_path / "nested" / "state"
+    settings = _settings(tmp_path / "content", directory)
+    first_sync = Event()
+    release = Event()
+    flushed: set[int] = set()
+    parent_inode = tmp_path.stat().st_ino
+    original = os.fsync
+
+    def fail_first_sync(fd: int) -> None:
+        inode = os.fstat(fd).st_ino
+        if inode == parent_inode and not first_sync.is_set():
+            first_sync.set()
+            assert release.wait(timeout=5)
+            raise OSError("simulated parent sync failure")
+        original(fd)
+        flushed.add(inode)
+
+    monkeypatch.setattr(os, "fsync", fail_first_sync)
+    with ThreadPoolExecutor(max_workers=1) as worker:
+        interrupted = worker.submit(owner_credentials, settings)
+        try:
+            assert first_sync.wait(timeout=5)
+            verifier = owner_credentials(settings)
+            assert {parent_inode, directory.parent.stat().st_ino} <= flushed
+            verifier.provision(b"fixture")
+        finally:
+            release.set()
+        with pytest.raises(OSError, match="simulated parent sync failure"):
+            interrupted.result(timeout=5)
+    assert verifier.verify(b"fixture") == verifier.generation()
+
+
+def test_parent_sync_failure_prevents_first_provision(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    import os
+
+    directory = tmp_path / "nested" / "state"
+    settings = _settings(tmp_path / "content", directory)
+
+    def fail(fd: int) -> None:
+        raise OSError("directory sync failed")
+
+    with monkeypatch.context() as patch:
+        patch.setattr(os, "fsync", fail)
+        with pytest.raises(OSError, match="directory sync failed"):
+            owner_credentials(settings).provision(b"fixture")
+    assert directory.is_dir()
+    assert not (directory / "owner.verifier").exists()
+    verifier = owner_credentials(settings)
+    verifier.provision(b"fixture")
+    assert verifier.verify(b"fixture") is not None

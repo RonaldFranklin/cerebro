@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 from contextlib import AbstractContextManager
-from datetime import datetime
 from typing import TYPE_CHECKING, Protocol
+
+from cerebro.application.ports.system import Clock
 
 if TYPE_CHECKING:
     from cerebro.application.browser import StoredSession
@@ -26,8 +27,8 @@ class Credentials(Protocol):
 
 
 class LoginAttempts(Protocol):
-    def reserve(self, now: datetime) -> int:
-        """Atomically reserve an attempt or return the positive retry delay in seconds."""
+    def reserve(self, clock: Clock) -> int:
+        """Read the clock under the reservation lock; return zero or the positive retry delay in seconds."""
         ...
 
 

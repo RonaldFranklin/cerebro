@@ -73,7 +73,7 @@ class BrowserAuth:
         self._ids = ids
 
     def login(self, binding: BrowserBinding, password: bytes, previous: str | None = None) -> IssuedSession:
-        retry = self._attempts.reserve(self._clock.now())
+        retry = self._attempts.reserve(self._clock)
         if retry or not 1 <= len(password) <= 1024:
             raise AuthenticationFailed(retry)
         generation = self._credentials.verify(password)

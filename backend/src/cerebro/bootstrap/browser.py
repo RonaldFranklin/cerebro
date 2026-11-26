@@ -1,5 +1,6 @@
 """Provision the owner verifier outside the content and application repositories."""
 
+import os
 from pathlib import Path
 
 from cerebro.adapters.outbound.crypto.owner import OwnerCredentials
@@ -24,5 +25,18 @@ def owner_credentials(settings: Settings) -> OwnerCredentials:
         raise ConfigurationError("owner credentials require a state directory outside repositories")
     if settings.state_dir.is_symlink():
         raise ConfigurationError("owner credentials require a regular state directory")
-    directory.mkdir(mode=0o700, parents=True, exist_ok=True)
-    return OwnerCredentials(directory / "owner.verifier")
+    verifier = directory / "owner.verifier"
+    if not verifier.is_file():
+        directory.mkdir(mode=0o700, parents=True, exist_ok=True)
+        # A previous or concurrent mkdir can be visible before its parent entry is durable.
+        # Flush the chain even on retry. A directory owned by another uid predates our mkdirs.
+        child = directory
+        while child.parent != child and child.stat().st_uid == os.geteuid():
+            parent = child.parent
+            fd = os.open(parent, os.O_DIRECTORY | os.O_RDONLY | os.O_NOFOLLOW)
+            try:
+                os.fsync(fd)
+            finally:
+                os.close(fd)
+            child = parent
+    return OwnerCredentials(verifier)
