@@ -147,15 +147,13 @@ the browser.
 
 ## ⬜ Phase 7 — Curator
 
-The [proposed delivery plan](plans/phase-7.md) awaits owner approval. Phase 5 is approved; manual checkpoints for Phases 3–5 remain with the owner.
+The [revised delivery plan](plans/phase-7.md) and [ADR-0020](adr/0020-external-mcp-curator.md) await owner approval. Phase 5 is approved. The owner will report the manual checkpoints for Phases 3–5 separately.
 
-- `Curator` adapters for Anthropic and OpenAI (provider chosen by configuration).
-- Two-tier model: small model for triage, larger model for merge/create decisions.
-- Normalization to English, frontmatter completion, link suggestions, duplicate merging.
-- Owner approval for every change. Low-risk automatic approval and per-agent trust are deferred.
+- External curator through four dedicated MCP tools and an optional curate-only credential capped at internal.
+- A versioned guide, bounded proposal queue and context, and domain-validated recommendations.
+- NullCurator remains the internal adapter. The owner reviews the diff and makes the final decision.
 
-**Acceptance:** proposals are curated automatically and shown to the owner as decisions with diffs; cost per
-curation logged.
+**Acceptance:** a synthetic MCP curator recommends a change, the owner approves the inspected revision, and the resulting Git commit carries the expected content and trailers. Restricted proposals stay owner-only throughout.
 
 ## ⬜ Phase 6 — Deploy (hml, prod)
 

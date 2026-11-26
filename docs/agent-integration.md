@@ -189,3 +189,74 @@ Record the two offline messages and the first successful read after restart for 
 listener cannot send a protocol response. The prompt tells the real agent how to report that connection failure.
 The stdio development bridge can return the fixed offline error directly. Its command is
 `cerebro-mcp-stdio --private-port PORT` with the token in `CEREBRO_MCP_TOKEN` in the bridge environment.
+
+## Phase 7 external curator
+
+**Planned manual acceptance, pending implementation.** Run this section in WSL after §§1–3 and **before §4** closes the fixture shell. Use both signed-in clients on the private loopback listener. The functions from §2 use process-local MCP settings and inject only the selected fixture bearer. This check needs no provider API key or global client configuration. Use the temporary synthetic instance only.
+
+Submit two independent proposals using propose-only credentials. Each curator will review a proposal from a different identity. Keep the proposal IDs from the two receipts.
+
+```bash
+cli=("$bin/cerebro" --config "$config")
+repo="$session/instance/content"
+before="$(git -C "$repo" rev-parse HEAD)"
+(
+  claude_secret="$("${cli[@]}" token issue sample-inventory-author --scope propose --ceiling internal)"
+  codex_secret="$("${cli[@]}" token issue sample-drill-author --scope propose --ceiling internal)"
+  run_claude 'Use only cerebro_propose. Submit exactly once with these arguments:
+{"kind":"create","title":"Inventory spare network cables","body":"Label each spare cable with length and connector type. Record its cabinet slot when returning it.",
+"suggested":{"type":"guide","area":"infrastructure","priority":"P2","sensitivity":"internal","hub":"infrastructure",
+"summary":"How to label and locate spare network cables in the infrastructure cabinet."}}
+Report proposal_id and valid.'
+  run_codex 'Use only cerebro_propose. Submit exactly once with these arguments:
+{"kind":"create","title":"Verify an offline restore drill","body":"Restore the synthetic archive into an empty scratch directory. Compare its fixture manifest and record the drill date.",
+"suggested":{"type":"guide","area":"infrastructure","priority":"P2","sensitivity":"internal","hub":"infrastructure",
+"summary":"How to check a sample restore against its manifest and record the drill outcome."}}
+Report proposal_id and valid.'
+)
+read -rp 'Valid cable inventory proposal id from Claude Code: ' inventory_pid
+read -rp 'Valid restore drill proposal id from Codex: ' drill_pid
+```
+
+Proceed only if both receipts show `valid: true`. Give each client a separate curate-only token and the other client's proposal ID. Each run must call all four tools in order. The server returns the [curator guide](curator-guide.md) as the first tool result.
+
+```bash
+(
+  claude_secret="$("${cli[@]}" token issue claude-curator --scope curate --ceiling internal)"
+  codex_secret="$("${cli[@]}" token issue codex-curator --scope curate --ceiling internal)"
+  curate_sample() {
+    "$1" "Use only Cérebro curator MCP tools. Call cerebro_curator_guide and read its version and instructions.
+Call cerebro_curator_list and locate proposal $2. If absent, stop. Fetch cerebro_curator_context for that item.
+Review it using only the returned context. For this distinct synthetic guide, recommend create if justified.
+Call cerebro_curator_decide with the guide version, inspected revision, context_id and complete English candidate
+required by the schema. Stop on a conflict. Report guide version, proposal ID and decision outcome.
+Do not print credentials or context_id, use shell tools, or attempt owner approval."
+  }
+  curate_sample run_claude "$drill_pid"
+  curate_sample run_codex "$inventory_pid"
+)
+test "$(git -C "$repo" rev-parse HEAD)" = "$before"
+```
+
+Inspect the owner preview for each ID. Compare the original with the complete English candidate and its diff, including the target, summary, area, hub and sensitivity. Verify the curator and proposer identities against the table below. Approve only the inspected revision. A stale review needs a fresh preview.
+
+| Proposal | Proposed by | Expected curator |
+|---|---|---|
+| Restore drill | `sample-drill-author` | `curator/claude-curator` |
+| Cable inventory | `sample-inventory-author` | `curator/codex-curator` |
+
+```bash
+for pid in "$drill_pid" "$inventory_pid"; do
+  preview="$("${cli[@]}" inbox list --id "$pid")"
+  printf '%s\n' "$preview"
+  revision="$("$bin/python" -c 'import json,sys; print(json.load(sys.stdin)["revision"])' <<<"$preview")"
+  read -rp "Approve the displayed candidate at revision $revision? [y/N] " answer
+  if [[ "$answer" != y ]]; then continue; fi
+  approval="$("${cli[@]}" inbox approve "$pid" --revision "$revision")"
+  printf '%s\n' "$approval"
+  commit="$("$bin/python" -c 'import json,sys; print(json.load(sys.stdin)["commit"])' <<<"$approval")"
+  git -C "$repo" show --format=%B "$commit" --
+done
+```
+
+For each approval, compare the committed change with the preview. Check the two identity trailers above, `Approved-by: owner` and the matching `Proposal-Id`. Record client versions, guide version, both decision outcomes, the unchanged pre-approval HEAD check and the two approval results. Continue with §4 to shut down and remove the temporary instance.

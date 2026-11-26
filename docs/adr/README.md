@@ -21,5 +21,6 @@
 | [0017](0017-cli-and-mcp-transports.md) | Owner CLI and read-only MCP transports | accepted |
 | [0018](0018-inbox-admission.md) | Validate Inbox submissions before durable admission | accepted |
 | [0019](0019-owner-browser-api.md) | Same-origin owner browser API and local web toolchain | accepted |
+| [0020](0020-external-mcp-curator.md) | External curator through scoped MCP tools | proposed |
 
 New decisions: copy [`0000-template.md`](0000-template.md), use the next number, add it to this table.
