@@ -24,3 +24,24 @@ lockfiles. Supported build platforms are Linux amd64 and arm64.
 [Python image inventory](https://github.com/docker-library/repo-info/blob/628b21c3b985ec9790c97d7cc42526d763d22c15/repos/python/remote/3.14.10-bookworm.md) ·
 [pnpm amd64 metadata](https://registry.npmjs.org/@pnpm/exe.linux-x64) · [pnpm arm64 metadata](https://registry.npmjs.org/@pnpm/exe.linux-arm64) ·
 [uv wheel metadata](https://pypi.org/pypi/uv/0.13.9/json).
+
+## WSL acceptance
+
+On 2026-11-26 the hml project ran with synthetic data on WSL2 (Linux amd64), Docker Engine 29.5.3 and
+Compose 5.1.4. At source revision `f6757e1`, the startup guard rejected the ordinary bridge created by
+this Engine, which reports IPv4 enabled and IPv6 disabled as explicit options. A regression reproduced
+the failure. After correcting the runtime check, the image was built again from
+`3cfc8d6276f60d13c6d576b48fc5d1abda2b0eb5` using Compose. The local image ID was
+`sha256:09b2a0121e58a72b1ee102af1751e2ae6578a6102bf8f9161b501a3f17ec4bec`.
+
+| Check | Observed |
+|---|---|
+| Startup | Initialized the content checkout, committed a synthetic P0 note, provisioned an owner password and issued a read token. The deployment start script completed and Docker reported `healthy`. |
+| Storage and identity | Docker inspection showed the non-root operator UID/GID and four distinct content, state, index and secrets mounts. The state and index databases appeared in their respective mounts. |
+| Exposure | The project bridge had one published TCP port at `127.0.0.1`, with matching host and container port numbers. WSL `ss` and the Windows TCP table each showed one loopback listener. Connection attempts to both assigned non-loopback WSL IPv4 addresses failed. |
+| MCP | Unauthenticated overview returned HTTP 401. The original read token returned HTTP 200 with the seeded P0 note. |
+| Browser | Chromium 159.0.8154.6 used a disposable local HTTPS proxy, signed in as the owner, opened the seeded note from Overview and displayed its body in a restricted session. |
+| Restart | After a Compose restart the container had a new start time and returned to healthy. The Git HEAD, note, read token and owner login persisted. A fresh Chromium session read the same note. The temporary stack was then removed. |
+
+The server agent still needs to verify Tailscale HTTPS, restore a backup on hml and validate hml before
+promoting to prod. The workstation's Claude Code and Codex connections to prod are a separate checkpoint.
