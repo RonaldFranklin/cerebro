@@ -1,6 +1,6 @@
 # ADR-0004: Priority levels and context budgets
 
-- **Status:** accepted, amended by [ADR-0020](0020-direct-agent-writes.md) (no curator: summary quality is the writer's responsibility)
+- **Status:** accepted, amended by [ADR-0020](0020-direct-agent-writes.md) (no curator: summary quality is the writer's responsibility) and [ADR-0025](0025-core-word-budget.md) (combined P0 budget)
 - **Date:** 2026-11-24
 
 ## Context

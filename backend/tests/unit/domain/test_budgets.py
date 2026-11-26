@@ -35,9 +35,9 @@ def test_word_count_counts_whitespace_separated_tokens(text: str, expected: int)
     assert word_count(text) == expected
 
 
-def test_budget_constants_match_adr_0004() -> None:
+def test_budget_constants_match_context_limits() -> None:
     assert (CORE_BUDGET_WORDS, HUB_BUDGET_WORDS, NOTE_SOFT_LIMIT_WORDS, NOTE_HARD_LIMIT_WORDS) == (
-        1500,
+        800,
         800,
         1500,
         3000,
@@ -77,14 +77,14 @@ class TestBodyBudget:
 
 
 class TestCoreBudget:
-    def test_all_core_notes_together_may_use_1500_words(self) -> None:
-        assert core_budget_findings({NoteId("a"): 1000, NoteId("b"): 500}) == ()
+    def test_all_core_notes_together_may_use_800_words(self) -> None:
+        assert core_budget_findings({NoteId("a"): 500, NoteId("b"): 300}) == ()
 
-    def test_more_than_1500_core_words_is_flagged(self) -> None:
-        findings = core_budget_findings({NoteId("a"): 1000, NoteId("b"): 501})
+    def test_more_than_800_core_words_is_flagged(self) -> None:
+        findings = core_budget_findings({NoteId("a"): 500, NoteId("b"): 301})
 
         assert [(f.code, f.field) for f in findings] == [(ViolationCode.CORE_OVER_BUDGET, None)]
-        assert "1501" in findings[0].message
+        assert "801" in findings[0].message
 
     def test_no_core_notes_is_fine(self) -> None:
         assert core_budget_findings({}) == ()

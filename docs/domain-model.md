@@ -169,7 +169,7 @@ See [ADR-0004](adr/0004-priority-levels-and-context-budget.md).
 
 | Level | Meaning | Served | Budget |
 |---|---|---|---|
-| P0 | Core: global rules and facts every agent must know | always, by `GetOverview` | **all P0 together ≤ 1,500 words** |
+| P0 | Core: global rules and facts every agent must know | always, by `GetOverview` | **all P0 together ≤ 800 words** |
 | P1 | Hubs: area introduction; member list computed at read time | when an area is relevant | introduction ≤ 800 words each |
 | P2 | Regular notes | on search / link | soft 1,500 words, hard 3,000 |
 | P3 | Reference, archive, raw material | only on explicit search | same as P2 |
@@ -324,7 +324,7 @@ scope gets `core_scope_required` when the stored version **or** the candidate ha
 `P0`: it cannot create one, edit, archive, supersede or demote one, or promote a note to one. A create
 replay is checked against the candidate and the stored note in the same way. Hubs (P1) stay open to every
 `write` token. With `core`, the category rule (a note keeps its core, hub or regular type) and the combined
-1,500-word P0 budget still apply.
+800-word P0 budget still apply.
 
 On create, the service converts the title to an ASCII kebab-case stem of up to 60 characters, using
 `note` if the stem is empty. It appends a hyphen and four random characters from `a-z` and `0-9`,
