@@ -43,7 +43,7 @@ class InMemoryNoteRepository:
     def scan(self) -> NoteScan:
         uncommitted = tuple(
             FileProblem(f"{folder_for(self._notes[i])}/{i.value}.md", "differs from the last commit", stable=False)
-            for i in sorted(self.unreadable)
+            for i in sorted(self.unreadable & self._notes.keys())
         )
         return NoteScan(
             notes=tuple(self._notes[i] for i in sorted(self._notes) if i not in self.unreadable),
@@ -88,6 +88,8 @@ class InMemoryNoteRepository:
                 raise ContentConflict(change.expected_hash, content_hash(stored))
         if all(self._notes.get(c.note.id) == c.note for c in changes):
             raise NoteWriteError("nothing to commit: every note is unchanged")
+        if self.unreadable.intersection(ids):
+            raise NoteWriteError("a note file is untracked or has uncommitted changes: commit or reset it")
         for change in changes:
             self._notes[change.note.id] = change.note
         revision = f"rev-{len(self.commits) + 1:04d}"

@@ -1,6 +1,7 @@
 """Exercise the installed transports with temporary sockets, git, state and tokens."""
 
 import asyncio
+import contextlib
 import http.client
 import json
 import os
@@ -29,10 +30,17 @@ SERVER = str(Path(sys.executable).with_name("cerebro-mcp"))
 BRIDGE = str(Path(sys.executable).with_name("cerebro-mcp-stdio"))
 
 
+def free_ports(count: int) -> list[int]:
+    """Distinct free ports: every socket stays bound until all of them have a port."""
+    with contextlib.ExitStack() as stack:
+        sockets = [stack.enter_context(socket.socket()) for _ in range(count)]
+        for sock in sockets:
+            sock.bind(("127.0.0.1", 0))
+        return [int(sock.getsockname()[1]) for sock in sockets]
+
+
 def free_port() -> int:
-    with socket.socket() as sock:
-        sock.bind(("127.0.0.1", 0))
-        return int(sock.getsockname()[1])
+    return free_ports(1)[0]
 
 
 @contextmanager
@@ -125,7 +133,7 @@ def test_real_listener_credentials_limits_and_logs(tmp_path: Path) -> None:
     tid, privileged = issue(Sensitivity.RESTRICTED)
     _, internal = issue(Sensitivity.INTERNAL)
     _, writer = issue(Sensitivity.RESTRICTED, Scope.WRITE)  # write without read
-    private, public = free_port(), free_port()
+    private, public = free_ports(2)
     read = call("cerebro_read", {"id": VAULT_ID.value})
     with serving(config, private, public):
         assert RESTRICTED_MARKER.encode() in post(private, privileged, read)[1]
@@ -182,7 +190,7 @@ def test_stdio_sdk_contract_and_offline(tmp_path: Path) -> None:
     sample = make_sample_repo(tmp_path)
     config = tmp_path / "dev.toml"
     config.write_text(SAMPLE.replace("keys/fernet.key", "secrets/cerebro.key"))
-    private = free_port()
+    private, unused_public = free_ports(2)
     token = build_container(sample.settings).use_cases.issue_agent_token.execute(
         IssueAgentTokenRequest(
             agent="client", scopes=frozenset({Scope.READ}), ceiling=AccessCeiling(Sensitivity.INTERNAL)
@@ -198,7 +206,6 @@ def test_stdio_sdk_contract_and_offline(tmp_path: Path) -> None:
         ) as client:
             await assert_read_contract(client)
 
-    unused_public = free_port()
     with serving(config, private, unused_public, enable_public=False):
         with pytest.raises(ConnectionRefusedError):
             socket.create_connection(("127.0.0.1", unused_public), timeout=1)

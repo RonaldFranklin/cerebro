@@ -71,9 +71,17 @@ class NoteRepositoryContract:
     def test_an_uncommitted_note_is_refused_and_reported_while_others_are_served(
         self, repo: NoteRepository, edit_uncommitted: Callable[[NoteId], None]
     ) -> None:
-        edited, other = make_note(id=NoteId("edited-note")), make_note(id=NoteId("other-note"))
-        repo.apply([NoteChange(note=edited), NoteChange(note=other)], MESSAGE)
+        # Plaintext files: appending to an encrypted one would corrupt it instead of merely editing it.
+        edited, other = (
+            make_note(id=NoteId(name), sensitivity=Sensitivity.INTERNAL) for name in ("edited-note", "other-note")
+        )
+        revision = repo.apply([NoteChange(note=edited), NoteChange(note=other)], MESSAGE)
         edit_uncommitted(edited.id)
+        overwrite = NoteChange(note=replace(edited, body="Overwritten.\n"), expected_hash=content_hash(edited))
+        # A conflict when the edit changed the note's content, otherwise a refused write.
+        with pytest.raises((ContentConflict, NoteWriteError)):
+            repo.apply([overwrite], MESSAGE)
+        assert repo.head() == revision
         with pytest.raises(NoteReadError):
             repo.get(edited.id)
         with pytest.raises(NoteReadError):

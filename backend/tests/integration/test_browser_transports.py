@@ -13,7 +13,7 @@ from cerebro.bootstrap.browser import owner_credentials
 from tests.integration.browser_tls import certificate, tls_relay
 from tests.integration.content_kit import VAULT_ID, make_sample_repo
 from tests.integration.test_cli_bootstrap import SAMPLE
-from tests.integration.test_mcp_transports import SERVER, free_port, serving
+from tests.integration.test_mcp_transports import SERVER, free_ports, serving
 
 
 def request(
@@ -37,7 +37,7 @@ def test_two_https_origins_share_service_but_isolate_sessions(tmp_path: Path) ->
     dist.mkdir()
     (dist / "index.html").write_text("<html><head></head><body>Fixture browser</body></html>")
     server, client = certificate(tmp_path)
-    private_port, public_port = free_port(), free_port()
+    private_port, public_port = free_ports(2)
     with tls_relay(private_port, server) as private, tls_relay(public_port, server) as public:
         origins = {p: f"https://localhost:{p}" for p in (private, public)}
         options = ("--private-origin", origins[private], "--public-origin", origins[public], "--web-dist", str(dist))
