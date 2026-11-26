@@ -151,6 +151,17 @@ def test_unavailable_references_name_field_and_position(
     assert "vault-layout" not in finding.hint
 
 
+def test_unavailable_reference_findings_are_distinct_and_explain_the_format_once() -> None:
+    kit = Kit()
+    ctx = replace(agent_ctx(scopes=frozenset({Scope.WRITE})), token_id="token-one")
+    crowded = " ".join(f"[[gone-{n}]]" for n in range(20))
+    with pytest.raises(WriteRejected) as err:
+        writer(kit).execute(replace(request(), body=f"{crowded}\n[[gone-0]] [[gone-other]]"), ctx)
+    hints = [finding.hint for finding in err.value.findings]
+    assert [hint.partition(":")[0] for hint in hints] == ["Line 1 of body", "Line 2 of body"]
+    assert ["[[note-id]]" in hint for hint in hints] == [True, False]
+
+
 @pytest.mark.parametrize(
     ("changes", "code", "field", "expected"),
     [

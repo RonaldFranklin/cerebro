@@ -1,6 +1,7 @@
 """Direct MCP tool dispatch over a real application, including safe wire errors."""
 
 import json
+import re
 from dataclasses import replace
 from pathlib import Path
 from typing import Any
@@ -9,8 +10,10 @@ import pytest
 from mcp import types
 
 from cerebro.adapters.inbound.mcp_tools import MCPTools
+from cerebro.adapters.inbound.write_guide import read_write_guide
 from cerebro.bootstrap.container import Container, build_container
 from cerebro.domain.access import AccessContext, Scope
+from cerebro.domain.enums import Status
 from tests.integration.content_kit import BROKEN_ID, DOCKER_ID, HUB_ID, SSH_ID, make_sample_repo
 from tests.integration.test_mcp_tools import AGENT, tools_for
 
@@ -57,6 +60,12 @@ def test_write_guide_carries_the_vocabulary_of_the_content_repository(container:
     assert output["areas"] == sorted(area.value for area in container.vocabulary.areas)
     assert output["types"] == sorted(kind.value for kind in container.vocabulary.types)
     assert {"core", "hub", "guide"} <= set(output["types"])
+
+
+def test_write_guide_explains_every_status() -> None:
+    listed = re.search(r"`status` \((.*?)\), `superseded_by`", read_write_guide())
+    assert listed is not None
+    assert re.findall(r"`([a-z]+)`: ", listed[1]) == [status.value for status in Status]
 
 
 def test_input_schemas_avoid_constructs_that_clients_reject(container: Container) -> None:

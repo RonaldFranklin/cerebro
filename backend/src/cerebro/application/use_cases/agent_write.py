@@ -164,17 +164,23 @@ class AgentWrite:
         raise WriteRejected(WriteFinding("id_unavailable", "request", "Retry the create with the same request id."))
 
     def _unavailable_references(self, note: Note, ctx: AccessContext) -> list[WriteFinding]:
-        """One finding per reference to a note that is missing or hidden. It is built from the submitted note
-        alone (field and position), so both cases read exactly the same."""
+        """One finding per position (entry or text line) that references a missing or hidden note. It is built from
+        the submitted note alone, so both cases read exactly the same. Only the first explains the link format."""
         visible: dict[NoteId, bool] = {note.id: True}
-        findings: dict[tuple[str, NoteId], WriteFinding] = {}  # the first position of each target in a field
+        positions: dict[tuple[str, str], None] = {}  # ordered and without duplicates
         for field, position, ref in _references(note):
             if ref not in visible:
                 visible[ref] = visible_id(self._notes, ref, ctx, include_history=True) is not None
             if not visible[ref]:
-                hint = f"{position}: no readable note has this id. {_LINK_FORMAT}"
-                findings.setdefault((field, ref), WriteFinding("broken_link", field, hint))
-        return list(findings.values())
+                positions[field, position] = None
+        return [
+            WriteFinding(
+                "broken_link",
+                field,
+                f"{position}: no readable note has this id." + ("" if number else f" {_LINK_FORMAT}"),
+            )
+            for number, (field, position) in enumerate(positions)
+        ]
 
     def _visible_target(self, note_id: NoteId, ctx: AccessContext) -> Note:
         note = self._notes.get(note_id)
