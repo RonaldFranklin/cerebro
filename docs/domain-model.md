@@ -121,10 +121,11 @@ Structure and rule details enforced by the domain:
 - A `hub` that does not exist (`hub_not_found`) or whose type is not `hub` (`hub_not_a_hub`) is always an error.
 - `superseded_by` chains that lead back to the note are a `superseded_by_cycle` error.
 - **Redaction on read (defense in depth).** `ReadNote` replaces every `[[...]]` in the served body (whole note or one
-  section) whose target is a note id the reader cannot see (above the effective ceiling, history without
-  `include_history`, or missing) with the constant `[[redacted link]]` (`cerebro.domain.links.REDACTED_LINK`): the whole
-  link goes, anchor and alias included, and code blocks are covered too. Brackets that are not note ids are left
-  alone. `hub`, `related` and `superseded_by` of the `NoteView` and hub `members` were already filtered to visible
+  section) whose target is a note id the reader cannot see (above the effective ceiling, or missing) with the
+  constant `[[redacted link]]` (`cerebro.domain.links.REDACTED_LINK`): the whole link goes, anchor and alias
+  included, and code blocks are covered too. Links to `superseded` or `archived` notes within the ceiling are kept,
+  so a note that points to history stays complete and updatable. Brackets that are not note ids are left alone.
+  `hub`, `related` and `superseded_by` of the `NoteView` are filtered by the same rule, and hub `members` to visible
   targets. `GetOverview` redacts the P0 bodies it serves in the same way. This protects against data that predates
   the rule or was edited outside Cérebro. The marker's text is not a valid note id, so it is never a link.
 - Escaped or entity forms (`\[\[x]]`, `&#91;&#91;x]]`) are plain text, not links: neither the rules nor redaction treat
@@ -194,6 +195,10 @@ effective_ceiling = min(listener_ceiling, token_ceiling)
 - **Visibility rule** (`cerebro.domain.access.is_visible`): a note is visible when its sensitivity is `<=` the
   effective ceiling and its status is current, or `include_history` is set (`superseded` / `archived`).
   `include_history` never raises the ceiling. Callers treat "not visible" exactly like "does not exist".
+- **Reading by id includes history.** `ReadNote` serves a `superseded` or `archived` note within the ceiling, with
+  its `status` in the view, and keeps its links and references to such notes; `include_history` on a read only adds
+  history members to a hub's list. Search, the overview, hub lists, neighbors and the graph keep excluding history
+  by default. A note above the ceiling stays "not found", whatever its status.
 - **Fail closed:** `effective_ceiling(listener, token)` has no defaults; wrongly typed ceilings raise, and
   `is_visible` / `AccessCeiling.allows` / `AccessContext.can` deny any value of an unexpected type.
 - **Principals and scopes:** `AccessContext(principal, ceiling, scopes)` is built once per request, with
@@ -220,8 +225,8 @@ backups is a manual owner operation.
 | `proposed` | Planned change/config, not done yet | yes, clearly labeled |
 | `applied` | Done, not verified | yes, labeled |
 | `verified` | Done and tested | yes |
-| `superseded` | Replaced; `superseded_by` required | **no** — only with `include_history` |
-| `archived` | Kept for history only | **no** — only with `include_history` |
+| `superseded` | Replaced; `superseded_by` required | **no** — only with `include_history`, or read by id |
+| `archived` | Kept for history only | **no** — only with `include_history`, or read by id |
 
 This encodes two rules: *prefer the current state over history*, and *distinguish planned, applied and
 tested*.

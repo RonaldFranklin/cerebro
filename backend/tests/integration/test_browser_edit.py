@@ -16,7 +16,7 @@ from cerebro.bootstrap.browser import owner_credentials
 from cerebro.bootstrap.container import build_container
 from cerebro.domain.access import AccessCeiling
 from cerebro.domain.enums import Sensitivity
-from tests.integration.content_kit import SSH_ID, make_sample_repo
+from tests.integration.content_kit import DOCKER_ID, SSH_ID, make_sample_repo
 
 FIELDS = (
     "title",
@@ -68,8 +68,8 @@ def editor(tmp_path: Path, request: pytest.FixtureRequest) -> Iterator[tuple[Tes
         yield client, sample.root
 
 
-def payload(client: TestClient) -> dict[str, Any]:
-    response = client.get(PATH)
+def payload(client: TestClient, path: str = PATH) -> dict[str, Any]:
+    response = client.get(path)
     assert response.is_success
     view = response.json()
     return {"expected_hash": view["content_hash"], "note": {name: view[name] for name in FIELDS}}
@@ -101,6 +101,20 @@ def test_concurrent_edit_preserves_winner_and_reports_history_warning(editor: tu
     assert original["expected_hash"] not in stale.text
     assert git(repo, "rev-parse", "HEAD") == result["commit"]
     assert client.get(PATH).json()["body"] == "Updated fixture.\n"
+
+
+def test_notes_linking_an_archived_note_stay_editable(editor: tuple[TestClient, Path]) -> None:
+    client, _ = editor
+    target = f"/api/notes/{DOCKER_ID.value}"
+    archive = payload(client, target)
+    archive["note"]["status"] = "archived"
+    assert client.put(target, json=archive).status_code == 200
+    assert client.get(target).json()["status"] == "archived"
+    original = payload(client)  # links docker-conventions in body and related; read without ?history=true
+    assert "[[docker-conventions]]" in original["note"]["body"]
+    assert original["note"]["related"] == [DOCKER_ID.value]
+    edit = {**original, "note": {**original["note"], "summary": original["note"]["summary"] + " Edited."}}
+    assert client.put(PATH, json=edit).status_code == 200
 
 
 def test_edit_errors_name_fields_without_echoing_rejected_input(editor: tuple[TestClient, Path]) -> None:

@@ -12,8 +12,10 @@ from cerebro.domain.sections import extract_section
 
 
 class ReadNote:
-    """Reads one visible note. Wikilinks in the served body (whole or one section) whose target is hidden or missing
-    for the reader become `REDACTED_LINK`; `hub`, `related` and `superseded_by` are filtered the same way."""
+    """Reads one note by id within the ceiling, whatever its status: the view carries the status, and a note found
+    through history search, a link or a write must be readable (and updatable) by id. Wikilinks in the served body
+    (whole or one section) whose target is above the ceiling or missing become `REDACTED_LINK`; `hub`, `related` and
+    `superseded_by` are filtered the same way. ``include_history`` only adds history members to a hub's list."""
 
     def __init__(self, notes: NoteRepository, graph: GraphIndex) -> None:
         self._notes = notes
@@ -21,30 +23,30 @@ class ReadNote:
 
     def execute(self, request: ReadNoteRequest, ctx: AccessContext) -> NoteView:
         require_scope(ctx, Scope.READ)
-        note = visible_note(self._notes, request.note_id, ctx, include_history=request.include_history)
+        note = visible_note(self._notes, request.note_id, ctx, include_history=True)
         body = note.body
         if request.section is not None:
             found = extract_section(note.body, request.section)
             if found is None:
                 raise SectionNotFound(note.id, request.section)
             body = found
-        body = redacted_body(self._notes, ctx, body, include_history=request.include_history)
+        body = redacted_body(self._notes, ctx, body, include_history=True)
         members = self._members(note, ctx, request.include_history) if note.is_hub else None
         return NoteView.from_note(
             note,
             body=body,
             section=request.section,
             members=members,
-            visible_title=redacted_body(self._notes, ctx, note.title, include_history=request.include_history),
-            visible_summary=redacted_body(self._notes, ctx, note.summary, include_history=request.include_history),
+            visible_title=redacted_body(self._notes, ctx, note.title, include_history=True),
+            visible_summary=redacted_body(self._notes, ctx, note.summary, include_history=True),
             authenticated_writer=ctx.token_id is not None and ctx.can(Scope.WRITE),
-            hub=self._visible_id(note.hub, ctx, request.include_history),
-            related=tuple(r for r in note.related if self._visible_id(r, ctx, request.include_history) is not None),
-            superseded_by=self._visible_id(note.superseded_by, ctx, request.include_history),
+            hub=self._visible_id(note.hub, ctx),
+            related=tuple(r for r in note.related if self._visible_id(r, ctx) is not None),
+            superseded_by=self._visible_id(note.superseded_by, ctx),
         )
 
-    def _visible_id(self, note_id: NoteId | None, ctx: AccessContext, include_history: bool) -> NoteId | None:
-        return visible_id(self._notes, note_id, ctx, include_history=include_history)
+    def _visible_id(self, note_id: NoteId | None, ctx: AccessContext) -> NoteId | None:
+        return visible_id(self._notes, note_id, ctx, include_history=True)
 
     def _members(self, hub: Note, ctx: AccessContext, include_history: bool) -> tuple[HubMember, ...]:
         """Notes whose ``hub`` is this hub, computed now from the index and filtered by the ceiling (ADR-0015)."""

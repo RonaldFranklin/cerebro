@@ -60,7 +60,7 @@ def parse_arguments(args: Sequence[str]) -> argparse.Namespace:
     read = commands.add_parser("read", help="read a note or one of its sections")
     read.add_argument("id", type=short_field)
     read.add_argument("--section", type=short_field)
-    read.add_argument("--include-history", action="store_true")
+    read.add_argument("--include-history", action="store_true", help="also list superseded and archived hub members")
     commands.add_parser("reindex", help="rebuild the search and graph indexes")
     commands.add_parser("health", help="inspect the repository and index state")
 
