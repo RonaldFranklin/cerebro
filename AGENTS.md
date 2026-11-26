@@ -35,11 +35,11 @@ Inbox, which are validated, curated and approved before becoming notes.
   and local owner review. The [delivery record and security checkpoint](docs/plans/phase-4.md#5-final-report)
   and [manual proposal checks](docs/agent-integration.md#3-propose-in-both-clients-and-approve-locally)
   are ready for the owner.
-- **Phase 5 is delivered.** The owner browser API and web UI include the overview, search, reader,
+- **Phase 5 is approved.** The owner browser API and web UI include the overview, search, reader,
   global/local graph, Inbox review, editor and private health panel. See the
   [delivery report and security checkpoint](docs/plans/phase-5.md#8-phase-5-final-report)
   and [WSL walkthrough](docs/plans/phase-5.md#7-open-the-interface-from-wsl). The owner's visual
-  and security reviews are pending. Phase 7 (curator) is next. Phase 6 (deploy) follows with Docker
+  and security reviews are pending. The [Phase 7 curator plan](docs/plans/phase-7.md) awaits owner approval. Phase 6 (deploy) follows with Docker
   validation in WSL dev before hml and promotion of the same image to prod on the server.
 - **Phase 2 decisions (2026-11-25):** the owner declined a MAC for token rows and accepted the
   [residual risk](docs/architecture.md#accepted-risks-owner-decision-2026-11-25). The owner approved

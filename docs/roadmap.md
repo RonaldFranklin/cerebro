@@ -147,10 +147,12 @@ the browser.
 
 ## ⬜ Phase 7 — Curator
 
+The [proposed delivery plan](plans/phase-7.md) awaits owner approval. Phase 5 is approved; manual checkpoints for Phases 3–5 remain with the owner.
+
 - `Curator` adapters for Anthropic and OpenAI (provider chosen by configuration).
 - Two-tier model: small model for triage, larger model for merge/create decisions.
 - Normalization to English, frontmatter completion, link suggestions, duplicate merging.
-- Autonomy policy (configurable): manual → auto-approve low risk → per-agent trust.
+- Owner approval for every change. Low-risk automatic approval and per-agent trust are deferred.
 
 **Acceptance:** proposals are curated automatically and shown to the owner as decisions with diffs; cost per
 curation logged.
