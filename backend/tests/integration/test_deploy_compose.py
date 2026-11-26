@@ -137,6 +137,7 @@ def test_preflight_refuses_unsafe_service(tmp_path: Path, overrides: dict[str, o
         "inspect",
         "port",
         "network",
+        "network-options",
         "attached",
         "concurrent",
         "foreign",
@@ -197,6 +198,10 @@ esac
     bridge: dict[str, object] = {
         "Name": network,
         "Driver": "host" if failure == "network" else "bridge",
+        "Options": {
+            "com.docker.network.enable_ipv4": "true",
+            "com.docker.network.enable_ipv6": "true" if failure == "network-options" else "false",
+        },
         "Containers": {"abc": {}, "intruder": {}} if failure == "foreign" else {"abc": {}},
         "Labels": {"com.docker.compose.project": "cerebro-hml", "com.docker.compose.network": "default"},
     }
@@ -250,6 +255,18 @@ esac
     started = failure in ("", "concurrent", "start", "port", "health", "existing", "late-foreign")
     assert (" start " in commands) == started
     assert ("container stop abc" in commands) == (
-        failure in ("start", "port", "health", "existing", "network", "foreign", "late-foreign", "inspect", "attached")
+        failure
+        in (
+            "start",
+            "port",
+            "health",
+            "existing",
+            "network",
+            "network-options",
+            "foreign",
+            "late-foreign",
+            "inspect",
+            "attached",
+        )
     )
     assert " stop backend" not in commands

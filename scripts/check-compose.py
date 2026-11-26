@@ -75,6 +75,9 @@ elif len(sys.argv) == 4 and sys.argv[3] in ("created", "running"):
     labels = container["Config"]["Labels"]
     runtime = container["NetworkSettings"]
     bindings = {f"{private}/tcp": [{"HostIp": "127.0.0.1", "HostPort": private}]}
+    # Docker Engine may include these defaults on a bridge with no configured driver options.
+    defaults = {"com.docker.network.enable_ipv4": "true", "com.docker.network.enable_ipv6": "false"}
+    options = bridge.get("Options") or {}
     if (
         labels.get("com.docker.compose.project") != project
         or labels.get("com.docker.compose.service") != "backend"
@@ -83,7 +86,7 @@ elif len(sys.argv) == 4 and sys.argv[3] in ("created", "running"):
         or set(runtime["Networks"] or {}) - {name}
         or bridge["Name"] != name
         or bridge["Driver"] != "bridge"
-        or bridge.get("Options")
+        or any(defaults.get(key) != value for key, value in options.items())
         or bridge["Labels"].get("com.docker.compose.project") != project
         or bridge["Labels"].get("com.docker.compose.network") != "default"
         or set(bridge.get("Containers") or {}) - {container["Id"]}
