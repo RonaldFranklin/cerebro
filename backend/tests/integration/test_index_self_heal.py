@@ -5,16 +5,19 @@ rebuilds before it answers, or fails; it never returns the note's title or summa
 """
 
 import contextlib
+import errno
+import os
+import tarfile
 from collections.abc import Callable, Sequence
 from dataclasses import replace
 from pathlib import Path
+from typing import BinaryIO
 
 import pytest
 
 from cerebro.adapters.outbound.crypto import FernetCipher, load_keys
 from cerebro.adapters.outbound.filesystem import FilesystemNoteRepository, NoteWriteError
 from cerebro.adapters.outbound.filesystem.codec import render_note
-from cerebro.adapters.outbound.filesystem.repository import UNCOMMITTED_REASON
 from cerebro.application.agent_write import AgentWriteRequest
 from cerebro.application.dto import (
     AuthenticateTokenRequest,
@@ -25,9 +28,10 @@ from cerebro.application.dto import (
     IssueAgentTokenRequest,
     OwnerEditNoteRequest,
     ReadNoteRequest,
+    RebuildIndexRequest,
     SearchNotesRequest,
 )
-from cerebro.application.errors import NoteNotFound, NoteReadError
+from cerebro.application.errors import NoteNotFound
 from cerebro.application.index_state import index_is_stale
 from cerebro.application.ports.notes import NoteChange
 from cerebro.bootstrap.container import Container, build_container
@@ -241,14 +245,6 @@ def test_an_abandoned_uncommitted_edit_never_reaches_a_rebuilt_index(service: Se
     (service.sample.root / relative).write_bytes(render_note(note))  # in progress: back to internal, plaintext
     service.sample.commit_out_of_band(replace(note, id=NoteId("added-outside")))
     assert service.stale()
-    with pytest.raises(NoteReadError) as refused:
-        service.container.use_cases.search_notes.execute(SearchNotesRequest(text=MARKER), service.reader)
-    assert refused.value.problems == ((relative, UNCOMMITTED_REASON),)
-    with pytest.raises(NoteReadError):
-        service.container.use_cases.read_note.execute(ReadNoteRequest(note_id=service.note_id), service.reader)
-    assert service.stale()  # nothing was recorded as built from HEAD
-
-    service.sample.git().discard_changes(created=[], modified=[relative])  # the owner drops the edit
     found = service.container.use_cases.search_notes.execute(SearchNotesRequest(text=MARKER), service.reader)
     assert [hit.note.id for hit in found.results] == [NoteId("added-outside")]
     assert not service.stale()
@@ -276,3 +272,244 @@ def test_one_invalid_committed_file_is_left_out_without_a_rebuild_per_request(
     assert [(i.subject, i.code) for i in report.issues if i.code is HealthCode.NOTE_FILE_EXCLUDED] == [
         (relative, HealthCode.NOTE_FILE_EXCLUDED)
     ]
+
+
+@pytest.mark.parametrize("trigger", ["write", "startup", "rebuild"])
+def test_dirty_files_are_quarantined_before_recovery(service: Service, trigger: str) -> None:
+    sample = service.sample
+    tracked = f"notes/{service.note_id.value}.md"
+    original = (sample.root / tracked).read_bytes()
+    (sample.root / tracked).write_bytes(b"staged draft\n")
+    sample.git().stage([tracked])
+    (sample.root / tracked).write_bytes(b"working draft\n")
+    (sample.root / "draft.txt").write_bytes(b"untracked draft\n")
+    if trigger == "startup":
+        (sample.root / "schema/types.yaml").write_text("invalid yaml [")
+        container = build_container(sample.settings)
+        container.start()
+    elif trigger == "rebuild":
+        service.container.use_cases.rebuild_index.execute(RebuildIndexRequest(), OWNER)
+    else:
+        service.container.use_cases.agent_write.execute(
+            AgentWriteRequest(operation="create", request_id="r-2", frontmatter=FIELDS, body="Another procedure."),
+            service.writer,
+        )
+    assert (sample.root / tracked).read_bytes() == original
+    assert not (sample.root / "draft.txt").exists()
+    assert sample.git().is_clean()
+    restarted = build_container(sample.settings)
+    restarted.start()
+    report = restarted.use_cases.health_report.execute(HealthReportRequest(), OWNER)
+    [warning] = [i for i in report.issues if i.code.value == "changes_quarantined"]
+    assert warning.severity.value == "warning"
+    folder = sample.state_dir / warning.subject
+    with tarfile.open(folder / "worktree.tar") as archive:
+        for path, expected in [(tracked, b"working draft\n"), ("draft.txt", b"untracked draft\n")]:
+            entry = archive.extractfile(path)
+            assert entry is not None
+            assert entry.read() == expected
+    assert b"+staged draft" in (folder / "staged.patch").read_bytes()
+
+
+def test_quarantine_includes_ignored_files_without_following_links(service: Service) -> None:
+    root = service.sample.root
+    (root / ".git/info/exclude").write_text("notes/drafts/\n")
+    (root / "notes/drafts").mkdir()
+    (root / "notes/drafts/private.txt").write_bytes(b"abandoned")
+    (root / "notes/drafts/key").symlink_to(service.sample.settings.key_file)
+    service.narrow(NARROWINGS["archived"])
+    assert not (root / "notes/drafts").exists()
+    [snapshot] = service.sample.state_dir.glob("quarantine-*")
+    with tarfile.open(snapshot / "worktree.tar") as archive:
+        assert archive.getmember("notes/drafts/key").issym()
+        entry = archive.extractfile("notes/drafts/private.txt")
+        assert entry is not None
+        assert entry.read() == b"abandoned"
+
+
+def test_quarantine_failure_keeps_all_original_files(service: Service, monkeypatch: pytest.MonkeyPatch) -> None:
+    root = service.sample.root
+    (root / "draft.txt").write_text("keep this")
+    monkeypatch.setattr(tarfile.TarFile, "addfile", boom)
+    with pytest.raises(NoteWriteError):
+        service.container.start()
+    assert (root / "draft.txt").read_text() == "keep this"
+    report = service.container.use_cases.health_report.execute(HealthReportRequest(), OWNER)
+    [warning] = [i for i in report.issues if i.code.value == "changes_quarantined"]
+    assert warning.subject.endswith(".partial")
+    assert "incomplete" in warning.message.lower()
+
+
+@pytest.mark.parametrize("operation", ["MERGE_HEAD", "rebase-merge"])
+def test_resume_leaves_git_operations_untouched(service: Service, operation: str) -> None:
+    root = service.sample.root
+    marker = root / ".git" / operation
+    if operation == "MERGE_HEAD":
+        marker.write_text(str(service.sample.git().head()) + "\n")
+    else:
+        marker.mkdir()
+    (root / "draft").write_text("working on merge")
+    with pytest.raises(NoteWriteError):
+        service.container.start()
+    assert (root / "draft").read_text() == "working on merge"
+    assert marker.exists()
+
+
+def test_dirty_file_replaced_by_directory_is_quarantined(service: Service) -> None:
+    path = service.sample.root / "schema/types.yaml"
+    before = path.read_bytes()
+    path.unlink()
+    path.mkdir()
+    (path / "draft").write_text("keep this")
+    service.container.start()
+    assert path.read_bytes() == before
+    [snapshot] = service.sample.state_dir.glob("quarantine-*")
+    with tarfile.open(snapshot / "worktree.tar") as archive:
+        entry = archive.extractfile("schema/types.yaml/draft")
+        assert entry is not None
+        assert entry.read() == b"keep this"
+
+
+@pytest.mark.parametrize("relative", ["draft", "schema/types.yaml"])
+def test_new_save_during_recovery_is_preserved(
+    service: Service, monkeypatch: pytest.MonkeyPatch, relative: str
+) -> None:
+    root = service.sample.root
+    draft = root / relative
+    draft.write_text("first version")
+    original = tarfile.TarFile.addfile
+
+    def save_after_copy(archive: tarfile.TarFile, member: tarfile.TarInfo, fileobj: BinaryIO | None = None) -> None:
+        original(archive, member, fileobj)
+        if member.name == relative:
+            draft.write_text("new version")
+
+    monkeypatch.setattr(tarfile.TarFile, "addfile", save_after_copy)
+    with contextlib.suppress(NoteWriteError):
+        service.container.start()
+    assert draft.read_text() == "new version"
+
+
+def test_building_container_for_an_admin_command_leaves_checkout_untouched(service: Service) -> None:
+    draft = service.sample.root / "draft"
+    draft.write_text("work in progress")
+    built = build_container(service.sample.settings)
+    assert built.use_cases.health_report.execute(HealthReportRequest(), OWNER).notes_checked > 0
+    assert draft.read_text() == "work in progress"
+
+
+def test_dirty_directory_replaced_by_file_is_quarantined(service: Service) -> None:
+    root = service.sample.root
+    for schema_file in (root / "schema").iterdir():
+        schema_file.unlink()
+    (root / "schema").rmdir()
+    (root / "schema").write_text("saved replacement")
+    service.container.start()
+    assert (root / "schema/types.yaml").is_file()
+    assert (root / "schema/areas.yaml").is_file()
+    [snapshot] = service.sample.state_dir.glob("quarantine-*")
+    with tarfile.open(snapshot / "worktree.tar") as archive:
+        entry = archive.extractfile("schema")
+        assert entry is not None
+        assert entry.read() == b"saved replacement"
+
+
+@pytest.mark.parametrize("split_volumes", [False, True])
+def test_quarantine_retains_later_writes_through_an_open_file(
+    service: Service, monkeypatch: pytest.MonkeyPatch, split_volumes: bool
+) -> None:
+    root = service.sample.root
+    draft = root / "draft"
+    original_rename = Path.rename
+
+    def rename(path: Path, target: Path) -> Path:
+        if split_volumes and path.name == "captured" and target.name == "originals":
+            raise OSError(errno.EXDEV, "separate mounts")
+        return original_rename(path, target)
+
+    monkeypatch.setattr(Path, "rename", rename)
+    with draft.open("wb", buffering=0) as handle:
+        handle.write(b"early")
+        service.container.start()
+        handle.write(b" late")
+    [snapshot] = service.sample.state_dir.glob("quarantine-*")
+    originals = root / ".git" / snapshot.name if split_volumes else snapshot / "originals"
+    assert (originals / "draft").read_bytes() == b"early late"
+
+
+def test_multiple_nested_siblings_are_quarantined_in_one_pass(service: Service) -> None:
+    root = service.sample.root
+    directory = root / "notes/drafts/session"
+    directory.mkdir(parents=True)
+    for filename in ["one", "two"]:
+        (directory / filename).write_text(filename)
+    service.narrow(NARROWINGS["archived"])
+    assert not (root / "notes/drafts").exists()
+
+
+@pytest.mark.parametrize("archive_fails", [False, True])
+def test_collision_on_first_file_preserves_other_checkout_entries(
+    service: Service, monkeypatch: pytest.MonkeyPatch, archive_fails: bool
+) -> None:
+    root = service.sample.root
+    names = ["schema/areas.yaml", "schema/types.yaml"]
+    second_head = (root / names[1]).read_bytes()
+    for name in names:
+        (root / name).write_text("first draft")
+    add = tarfile.TarFile.addfile
+
+    def save_and_maybe_fail(archive: tarfile.TarFile, member: tarfile.TarInfo, fileobj: BinaryIO | None = None) -> None:
+        add(archive, member, fileobj)
+        if member.name == names[0]:
+            (root / names[0]).write_text("latest save")
+            if archive_fails:
+                raise OSError("disk full")
+
+    monkeypatch.setattr(tarfile.TarFile, "addfile", save_and_maybe_fail)
+    with pytest.raises(NoteWriteError):
+        service.container.start()
+    assert (root / names[0]).read_text() == "latest save"
+    assert (root / names[1]).read_bytes() == (b"first draft" if archive_fails else second_head)
+    [incomplete] = service.sample.state_dir.glob("quarantine-*.partial")
+    assert (incomplete / "unrestored-paths").read_bytes() == names[0].encode() + b"\0"
+
+
+def test_quarantine_restores_literal_git_pathspec_characters(service: Service) -> None:
+    name = ":(exclude)draft"
+    path = service.sample.root / name
+    path.write_text("committed")
+    git = service.sample.git()
+    git.stage([name])
+    git.commit("Add literal file name", [name])
+    path.write_text("uncommitted")
+    service.container.start()
+    assert path.read_text() == "committed"
+    [snapshot] = service.sample.state_dir.glob("quarantine-*")
+    assert (snapshot / "originals" / name).read_text() == "uncommitted"
+
+
+def test_archive_streams_verified_files_without_tar_reopening_paths(
+    service: Service, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    (service.sample.root / "draft").write_text("draft content")
+    monkeypatch.setattr(tarfile.TarFile, "add", boom)
+    service.container.start()
+    [snapshot] = service.sample.state_dir.glob("quarantine-*")
+    with tarfile.open(snapshot / "worktree.tar") as archive:
+        entry = archive.extractfile("draft")
+        assert entry is not None
+        assert entry.read() == b"draft content"
+
+
+def test_unsupported_replacement_is_refused_before_creating_a_snapshot(service: Service) -> None:
+    path = service.sample.root / "schema/types.yaml"
+    path.unlink()
+    path.mkdir()
+    (path / "draft").write_bytes(b"draft bytes")
+    os.mkfifo(path / "pipe")
+    for _ in range(2):
+        with pytest.raises(NoteWriteError):
+            service.container.start()
+        assert not list(service.sample.state_dir.glob("quarantine-*"))
+        assert (path / "draft").read_bytes() == b"draft bytes"
+        assert (path / "pipe").is_fifo()

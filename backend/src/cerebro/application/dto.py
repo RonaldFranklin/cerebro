@@ -435,6 +435,7 @@ class HealthReportRequest:
 class HealthCode(StrEnum):
     """Checks of the health report that are not note validation rules (those use ``ViolationCode``)."""
 
+    CHANGES_QUARANTINED = "changes_quarantined"
     ORPHAN_NOTE = "orphan_note"
     REVIEW_OVERDUE = "review_overdue"
     SEARCH_INDEX_STALE = "search_index_stale"

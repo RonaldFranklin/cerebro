@@ -226,6 +226,8 @@ class GitRepo:
         ok: Sequence[int] = (0,),
         redact: Sequence[str] = (),
         init: bool = False,
+        umask: int = -1,
+        index_file: Path | None = None,
     ) -> tuple[int, str]:
         if not init:
             git_dir = self._root / ".git"
@@ -240,11 +242,12 @@ class GitRepo:
             process = subprocess.Popen(  # argument list, never a shell
                 command,
                 cwd=self._root,
-                env=self._env,
+                env=self._env if index_file is None else {**self._env, "GIT_INDEX_FILE": str(index_file)},
                 stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 start_new_session=True,
+                umask=umask,
             )
         except OSError:
             raise GitError(f"git {args[0]}: could not start git") from None
@@ -492,6 +495,47 @@ class GitRepo:
             return None
         revision, _, message = out.partition("\x00")
         return revision, message.rstrip("\n")
+
+    def working_changes(self) -> str:
+        """NUL-separated porcelain entries, including individual untracked and ignored files."""
+        return self._run(["status", "--porcelain=v1", "-z", "--no-renames", "--untracked-files=all", "--ignored"])[1]
+
+    def save_staged_patch(self, destination: Path) -> None:
+        self._run(
+            [
+                "diff",
+                "--cached",
+                "--no-ext-diff",
+                "--no-textconv",
+                "--no-renames",
+                "--binary",
+                "--full-index",
+                "--no-color",
+                f"--output={destination}",
+                "--",
+            ]
+        )
+
+    def prepare_quarantine_restore(self, paths: Sequence[str], revision: str, worktree: Path, index_file: Path) -> None:
+        """Prepare HEAD files and the restored index in private scratch space. Never overwrite an editor's save."""
+        self._require_object_id(revision)
+        shutil.copyfile(self._root / ".git/index", index_file)
+        if paths:
+            pathspecs = index_file.parent / "paths"
+            pathspecs.write_bytes(b"".join(os.fsencode(path) + b"\0" for path in paths))
+            self._run(
+                [
+                    f"--work-tree={worktree}",
+                    "restore",
+                    f"--source={revision}",
+                    "--staged",
+                    "--worktree",
+                    f"--pathspec-from-file={pathspecs}",
+                    "--pathspec-file-nul",
+                ],
+                index_file=index_file,
+                umask=0o077,
+            )
 
     def staged_paths(self) -> tuple[str, ...]:
         """Paths whose index entry differs from ``HEAD`` (before the first commit: every path in the index)."""

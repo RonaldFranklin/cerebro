@@ -67,6 +67,8 @@ Follow-ups: readable ids ([ADR-0021](adr/0021-readable-note-ids.md)), the `core`
 ([ADR-0024](adr/0024-create-replay-from-git.md)). An invalid committed note blocks edits and links to that note.
 Other notes remain writable, and server errors release the write quota reservation. [Record](plans/archive/phase-7.md).
 
+Pre-deploy maintenance preserves dirty content checkouts under the state directory before startup, writes and rebuilds.
+
 ## ⬜ Phase 6 — Deploy (hml, prod)
 
 - First validate the Docker image and Compose configuration in WSL dev with synthetic content. Check

@@ -1,6 +1,6 @@
 """``HealthReport``: everything wrong with the knowledge base, for the owner."""
 
-from collections.abc import Iterable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 
 from cerebro.application.access import require_owner
 from cerebro.application.dto import HealthCode, HealthIssue, HealthReportRequest, HealthReportResult
@@ -50,7 +50,9 @@ class HealthReport:
         graph: GraphIndex,
         clock: Clock,
         vocabulary: Vocabulary,
+        quarantines: Callable[[], Iterable[str]] = tuple,
     ) -> None:
+        self._quarantines = quarantines
         self._notes = notes
         self._search = search
         self._graph = graph
@@ -61,18 +63,35 @@ class HealthReport:
         require_owner(ctx, "read the health report")
         if ctx.ceiling.level is not Sensitivity.RESTRICTED:
             raise PermissionDenied("read the health report below the restricted ceiling")
+        issues = [
+            HealthIssue(
+                subject=name,
+                code=HealthCode.CHANGES_QUARANTINED,
+                severity=Severity.WARNING,
+                field=None,
+                message=(
+                    "Incomplete quarantine. Inspect this state directory folder and the content checkout."
+                    if name.endswith(".partial")
+                    else "Uncommitted content changes were saved in this state directory folder."
+                ),
+            )
+            for name in self._quarantines()
+        ]
         try:
             scan = self._notes.scan()
         except NoteReadError as error:
             problems = [FileProblem(path, reason, stable=False) for path, reason in error.problems]
             return HealthReportResult(
-                issues=tuple(map(_file_issue, problems or [FileProblem("notes", "cannot be listed", stable=False)])),
+                issues=(
+                    *map(_file_issue, problems or [FileProblem("notes", "cannot be listed", stable=False)]),
+                    *issues,
+                ),
                 notes_checked=0,
                 search_index_checked=False,
             )
         notes = scan.notes
         now = self._clock.now()
-        issues: list[HealthIssue] = [_file_issue(problem) for problem in scan.problems]
+        issues.extend(map(_file_issue, scan.problems))
         issues.extend(self._note_issues(notes))
         issues.extend(
             HealthIssue(

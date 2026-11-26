@@ -229,9 +229,20 @@ Filesystem repository, operating notes (Phase 2):
 - Only committed note content is served. A note file under `core/`, `hubs/` or `notes/` that differs from `HEAD`
   (staged, edited, deleted, untracked or ignored: an abandoned hand edit, an orphan left by an interrupted create, a
   note left staged by a crash) is never read into an index: `get` raises for it, and `scan` reports it as a problem
-  that is **not stable**, so rebuilds, the reads that need one, and writes fail (fail-closed) until the owner commits
-  the file or runs `git restore --staged --worktree` on it (or deletes a file that was never committed). Nothing is
-  discarded automatically. Other files (`schema/`, `README.md`, dotfiles, non-`.md` files) are not checked.
+  that is **not stable**. At startup and before writes or index rebuilds, the service serializes recovery with
+  writers and backs up working files, staged changes and deletions (including untracked and ignored files) in a
+  private timestamped `quarantine-*` directory under state. It then restores the affected paths to HEAD. Each
+  directory contains `worktree.tar`, `staged.patch` and the base commit followed by NUL-separated Git status
+  entries in `status`. The original inodes remain under `originals/` in that directory (or under the same
+  `quarantine-*` name inside the content repository's `.git/` on separate volumes). This preserves writes through
+  editor descriptors that were open before recovery. Archives and originals contain the owner's exact bytes,
+  including any plaintext. Keep these directories local like the derived index: exclude `quarantine-*` and
+  `cerebro-quarantine-in-progress` from external state and filesystem backups. Git pushes exclude them.
+  Recovery installs HEAD without replacing a later editor save. After an interruption inspect the state directory
+  and `.git/cerebro-quarantine-in-progress`. Health lists completed and incomplete (`.partial`) snapshots.
+  If another save prevents restoration, `unrestored-paths` lists the affected names separated by NUL bytes.
+  Independent paths are restored before the error is reported.
+  The service never prunes them.
   Listings check before and after reading; `get` checks after reading and, when the file looks uncommitted, waits for
   any running `apply` and checks again. Residual risk: index flags set by hand (`assume-unchanged`, `skip-worktree`)
   hide a file's edits from git, so never set them on note files.

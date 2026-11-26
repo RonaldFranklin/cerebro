@@ -7,7 +7,7 @@ from cerebro.adapters.inbound.cli import parse_arguments, run_read_command
 from cerebro.adapters.inbound.cli_owner import set_owner_password
 from cerebro.adapters.inbound.cli_tokens import run_token_command
 from cerebro.application.browser import ProvisionOwnerPassword
-from cerebro.application.dto import ReadNoteRequest, SearchNotesRequest
+from cerebro.application.dto import ReadNoteRequest, RebuildIndexRequest, SearchNotesRequest
 from cerebro.application.errors import (
     NoteNotFound,
     SectionNotFound,
@@ -44,6 +44,8 @@ def main() -> int:
             )
         if isinstance(options.request, (SearchNotesRequest, ReadNoteRequest)):
             container.start()
+        elif isinstance(options.request, RebuildIndexRequest):
+            container.prepare_checkout()
         return run_read_command(
             options.request,
             ctx,

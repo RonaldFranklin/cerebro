@@ -5,7 +5,8 @@ the entry point hands them individual use cases from ``Container.use_cases`` (us
 attributes of ``Container`` (``notes``, ``search``, ...) exist for tests and operations. The filesystem adapter serves
 only committed note content: a note file that differs from ``HEAD`` fails the reads that touch it (and every rebuild),
 so no index is ever recorded as built from ``HEAD`` with uncommitted content. A committed file that is not a valid
-note is left out and named by the health report; it does not fail the other reads. Nothing is discarded automatically.
+note is left out and named by the health report; it does not fail the other reads.
+Startup, writes and rebuilds quarantine dirty checkout data under the state directory before restoring HEAD.
 
 **Writer lock (ADR-0002).** Reading ``head()``, ``apply`` and advancing the index revision must be serialised,
 otherwise a concurrent commit between them could make an index look fresh and hide a failed index update (see
@@ -32,6 +33,7 @@ from cerebro.adapters.outbound.crypto import FernetCipher, load_keys
 from cerebro.adapters.outbound.filesystem import FilesystemNoteRepository, WriterBusyError, load_vocabulary
 from cerebro.adapters.outbound.filesystem.history import GitChangeHistory
 from cerebro.adapters.outbound.filesystem.lock import file_lock
+from cerebro.adapters.outbound.filesystem.quarantine import quarantine_changes
 from cerebro.adapters.outbound.git import GitIdentity, GitRepo, GitVersionControl
 from cerebro.adapters.outbound.sqlite import (
     SqliteGraphIndex,
@@ -215,14 +217,27 @@ class Container:
             git, remote=settings.git_remote, branch=settings.git_branch
         )
         self.notes: NoteRepository = FilesystemNoteRepository(settings.content_repo, git=git, cipher=self.cipher)
-        self.vocabulary: Vocabulary = load_vocabulary(settings.content_repo)
+
+        def quarantine() -> None:
+            quarantine_changes(settings.content_repo, state_dir, git, settings.writer_lock_timeout)
+
+        self._quarantine = quarantine
+        self._git = git
         self.search: SearchIndex = SqliteSearchIndex(state_dir / INDEX_FILE)
         self.graph: GraphIndex = SqliteGraphIndex(state_dir / INDEX_FILE)
         self.tokens: TokenStore = SqliteTokenStore(state_dir / STATE_FILE)
 
+        self._rebuild = RebuildIndex(self.notes, self.search, self.graph)
+
+    @cached_property
+    def vocabulary(self) -> Vocabulary:
+        return load_vocabulary(self.settings.content_repo)
+
+    @cached_property
+    def use_cases(self) -> UseCases:
+        state_dir = self.settings.state_dir
         notes, search, graph = self.notes, self.search, self.graph
         clock, ids, vocabulary, lock = self.clock, self.ids, self.vocabulary, self.writer_lock
-        self._rebuild = RebuildIndex(notes, search, graph)
         write = AgentWrite(
             notes,
             search,
@@ -231,10 +246,10 @@ class Container:
             clock,
             ids,
             vocabulary,
-            settings.writes_per_hour,
+            self.settings.writes_per_hour,
         )
         fresh, fresh_locked = self.refresh, self._refresh_locked
-        self.use_cases = UseCases(
+        return UseCases(
             agent_write=Serialized(Refreshed(write, fresh_locked), lock),
             get_overview=Refreshed(GetOverview(notes, search), fresh),
             search_notes=Refreshed(SearchNotes(search), fresh),
@@ -242,12 +257,19 @@ class Container:
             get_neighbors=Refreshed(GetNeighbors(notes, graph), fresh),
             get_graph=Refreshed(GetGraph(graph), fresh),
             get_vocabulary=GetVocabulary(vocabulary),
-            history=OwnerHistory(notes, GitChangeHistory(git, self.cipher), lock.held),
+            history=OwnerHistory(notes, GitChangeHistory(self._git, self.cipher), lock.held),
             owner_edit_note=Serialized(
                 Refreshed(OwnerEditNote(notes, search, graph, clock, vocabulary), fresh_locked), lock
             ),
-            rebuild_index=Serialized(self._rebuild, lock),
-            health_report=HealthReport(notes, search, graph, clock, vocabulary),
+            rebuild_index=Serialized(Refreshed(self._rebuild, self._quarantine), lock),
+            health_report=HealthReport(
+                notes,
+                search,
+                graph,
+                clock,
+                vocabulary,
+                quarantines=lambda: sorted(p.name for p in state_dir.glob("quarantine-*") if p.is_dir()),
+            ),
             issue_agent_token=IssueAgentToken(self.tokens, clock, ids),
             list_agent_tokens=ListAgentTokens(self.tokens),
             revoke_agent_token=RevokeAgentToken(self.tokens, clock),
@@ -265,6 +287,11 @@ class Container:
             self.ids,
         )
 
+    def prepare_checkout(self) -> None:
+        """Allow an explicit CLI reindex to restore the schema before its use cases load the vocabulary."""
+        with self.writer_lock.held():
+            self._quarantine()
+
     def start(self) -> bool:
         """Reindex when either index was not built from the repository's current revision (never built, an
         out-of-band commit, or an index file that was recreated after corruption). Returns whether it did.
@@ -281,6 +308,7 @@ class Container:
                 self._refresh_locked()
 
     def _refresh_locked(self) -> bool:
+        self._quarantine()
         if not index_is_stale(self.notes, self.search, self.graph):
             return False
         owner = AccessContext.for_owner(AccessCeiling(Sensitivity.RESTRICTED))
