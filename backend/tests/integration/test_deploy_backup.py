@@ -51,7 +51,7 @@ def backup(tmp_path: Path) -> Iterator[Backup]:
     content, remote, state, copies = (tmp_path / name for name in ("content", "remote.git", "state", "backups"))
     git = shutil.which("git")
     assert git
-    subprocess.run([git, "init", "-q", "-b", "main", str(content)], check=True)
+    subprocess.run([git, "init", "-q", "-b", "hml", str(content)], check=True)
     subprocess.run([git, "init", "-q", "--bare", str(remote)], check=True)
     (content / "committed.md").write_text("fixture")
     subprocess.run([git, "-C", str(content), "add", "committed.md"], check=True)
@@ -125,7 +125,9 @@ def test_backup_preserves_wal_and_pushes_only_the_recorded_content_commit(backup
     ]
 
 
-@pytest.mark.parametrize("failure", ["public", "redirected", "push", "sqlite-link", "verifier-link"])
+@pytest.mark.parametrize(
+    "failure", ["public", "redirected", "push", "branch", "pending", "sqlite-link", "verifier-link"]
+)
 def test_failed_backup_preserves_the_last_snapshot(backup: Backup, failure: str) -> None:
     result = backup.run()
     assert result.returncode == 0, result.stderr
@@ -134,6 +136,13 @@ def test_failed_backup_preserves_the_last_snapshot(backup: Backup, failure: str)
         backup.env["BACKUP_TEST_METADATA"] = '{"visibility":"PUBLIC","nameWithOwner":"example/cerebro-content"}'
     elif failure == "redirected":
         backup.env["BACKUP_TEST_METADATA"] = '{"visibility":"PRIVATE","nameWithOwner":"other/cerebro-content"}'
+    elif failure == "branch":
+        subprocess.run(["git", "-C", str(backup.content), "branch", "-m", "prod"], check=True)
+    elif failure == "pending":
+        pending = backup.copies / ".pending-interrupted"
+        pending.mkdir()
+        (pending / "sentinel").write_text("owner inspection")
+        previous.add(pending)
     elif failure == "push":
         backup.env["BACKUP_TEST_REMOTE"] += ".missing"
     else:

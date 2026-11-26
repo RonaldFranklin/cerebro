@@ -45,6 +45,8 @@ def backup(content: Path, state: Path, destination: Path, repository: str, branc
     if not all(stat.S_ISREG(p.lstat().st_mode) for p in (source, verifier)):
         raise ValueError("expected regular state.sqlite and owner.verifier files")
     destination.mkdir(mode=0o700, parents=True, exist_ok=True)
+    if any(destination.glob(".pending-*")):
+        raise ValueError("backup in progress or interrupted: inspect .pending-* before retrying")
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S.%fZ")
     with tempfile.TemporaryDirectory(dir=destination, prefix=".pending-") as staging:
         work = Path(staging)
@@ -53,7 +55,10 @@ def backup(content: Path, state: Path, destination: Path, repository: str, branc
         # The same lock serializes service writes. Release it before contacting the remote.
         with (state / "writer.lock").open("rb") as lock:
             fcntl.flock(lock, fcntl.LOCK_SH)
-            revision = git("rev-parse", "--verify", "HEAD^{commit}", cwd=content)
+            ref = f"refs/heads/{branch}"
+            if git("symbolic-ref", "--quiet", "HEAD", cwd=content) != ref:
+                raise ValueError("content checkout branch does not match the backup environment")
+            revision = git("rev-parse", "--verify", f"{ref}^{{commit}}", cwd=content)
             with (
                 closing(sqlite3.connect(source.as_uri() + "?mode=ro", uri=True)) as live,
                 closing(sqlite3.connect(snapshot / "state.sqlite")) as saved,

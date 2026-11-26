@@ -3,20 +3,28 @@
 Run this on the Docker host as the account that owns the deployed content and state files. The host needs
 Python 3.10 or newer with SQLite, Git, and a GitHub CLI login with write access to the private content repository.
 The service container needs no GitHub credentials. Populate these variables from the environment's installation
-record. The same private repository holds independent `hml` and `prod` branches.
+record. Check that the content checkout and state directory are the mounts for the **same** Compose project;
+keep its backup destination separate from the other environment. The content branch configured at initialization
+must equal the environment name. The same private repository holds independent `hml` and `prod` branches.
 
 ```sh
 APP_DIR='<absolute-application-checkout>'
-CONTENT_DIR='<absolute-content-checkout>'
-STATE_DIR='<absolute-state-directory>'
+ENVIRONMENT='hml'  # use prod for production
+ENV_DATA_DIR='<absolute-data-directory-for-this-environment>'
+CONTENT_DIR="$ENV_DATA_DIR/content"
+STATE_DIR="$ENV_DATA_DIR/state"
 BACKUP_DIR='<absolute-private-backup-directory-for-this-environment>'
 GITHUB_OWNER='<github-owner>'
-ENVIRONMENT='hml'  # use prod for production
 
 install -d -m 0700 "$BACKUP_DIR"
 python3 "$APP_DIR/deploy/backup.py" --content "$CONTENT_DIR" --state "$STATE_DIR" \
   --destination "$BACKUP_DIR" --repository "$GITHUB_OWNER/cerebro-content" --branch "$ENVIRONMENT"
 ```
+
+A directory on the state disk protects against application failures but shares that disk's failure domain.
+For disk-loss recovery, use separate private storage for completed snapshots. When using a mounted backup
+volume, put `mountpoint -q "<expected-backup-mount>" &&` before the backup command in the shell and cron.
+This prevents falling back to the underlying filesystem. Exercise the restore from that storage.
 
 The command prints a new snapshot directory only after GitHub confirms private visibility and the push succeeds.
 Each completed snapshot holds exactly `state.sqlite` (SQLite's online backup, including committed WAL data),
@@ -26,7 +34,9 @@ owner's separate offline custody. The verifier is sensitive; retain the owner's 
 
 The push sends the recorded commit and its ancestors to the chosen environment branch. Missing credentials,
 public repositories, excluded files in commit history, and divergent branches fail the job. A failed job leaves
-earlier completed snapshots available. Inspect failures with the owner before retrying. Git pushes never include
+earlier completed snapshots available. The command refuses to start if a hidden `.pending-*` directory
+already exists. Check for an active backup. After a timeout or power loss, confirm no backup is running
+and ask the owner to inspect and move the interrupted directory aside before retrying. Git pushes never include
 untracked checkout or Git metadata. The state backup reads an explicit list of files. Keep all `quarantine-*`
 directories, quarantine scratch data, and the derived `index.sqlite` out of any external filesystem backup.
 
@@ -60,7 +70,7 @@ restore location and its separate production key.
 umask 077
 mkdir -m 0700 "$RESTORE_DIR" &&
 git clone --branch "$ENVIRONMENT" --single-branch "https://github.com/$GITHUB_OWNER/cerebro-content.git" "$RESTORE_DIR/content" &&
-git -C "$RESTORE_DIR/content" switch -c restore-check "$(cat "$SNAPSHOT/content-revision")" &&
+git -C "$RESTORE_DIR/content" reset --keep "$(cat "$SNAPSHOT/content-revision")" &&
 mkdir -m 0700 "$RESTORE_DIR/state" &&
 install -m 0600 "$SNAPSHOT/state.sqlite" "$SNAPSHOT/owner.verifier" "$RESTORE_DIR/state/" &&
 python3 -c 'import sqlite3,sys; db=sqlite3.connect(sys.argv[1]); sys.exit(db.execute("PRAGMA quick_check").fetchall() != [("ok",)])' "$RESTORE_DIR/state/state.sqlite"
