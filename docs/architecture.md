@@ -138,7 +138,9 @@ and a hidden neighbors center all raise the same `NoteNotFound`; search results,
 the graph contain visible notes only and carry no totals, so nothing reveals a hidden note. `GetOverview` serves
 current P0 notes in id order within the 1,500-word core budget (`core_truncated` when some do not fit) plus the
 visible hubs and their areas. `ReadNote` accepts `id`, `id#Section` or `[[id#Section]]` (`SectionNotFound` for a
-visible note without that heading) and, for a hub, returns the member list built at read time (ADR-0015). The
+visible note without that heading, carrying
+the headings of the redacted body: whole, distinct, at most 40 and 2048 bytes, which `cerebro_read` returns as
+`headings` with `headings_truncated`) and, for a hub, returns the member list built at read time (ADR-0015). The
 `hub`, `related` and `superseded_by` references of a note are dropped when their target is hidden or missing; hits
 and graph nodes from the indexes are re-checked against the ceiling (defense in depth). Wikilinks inside a served
 body (whole or one section) whose target the reader cannot see, or that does not exist, are replaced by the constant

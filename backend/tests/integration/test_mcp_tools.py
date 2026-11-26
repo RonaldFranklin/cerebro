@@ -119,6 +119,58 @@ def test_arguments_normalize_before_authentication(container: Container) -> None
         assert adapter.call(name, args, forbidden).is_error
 
 
+@pytest.mark.parametrize(
+    ("name", "args", "message"),
+    [
+        ("cerebro_search", {"query": "", "limit": 500}, "limit must be an integer from 1 to 100"),
+        ("cerebro_search", {"query": "", "limit": 0}, "limit must be an integer from 1 to 100"),
+        ("cerebro_search", {}, "query must be a string of at most 1024 UTF-8 bytes"),
+        ("cerebro_search", {"query": "é" * 513}, "query must be a string of at most 1024 UTF-8 bytes"),
+        ("cerebro_search", {"query": "", "area": "Not Kebab"}, "area must be a kebab-case string of at most 256"),
+        ("cerebro_search", {"query": "", "type": 5}, "type must be a kebab-case string of at most 256"),
+        ("cerebro_search", {"query": "", "priority": "P9"}, "priority must be one of P0, P1, P2, P3"),
+        ("cerebro_search", {"query": "", "status": "done"}, "status must be one of current, "),
+        ("cerebro_search", {"query": "", "include_history": "yes"}, "include_history must be true or false"),
+        ("cerebro_read", {"id": "Marker Value"}, "id must be a kebab-case note id of at most 80 characters"),
+        ("cerebro_read", {"id": "x", "section": " "}, "section must be a non-blank string of at most 256 UTF-8 bytes"),
+        ("cerebro_read", {"id": "x", "marker_key": 1}, "unknown argument; cerebro_read accepts id, section"),
+        ("cerebro_overview", {"marker_key": 1}, "unknown argument; cerebro_overview accepts no arguments"),
+        ("cerebro_neighbors", {"id": "x", "depth": 3}, "depth must be an integer from 1 to 2"),
+        ("cerebro_read", [], "arguments must be an object"),
+        ("marker_tool", {}, "unknown tool"),
+    ],
+)
+def test_argument_errors_name_the_field_and_the_allowed_values(
+    container: Container, name: str, args: object, message: str
+) -> None:
+    result = tools_for(container).call(name, args, lambda: AGENT)
+    assert result.is_error
+    (content,) = result.content
+    assert isinstance(content, types.TextContent)
+    assert content.text.startswith(f"Invalid tool arguments: {message}")
+    assert "marker" not in content.text.casefold()
+
+
+def test_a_missing_section_lists_the_headings_of_a_readable_note_only(container: Container) -> None:
+    tools = tools_for(container)
+    missing = tools.call("cerebro_read", {"id": SSH_ID.value, "section": "Nope"}, lambda: AGENT)
+    assert missing.is_error
+    assert missing.structured_content is not None
+    assert missing.structured_content["error"] == "Section not found."
+    assert "SSH" in missing.structured_content["headings"]
+    assert missing.structured_content["headings_truncated"] is False
+    (content,) = missing.content
+    assert isinstance(content, types.TextContent)
+    assert json.loads(content.text) == missing.structured_content
+
+    hidden = tools.call("cerebro_read", {"id": VAULT_ID.value, "section": "Nope"}, lambda: AGENT)
+    assert hidden == tools.call("cerebro_read", {"id": "absent", "section": "Nope"}, lambda: AGENT)
+    assert hidden == tools.call("cerebro_read", {"id": "absent"}, lambda: AGENT)
+    (content,) = hidden.content
+    assert isinstance(content, types.TextContent)
+    assert content.text == "Not found."
+
+
 def test_all_calls_require_agent_read_scope(container: Container) -> None:
     ctx = AccessContext(
         principal=Agent("writer"), ceiling=AccessCeiling(Sensitivity.INTERNAL), scopes=frozenset({Scope.WRITE})

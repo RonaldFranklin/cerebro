@@ -151,7 +151,10 @@ def test_real_listener_credentials_limits_and_logs(tmp_path: Path) -> None:
         assert json.loads(invalid_body) == {
             "jsonrpc": "2.0",
             "id": 1,
-            "error": {"code": -32602, "message": "Invalid tool arguments."},
+            "error": {
+                "code": -32602,
+                "message": "Invalid tool arguments: query must be a string of at most 1024 UTF-8 bytes.",
+            },
         }
 
         async def run_http() -> None:
@@ -226,7 +229,10 @@ def test_stdio_framing_and_invalid_calls_keep_the_request_id() -> None:
 
     # A well-framed but invalid request receives a correlated error before opening a socket.
     for frame, expected in [
-        (call("cerebro_neighbors", {"id": "note", "depth": 3}), "Invalid tool arguments."),
+        (
+            call("cerebro_neighbors", {"id": "note", "depth": 3}),
+            "Invalid tool arguments: depth must be an integer from 1 to 2.",
+        ),
         (call("cerebro_overview", {}).ljust(65536), "Cérebro offline"),
     ]:
         output = BytesIO()

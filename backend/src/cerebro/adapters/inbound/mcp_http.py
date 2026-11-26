@@ -36,18 +36,18 @@ def decode_frame(body: bytes) -> dict[str, object]:
     return message
 
 
-def invalid_arguments(rpc_id: object) -> dict[str, object]:
-    return {"jsonrpc": "2.0", "id": rpc_id, "error": {"code": -32602, "message": "Invalid tool arguments."}}
+def invalid_arguments(rpc_id: object, error: InvalidToolArguments) -> dict[str, object]:
+    return {"jsonrpc": "2.0", "id": rpc_id, "error": {"code": -32602, "message": str(error)}}
 
 
 def validate_params(message: dict[str, object]) -> AgentScope | None:
     params = message.get("params", {})
     if not isinstance(params, dict):
-        raise InvalidToolArguments
+        raise InvalidToolArguments("params must be an object")
     if message["method"] == "tools/call":
         name = params.get("name")
         if not isinstance(name, str):
-            raise InvalidToolArguments
+            raise InvalidToolArguments("name must be a string")
         parse_tool(name, params.get("arguments"))
         return tool_scope(name)
     return None
@@ -89,8 +89,8 @@ def http_app(
                 message = decode_frame(body)
                 rpc_id = message.get("id")
                 required_scope = validate_params(message)
-        except InvalidToolArguments:
-            response: Response = JSONResponse(invalid_arguments(rpc_id), status_code=400)
+        except InvalidToolArguments as error:
+            response: Response = JSONResponse(invalid_arguments(rpc_id, error), status_code=400)
         except ValueError, RecursionError:
             response = Response("Invalid request.", status_code=400)
         else:
