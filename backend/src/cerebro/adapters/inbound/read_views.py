@@ -149,7 +149,9 @@ def health_view(report: HealthReportResult) -> HealthResponse:
         "search_index_checked": report.search_index_checked,
         "issues": [
             {
-                "subject": issue.subject,
+                "subject": issue.subject.replace("\\", "\\\\")
+                .encode("utf-8", "surrogateescape")
+                .decode("utf-8", "backslashreplace"),
                 "code": issue.code.value,
                 "severity": issue.severity.value,
                 "field": issue.field,

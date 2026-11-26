@@ -1122,3 +1122,20 @@ def test_a_git_file_instead_of_a_directory_is_a_clear_error(tmp_path: Path, git:
     (other / ".git").write_text("gitdir: elsewhere\n")
     with pytest.raises(ValueError, match=r"real \.git directory"):
         FilesystemNoteRepository(other, git=git, cipher=cipher)
+
+
+def test_scan_names_an_untracked_note_inside_an_ignored_folder(
+    repo: FilesystemNoteRepository, git: GitRepo, root: Path
+) -> None:
+    from cerebro.adapters.outbound.filesystem.codec import render_note
+
+    committed_base(repo, git)
+    (root / ".git/info").mkdir(exist_ok=True)
+    (root / ".git/info/exclude").write_text("core/\n")
+    (root / "core").mkdir(exist_ok=True)
+    path = root / "core/draft-rule.md"
+    path.write_bytes(render_note(core_note(id=NoteId("draft-rule"))))
+    scan = repo.scan()
+    assert not scan.stable
+    assert path.relative_to(root).as_posix() in {problem.path for problem in scan.problems}
+    assert all(note.id.value != "draft-rule" for note in scan.notes)
