@@ -1,6 +1,6 @@
 # ADR-0014: Small MCP tool surface
 
-- **Status:** accepted
+- **Status:** accepted, amended by [ADR-0020](0020-direct-agent-writes.md)
 - **Date:** 2026-11-24
 
 ## Context

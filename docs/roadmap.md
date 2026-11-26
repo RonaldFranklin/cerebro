@@ -122,7 +122,7 @@ produced a scrubbed rejection. The acceptance test observed no state database or
 quota refusal. The [phase report](plans/phase-4.md#5-final-report) records verification and the security
 checkpoint. [Manual real-client checks](agent-integration.md#3-propose-in-both-clients-and-approve-locally).
 
-The next delivery sequence is Phase 5 (API and web UI), Phase 7 (curator), then Phase 6 (deployment).
+The next delivery sequence is Phase 5 (API and web UI), Phase 7 (direct agent writes), then Phase 6 (deployment).
 Phase 8 remains the later backlog.
 
 ## ✅ Phase 5 — HTTP API and web UI
@@ -145,15 +145,17 @@ and security reviews remain open. [Final report and screenshots](plans/phase-5.m
 **Acceptance:** the owner can browse, read, search, explore the graph, approve proposals and edit notes from
 the browser.
 
-## ⬜ Phase 7 — Curator
+## 🟨 Phase 7 — Direct agent writes
 
-- `Curator` adapters for Anthropic and OpenAI (provider chosen by configuration).
-- Two-tier model: small model for triage, larger model for merge/create decisions.
-- Normalization to English, frontmatter completion, link suggestions, duplicate merging.
-- Autonomy policy (configurable): manual → auto-approve low risk → per-agent trust.
+The owner authorized implementation and merges on 2026-11-26. Agents with explicitly issued
+`write` scope create or update notes immediately after deterministic validation, with attributable
+Git commits, optimistic concurrency and per-token limits. The MCP write guide is loaded on demand.
+The private owner UI replaces the Inbox with Recent changes, including links to notes and diffs.
 
-**Acceptance:** proposals are curated automatically and shown to the owner as decisions with diffs; cost per
-curation logged.
+**Acceptance:** demonstrate create and update through MCP, safe validation and conflict recovery,
+upgrade without privilege escalation, and an owner inspecting the actor, time, note and diff.
+Document the isolated Claude Code and Codex walkthrough and report observed outcomes.
+[Plan](plans/phase-7.md) · [Decision](adr/0020-direct-agent-writes.md)
 
 ## ⬜ Phase 6 — Deploy (hml, prod)
 
@@ -172,6 +174,5 @@ Tailscale; restore of content + state tested on hml.
 ## ⬜ Phase 8 — Later
 
 - Public listener behind Cloudflare Tunnel + Cloudflare Access (service tokens), ceiling `internal`.
-- Maintenance suggestions by the curator (orphans, overdue reviews, hub suggestions, splitting large notes).
 - "Agent path" view in the graph (which notes an agent read in a session).
 - Semantic search (embeddings) as an additional `SearchIndex` adapter, if FTS proves insufficient.
