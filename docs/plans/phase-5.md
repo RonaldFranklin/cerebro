@@ -255,12 +255,10 @@ bundles a Markdown editor. Playwright opens it over fixture HTTPS and verifies e
 
 Run `cerebro --config /path/to/instance.toml owner-password` in a local terminal to provision or rotate
 the browser password. Its UTF-8 encoding must fit in 1–1024 bytes. Keep the configured state directory
-outside both repositories. The CLI checks the configured content path, Git worktree markers and metadata,
-the executing source checkout and the standard application source layout. With a separately installed wheel,
-a sparse explicit worktree can omit both its Git marker and the recognizable source files. For that layout the
-operator must export `GIT_WORK_TREE` with the application's checkout root when invoking the owner CLI or
-browser service. Git's standard variable adds that tree to the excluded paths. Select an external state
-directory for verifier storage. The CLI atomically replaces its protected verifier and uses a persistent
+outside both repositories. The CLI and browser service refuse one inside the configured content repository
+or inside an application checkout, recognized by its backend source layout. Other Git repositories above
+the state directory, such as a versioned home directory, are allowed. The CLI atomically replaces its
+protected verifier and uses a persistent
 sibling lock to limit the instance to one simultaneous scrypt operation. On WSL2 a real login took
 0.203 seconds, with 155 MiB peak process RSS. Every attempted login reserves a slot before verification.
 The five-attempt window survives restart and expires individual attempts after fifteen minutes.
@@ -299,8 +297,8 @@ case-sensitive. GET bodies are rejected at the first nonempty frame. Unknown and
 | `/api/overview` | None | Visible core notes, word count, truncation flag, areas and hubs. |
 | `/api/search` | `q` (up to 1,024 UTF-8 bytes), `area`, `type`, `priority`, `status`, `history`, `limit` (1–100, default 20) | `results` in relevance order. Each summary carries id, title, type, area, priority, status and summary. |
 | `/api/notes/{id}` | `section` (up to 256 UTF-8 bytes), `history` | Authorized Markdown, metadata and visible hub members. A full private read exposes the edit precondition `content_hash` only when the visible content matches the stored note. |
-| `/api/graph` | `area`, `type`, `priority`, `status`, `sensitivity`, `history` | `nodes` with summary, area and sensitivity, `edges` with source, target, kind and section, and a null `center`. |
-| `/api/notes/{id}/neighbors` | Graph filters plus `hops` (1–2, default 1) | The same shape, restricted to connected nodes reachable through matching nodes. Filtering out the center returns an empty graph. |
+| `/api/graph` | `history` | `nodes` with summary, area and sensitivity, `edges` with source, target, kind and section, and a null `center`. |
+| `/api/notes/{id}/neighbors` | `area`, `type`, `priority`, `status`, `sensitivity`, `history`, `hops` (1–2, default 1) | The same shape, restricted to connected nodes reachable through matching nodes. Filtering out the center returns an empty graph. |
 | `/api/health` | None | Restricted listener only. Checked counts, index status and issues with subject, code, severity, field and safe message. |
 
 Graph options can be derived from the caller's unfiltered graph. Unknown and invisible notes both

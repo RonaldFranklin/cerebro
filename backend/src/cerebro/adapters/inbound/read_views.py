@@ -1,9 +1,101 @@
-"""Allowlisted response fields shared by the read adapters."""
+"""Allowlisted response schemas and projections shared by the read adapters."""
+
+from typing import NotRequired, TypedDict
 
 from cerebro.application.dto import HealthReportResult, HubMember, NoteSummary, NoteView, Overview, SearchResults
 
 
-def _summary(note: NoteSummary | HubMember) -> dict[str, object]:
+class Summary(TypedDict):
+    id: str
+    title: str
+    type: str
+    priority: str
+    status: str
+    summary: str
+
+
+class SearchHit(Summary):
+    area: str
+
+
+class SearchResponse(TypedDict):
+    results: list[SearchHit]
+
+
+class CoreNote(TypedDict):
+    id: str
+    title: str
+    summary: str
+    body: str
+
+
+class OverviewHub(TypedDict):
+    id: str
+    title: str
+    summary: str
+
+
+class OverviewView(TypedDict):
+    core: list[CoreNote]
+    core_truncated: bool
+    areas: list[str]
+    hubs: list[OverviewHub]
+
+
+class OverviewResponse(OverviewView):
+    """The browser also reports the size of the core."""
+
+    core_words: int
+
+
+class NoteResponse(SearchHit):
+    sensitivity: str
+    hub: str | None
+    related: list[str]
+    superseded_by: str | None
+    lang: str
+    created: str
+    updated: str
+    review_by: str | None
+    section: str | None
+    body: str
+    members: list[Summary] | None
+    content_hash: NotRequired[str]
+
+
+class GraphNode(SearchHit):
+    sensitivity: str
+
+
+class GraphEdge(TypedDict):
+    source: str
+    target: str
+    kind: str
+    section: str | None
+
+
+class GraphResponse(TypedDict):
+    nodes: list[GraphNode]
+    edges: list[GraphEdge]
+    center: str | None
+
+
+class HealthIssue(TypedDict):
+    subject: str
+    code: str
+    severity: str
+    field: str | None
+    message: str
+
+
+class HealthResponse(TypedDict):
+    ok: bool
+    notes_checked: int
+    search_index_checked: bool
+    issues: list[HealthIssue]
+
+
+def _summary(note: NoteSummary | HubMember) -> Summary:
     return {
         "id": note.id.value,
         "title": note.title,
@@ -14,11 +106,11 @@ def _summary(note: NoteSummary | HubMember) -> dict[str, object]:
     }
 
 
-def search_view(result: SearchResults) -> list[dict[str, object]]:
+def search_view(result: SearchResults) -> list[SearchHit]:
     return [{**_summary(hit.note), "area": hit.note.area.value} for hit in result.results]
 
 
-def read_view(note: NoteView) -> dict[str, object]:
+def read_view(note: NoteView) -> NoteResponse:
     return {
         "id": note.id.value,
         "title": note.title,
@@ -41,7 +133,7 @@ def read_view(note: NoteView) -> dict[str, object]:
     }
 
 
-def overview_view(result: Overview) -> dict[str, object]:
+def overview_view(result: Overview) -> OverviewView:
     return {
         "core": [{"id": n.id.value, "title": n.title, "summary": n.summary, "body": n.body} for n in result.core],
         "core_truncated": result.core_truncated,
@@ -50,7 +142,7 @@ def overview_view(result: Overview) -> dict[str, object]:
     }
 
 
-def health_view(report: HealthReportResult) -> dict[str, object]:
+def health_view(report: HealthReportResult) -> HealthResponse:
     return {
         "ok": report.ok,
         "notes_checked": report.notes_checked,

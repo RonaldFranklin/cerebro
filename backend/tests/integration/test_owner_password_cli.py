@@ -120,7 +120,9 @@ def test_provisioning_refuses_unsafe_state_location(config: Path, location: str)
     if location == "content":
         config.write_text(SAMPLE.replace('"state"', '"content/state"'))
     elif location == "repository":
-        (config.parent / ".git").mkdir()
+        marker = config.parent / "backend/src/cerebro/bootstrap/browser.py"
+        marker.parent.mkdir(parents=True)
+        marker.touch()
     else:
         target = config.parent / "target"
         target.mkdir(mode=0o700)

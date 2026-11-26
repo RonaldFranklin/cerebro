@@ -152,14 +152,14 @@ def test_graph_filters_remove_invisible_edge_endpoints(service: Service, restric
     for node in graph["nodes"]:
         assert node["area"] == "infrastructure"
         assert node["sensitivity"] in {"public", "internal", "restricted"}
+    path = f"/api/notes/{SSH_ID.value}/neighbors"
     filtered = client.get(
-        "/api/graph",
-        params={"area": "infrastructure", "priority": "P2", "status": "verified", "sensitivity": "internal"},
+        path, params={"area": "infrastructure", "priority": "P2", "status": "verified", "sensitivity": "internal"}
     ).json()
     assert [n["id"] for n in filtered["nodes"]] == [SSH_ID.value]
     assert filtered["edges"] == []
-    restricted_only = client.get("/api/graph", params={"sensitivity": "restricted", "type": "reference"}).json()
-    assert [n["id"] for n in restricted_only["nodes"]] == ([VAULT_ID.value] if restricted else [])
+    restricted_only = client.get(path, params={"sensitivity": "restricted"}).json()
+    assert restricted_only == {"center": None, "nodes": [], "edges": []}
 
     local = client.get(f"/api/notes/{SSH_ID.value}/neighbors", params={"hops": "1"}).json()
     wider = client.get(f"/api/notes/{SSH_ID.value}/neighbors", params={"hops": "2"}).json()

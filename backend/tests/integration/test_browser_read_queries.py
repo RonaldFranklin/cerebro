@@ -56,6 +56,7 @@ def api() -> Iterator[TestClient]:
         "/api/overview?extra=1",
         "/api/health?extra=1",
         "/api/graph?history=garbage",
+        "/api/graph?area=infrastructure",
         "/api/notes/note/neighbors?hops=3",
         "/api/notes/not_a_slug",
         "/api/notes/note?section=",
