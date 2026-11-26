@@ -79,8 +79,8 @@ class BrowserAuth:
         generation = self._credentials.verify(password)
         if generation is None:
             raise AuthenticationFailed()
-        with self._sessions.locked() as rows:
-            if self._credentials.generation() != generation:
+        with self._credentials.issuing(generation) as current, self._sessions.locked() as rows:
+            if not current:
                 raise AuthenticationFailed()
             now = self._clock.now()
             for key, session in tuple(rows.items()):

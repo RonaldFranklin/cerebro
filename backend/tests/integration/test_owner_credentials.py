@@ -98,3 +98,73 @@ def test_rotation_failure_keeps_previous_verifier(tmp_path: Path, monkeypatch: p
         verifier.provision(b"new")
     assert verifier.verify(b"example") == generation
     assert {p.name for p in tmp_path.iterdir()} == {"owner", "owner.lock"}
+
+
+def test_issuance_matches_current_generation_and_propagates_body_errors(
+    credentials: OwnerCredentials | FakeOwnerCredentials,
+) -> None:
+    credentials.provision(b"first")
+    current = credentials.generation()
+    assert current
+
+    def fail_in_guard(generation: str) -> None:
+        with credentials.issuing(generation) as valid:
+            assert valid
+            raise OSError("session storage failed")
+
+    with pytest.raises(OSError, match="session storage failed"):
+        fail_in_guard(current)
+    credentials.provision(b"second")
+    with credentials.issuing(current) as valid:
+        assert not valid
+
+
+def test_external_rotation_waits_for_session_issuance(tmp_path: Path) -> None:
+    import select
+    import subprocess
+    import sys
+
+    path = tmp_path / "owner"
+    verifier = OwnerCredentials(path)
+    verifier.provision(b"first")
+    current = verifier.generation()
+    assert current
+    # Instrument the child's acquisition attempt so the parent observes actual lock contention.
+    rotate = """
+import fcntl, sys
+from pathlib import Path
+from cerebro.adapters.outbound.crypto.owner import OwnerCredentials
+
+flock = fcntl.flock
+def acquire(fd, mode):
+    try:
+        flock(fd, mode | fcntl.LOCK_NB)
+    except BlockingIOError:
+        print("contended", flush=True)
+        flock(fd, mode)
+    else:
+        print("acquired", flush=True)
+fcntl.flock = acquire
+OwnerCredentials(Path(sys.argv[1])).provision(b"second")
+"""
+    with subprocess.Popen(
+        [sys.executable, "-c", "import sys; sys.stdin.readline()\n" + rotate, str(path)],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        text=True,
+    ) as child:
+        assert child.stdin
+        assert child.stdout
+        try:
+            with verifier.issuing(current) as valid:
+                assert valid
+                child.stdin.write("\n")
+                child.stdin.flush()
+                assert select.select([child.stdout], [], [], 10)[0]
+                assert child.stdout.readline().strip() == "contended"
+                assert verifier.generation() == current
+            assert child.wait(timeout=10) == 0
+        finally:
+            child.kill()
+    assert verifier.verify(b"second") == verifier.generation()
+    assert verifier.generation() != current

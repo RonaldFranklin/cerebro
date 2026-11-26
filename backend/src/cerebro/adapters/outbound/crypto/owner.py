@@ -7,7 +7,7 @@ import os
 import secrets
 import stat
 from collections.abc import Iterator
-from contextlib import contextmanager, suppress
+from contextlib import ExitStack, contextmanager, suppress
 from pathlib import Path
 
 from cerebro.application.errors import PasswordDurabilityError
@@ -39,13 +39,13 @@ def _directory(path: Path) -> Iterator[int]:
 
 
 @contextmanager
-def _hash_slot(directory: int, name: str, *, wait: bool) -> Iterator[None]:
+def _verifier_lock(directory: int, name: str, mode: int) -> Iterator[None]:
     # This inode is permanent across verifier replacements and process restarts.
     flags = os.O_NOFOLLOW | os.O_CREAT | os.O_RDWR | os.O_NONBLOCK
     fd = os.open(name + ".lock", flags, mode=0o600, dir_fd=directory)
     try:
         _check_owner(fd)
-        fcntl.flock(fd, fcntl.LOCK_EX if wait else fcntl.LOCK_EX | fcntl.LOCK_NB)
+        fcntl.flock(fd, mode)
         yield
     finally:
         os.close(fd)
@@ -89,7 +89,7 @@ class OwnerCredentials:
     def provision(self, password: bytes) -> None:
         if not 1 <= len(password) <= _MAX_PASSWORD:
             raise ValueError("Invalid password size")
-        with _directory(self._path.parent) as directory, _hash_slot(directory, self._path.name, wait=True):
+        with _directory(self._path.parent) as directory, _verifier_lock(directory, self._path.name, fcntl.LOCK_EX):
             generation = secrets.token_bytes(16)
             salt = secrets.token_bytes(16)
             _replace(directory, self._path.name, _PREFIX + generation + salt + _derive(password, salt))
@@ -98,7 +98,10 @@ class OwnerCredentials:
         if not 1 <= len(password) <= _MAX_PASSWORD:
             return None
         try:
-            with _directory(self._path.parent) as directory, _hash_slot(directory, self._path.name, wait=False):
+            with (
+                _directory(self._path.parent) as directory,
+                _verifier_lock(directory, self._path.name, fcntl.LOCK_EX | fcntl.LOCK_NB),
+            ):
                 generation, salt, expected = _snapshot(directory, self._path.name)
                 return generation if hmac.compare_digest(_derive(password, salt), expected) else None
         except OSError, ValueError:
@@ -111,3 +114,16 @@ class OwnerCredentials:
                 return generation
         except OSError, ValueError:
             return None
+
+    @contextmanager
+    def issuing(self, generation: str) -> Iterator[bool]:
+        """Hold the checked generation stable until the new session has been inserted."""
+        with ExitStack() as stack:
+            try:
+                directory = stack.enter_context(_directory(self._path.parent))
+                stack.enter_context(_verifier_lock(directory, self._path.name, fcntl.LOCK_SH | fcntl.LOCK_NB))
+                current, _, _ = _snapshot(directory, self._path.name)
+                matches = current == generation
+            except OSError, ValueError:
+                matches = False
+            yield matches

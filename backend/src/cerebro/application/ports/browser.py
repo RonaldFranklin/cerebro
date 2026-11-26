@@ -16,6 +16,10 @@ class Credentials(Protocol):
         """Return the generation of the verified snapshot."""
         ...
 
+    def issuing(self, generation: str) -> AbstractContextManager[bool]:
+        """Check the generation and exclude rotation until session insertion finishes."""
+        ...
+
     def generation(self) -> str | None:
         """Read the current generation, including changes outside the service."""
         ...

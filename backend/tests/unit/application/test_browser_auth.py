@@ -123,3 +123,29 @@ def test_local_provision_rejects_invalid_password_before_rotation() -> None:
         with pytest.raises(ValueError, match="password size"):
             provision.execute(invalid)
     assert credentials.verify(b"valid") == generation
+
+
+def test_insertion_occurs_inside_the_verifier_generation_guard() -> None:
+    from collections.abc import Iterator
+    from contextlib import contextmanager
+
+    flags = []
+
+    class RecordingCredentials(FakeOwnerCredentials):
+        @contextmanager
+        def issuing(self, generation: str) -> Iterator[bool]:
+            flags.append("guard")
+            try:
+                yield self.generation() == generation
+            finally:
+                flags.pop()
+
+    class GuardedIds(SequentialIdGenerator):
+        def new_token_secret(self) -> str:
+            assert flags == ["guard"]
+            return super().new_token_secret()
+
+    credentials = RecordingCredentials()
+    credentials.provision(b"fixture")
+    auth = BrowserAuth(credentials, FakeLoginAttempts(), FakeSessions(), FixedClock(), GuardedIds())
+    assert auth.login(PRIVATE, b"fixture")
