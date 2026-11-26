@@ -4,7 +4,8 @@
   authority over core and P0 notes is amended by [ADR-0022](0022-core-scope.md); its preservation of legacy
   tokens, proposal rows, state upgrades and Inbox-era attribution is superseded by
   [ADR-0023](0023-no-legacy-compatibility.md); its replay fingerprint is replaced by
-  [ADR-0024](0024-create-replay-from-git.md)
+  [ADR-0024](0024-create-replay-from-git.md). Server failures and invalid committed files are covered by
+  [ADR-0026](0026-invalid-committed-notes.md).
 - **Date:** 2026-11-26
 
 ## Context
