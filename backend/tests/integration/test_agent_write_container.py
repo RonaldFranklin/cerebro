@@ -59,19 +59,18 @@ def test_committed_create_survives_failed_index_update_and_lost_response(
 
     with monkeypatch.context() as patch:
         patch.setattr(service.search, "upsert", interrupted)
-        receipt = service.use_cases.agent_write.execute(create(), ctx)
-    assert service.notes.head() == receipt.revision
+        created = service.use_cases.agent_write.execute(create(), ctx)
+    assert service.notes.head() == created.revision
     assert index_is_stale(service.notes, service.search, service.graph)
 
-    # A subsequent successful writer must not mark the partially updated indexes fresh.
+    # A replay while the index is stale answers from the commit history (find_create), not the index; the writer
+    # rebuilds the indexes under the lock first and commits nothing new.
+    assert service.use_cases.agent_write.execute(create(), ctx).revision == created.revision
+    assert service.notes.head() == created.revision
+    assert not index_is_stale(service.notes, service.search, service.graph)
     later = service.use_cases.agent_write.execute(replace(create(), request_id="fixture-2"), ctx)
-    assert later.revision != receipt.revision
-    assert index_is_stale(service.notes, service.search, service.graph)
-    recovered = build_container(sample.settings)
-    assert recovered.start()
-    assert not index_is_stale(recovered.notes, recovered.search, recovered.graph)
-    assert recovered.use_cases.agent_write.execute(create(), ctx).revision == receipt.revision
-    assert recovered.notes.head() == later.revision
+    assert later.revision != created.revision
+    assert not index_is_stale(service.notes, service.search, service.graph)
 
 
 def test_two_service_instances_only_commit_one_update_from_the_same_base(tmp_path: Path) -> None:

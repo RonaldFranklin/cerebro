@@ -1,4 +1,4 @@
-"""Agent write requests, receipts and bounded feedback suitable for presentation to the caller."""
+"""Agent write requests, results and bounded feedback suitable for presentation to the caller."""
 
 from dataclasses import dataclass
 

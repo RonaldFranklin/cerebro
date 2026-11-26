@@ -6,9 +6,11 @@ import pytest
 
 from cerebro.application.agent_write import AgentWriteRequest, WriteRejected
 from cerebro.application.errors import PermissionDenied
+from cerebro.application.index_state import index_is_stale
 from cerebro.application.ports.notes import NoteChange
+from cerebro.application.ports.search import SearchQuery
 from cerebro.application.use_cases.agent_write import AgentWrite
-from cerebro.domain.access import Scope
+from cerebro.domain.access import AccessContext, Scope
 from cerebro.domain.content_hash import content_hash
 from cerebro.domain.enums import Priority, Sensitivity
 from cerebro.domain.frontmatter import note_to_raw
@@ -345,3 +347,41 @@ def test_create_replay_is_refused_once_the_stored_note_became_core() -> None:
     kit.world.notes.apply([NoteChange(note=promoted, expected_hash=content_hash(note))], MESSAGE)
     with pytest.raises(WriteRejected, match="core_scope_required"):
         write.execute(request(), ctx)
+
+
+@pytest.mark.parametrize("change", [{"sensitivity": "restricted"}, {"status": "archived"}])
+def test_a_failed_commit_leaves_the_indexes_untouched_and_fresh(change: dict[str, str]) -> None:
+    kit = Kit()
+    w = kit.world
+    ctx = replace(agent_ctx(Sensitivity.RESTRICTED, frozenset({Scope.WRITE})), token_id="token-one")
+    created = writer(kit).execute(request(), ctx)
+    indexed = w.search.search(_query(ctx))
+    w.notes.apply_error = OSError("synthetic write failure")
+    with pytest.raises(OSError, match="synthetic"):
+        writer(kit).execute(update_of(created.note_id.value, kit, **change), ctx)
+    assert w.notes.head() == created.revision
+    assert not index_is_stale(w.notes, w.search, w.graph)
+    assert w.search.search(_query(ctx)) == indexed
+
+
+@pytest.mark.parametrize("method", ["upsert", "set_revision"])
+def test_a_failed_index_update_after_the_commit_is_flagged_not_raised(method: str) -> None:
+    kit = Kit()
+    w = kit.world
+    ctx = replace(agent_ctx(Sensitivity.RESTRICTED, frozenset({Scope.WRITE})), token_id="token-one")
+
+    def boom(*args: object) -> None:
+        raise OSError("synthetic index failure")
+
+    setattr(w.graph, method, boom)
+    created = writer(kit).execute(request(), ctx)
+    assert w.notes.head() == created.revision
+    assert index_is_stale(w.notes, w.search, w.graph)
+    # A replay reads the commit history, not the stale index.
+    replay = writer(kit).execute(request(), ctx)
+    assert (replay.note_id, replay.revision) == (created.note_id, created.revision)
+    assert w.notes.head() == created.revision
+
+
+def _query(ctx: AccessContext) -> SearchQuery:
+    return SearchQuery(ceiling=ctx.ceiling, text="Direct write")

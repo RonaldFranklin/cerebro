@@ -15,6 +15,8 @@ class InMemoryNoteRepository:
         self._notes: dict[NoteId, Note] = {}
         self.commits: list[tuple[str, OwnerCommit | AgentWriteCommit, tuple[NoteId, ...]]] = []
         self._creates: dict[str, CommittedCreate] = {}
+        self.apply_error: Exception | None = None
+        """Raised by the next ``apply`` before it writes anything, like the real ``NoteWriteError``."""
 
     def get(self, note_id: NoteId) -> Note | None:
         return self._notes.get(note_id)
@@ -36,6 +38,9 @@ class InMemoryNoteRepository:
     def apply(self, changes: Sequence[NoteChange], message: OwnerCommit | AgentWriteCommit) -> str:
         if isinstance(message, AgentWriteCommit):
             check_agent_commit(changes, message)
+        if self.apply_error is not None:
+            error, self.apply_error = self.apply_error, None
+            raise error
         if not changes:
             raise InvalidValueError("changes", "at least one change is required")
         ids = [c.note.id for c in changes]
