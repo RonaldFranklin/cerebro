@@ -12,6 +12,9 @@ import "./app.css";
 
 const GraphScreen = lazy(() => import("./GraphScreen"));
 
+const EditorScreen = lazy(() => import("./Editor").then(module => ({default: module.EditorScreen})));
+const InboxScreen = lazy(() => import("./Inbox").then(module => ({default: module.InboxScreen})));
+
 function Status({children, action, label}: {children: ReactNode; action?: () => void; label?: string}) {
   return <main className="session-status"><h1>Cérebro</h1><p role="status">{children}</p>
     {action && <button type="button" onClick={action}>{label}</button>}</main>;
@@ -77,12 +80,16 @@ function App() {
       return <QueryClientProvider key={state.generation} client={state.queries}>
         {state.checking && <Status>Checking session…</Status>}
         <div hidden={state.checking}><Shell path={home ? "/" : path} ceiling={state.session.ceiling} onNavigate={navigate} onLogout={manager.signOut}>
-          {home ? <Home api={state.api}/> :
+          {denied ? <section className="pending-view"><h1>{title}</h1><p>This view requires the private listener.</p>
+            <a href="/">Back to overview</a></section> : home ? <Home api={state.api}/> :
+            path === "/inbox" ? <Suspense fallback={<p role="status">Loading Inbox…</p>}><InboxScreen api={state.api}/></Suspense> :
+            path.startsWith("/editor/") ? <Suspense fallback={<p role="status">Loading editor…</p>}><EditorScreen
+              key={path} api={state.api} id={path.slice("/editor/".length)}/></Suspense> :
             path === "/graph" ? <Suspense fallback={<p role="status">Loading graph…</p>}><GraphScreen api={state.api}/></Suspense> :
             path === "/search" ? <SearchScreen api={state.api}/> :
             path.startsWith("/notes/") ? <ReaderScreen api={state.api} id={path.slice("/notes/".length)}
               history={url.searchParams.get("history") === "true"} section={url.searchParams.get("section")}/> : <section className="pending-view"><h1>{title}</h1>
-            <p>{denied ? "This view requires the private listener." : "This view is not yet available."}</p>
+            <p>This view is not yet available.</p>
             <a href="/">Back to overview</a></section>}
         </Shell></div>
       </QueryClientProvider>;

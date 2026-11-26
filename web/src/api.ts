@@ -12,8 +12,14 @@ export interface Overview {
   hubs: { id: string; title: string; summary: string }[];
 }
 
+export interface ValidationReport {
+  ok: boolean;
+  violations: {code: string; field: string | null; severity: string; line: number | null}[];
+}
+export interface WriteWarning {code: string; message: string}
+
 export class ApiError extends Error {
-  constructor(readonly status: number) {
+  constructor(readonly status: number, readonly validation?: ValidationReport) {
     super("The request could not be completed.");
   }
 }
@@ -26,7 +32,17 @@ async function request<T>(path: string, options: RequestInit): Promise<T> {
   const response = await fetch(path, {
     ...options, credentials: "same-origin", mode: "same-origin", cache: "no-store", redirect: "error",
   });
-  if (!response.ok) throw new ApiError(response.status);
+  if (!response.ok) {
+    if (response.status === 422 && (options.method === "PUT" || options.method === "POST")) {
+      const payload = await response.json().catch(() => null);
+      const report = payload?.validation;
+      if (typeof report?.ok === "boolean" && Array.isArray(report.violations) &&
+        report.violations.every((v: Partial<ValidationReport["violations"][number]> | null) => v && typeof v.code === "string" &&
+          typeof v.severity === "string" && (v.field === null || typeof v.field === "string") &&
+          (v.line === null || Number.isInteger(v.line)))) throw new ApiError(response.status, report);
+    }
+    throw new ApiError(response.status);
+  }
   return response.status === 204 ? undefined as T : await response.json() as T;
 }
 

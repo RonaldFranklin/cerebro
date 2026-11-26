@@ -57,6 +57,7 @@ function Document({ note, history, outlineBody, outlineStatus, visibleIds }: {
       <div className="reader-class"><span translate="no">{note.type}</span><span translate="no">{note.priority}</span></div>
       <h1><TechnicalText text={note.title} visibleIds={visibleIds}/></h1>
       <p><TechnicalText text={note.summary} visibleIds={visibleIds}/></p>
+      {note.content_hash && !note.section && <a className="edit-note-link" href={`/editor/${encodeURIComponent(note.id)}${history ? "?history=true" : ""}`}>Edit note</a>}
     </header>
     <div className="reader-columns">
       <div className="reader-document">
