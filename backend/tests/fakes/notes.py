@@ -2,7 +2,7 @@
 
 from collections.abc import Sequence
 
-from cerebro.application.ports.notes import CreateReceipt, NoteChange, check_agent_commit
+from cerebro.application.ports.notes import CommittedCreate, NoteChange, check_agent_commit
 from cerebro.domain.commit_message import AgentWriteCommit, OwnerCommit
 from cerebro.domain.content_hash import content_hash, is_content_hash
 from cerebro.domain.errors import ContentConflict, InvalidValueError
@@ -14,6 +14,7 @@ class InMemoryNoteRepository:
     def __init__(self) -> None:
         self._notes: dict[NoteId, Note] = {}
         self.commits: list[tuple[str, OwnerCommit | AgentWriteCommit, tuple[NoteId, ...]]] = []
+        self._creates: dict[str, CommittedCreate] = {}
         self.apply_error: Exception | None = None
         """Raised by the next ``apply`` before it writes anything, like the real ``NoteWriteError``."""
 
@@ -29,14 +30,10 @@ class InMemoryNoteRepository:
     def head(self) -> str | None:
         return self.commits[-1][0] if self.commits else None
 
-    def find_create(self, request_key: str) -> CreateReceipt | None:
+    def find_create(self, request_key: str) -> CommittedCreate | None:
         if not is_content_hash(request_key):
             raise InvalidValueError("request_key", "expected a SHA-256 digest")
-        for revision, message, _ in self.commits:
-            if isinstance(message, AgentWriteCommit) and message.request_key == request_key:
-                assert message.fingerprint is not None
-                return CreateReceipt(note_id=message.note_id, revision=revision, fingerprint=message.fingerprint)
-        return None
+        return self._creates.get(request_key)
 
     def apply(self, changes: Sequence[NoteChange], message: OwnerCommit | AgentWriteCommit) -> str:
         if isinstance(message, AgentWriteCommit):
@@ -62,4 +59,6 @@ class InMemoryNoteRepository:
             self._notes[change.note.id] = change.note
         revision = f"rev-{len(self.commits) + 1:04d}"
         self.commits.append((revision, message, tuple(ids)))
+        if isinstance(message, AgentWriteCommit) and message.request_key is not None:
+            self._creates[message.request_key] = CommittedCreate(revision=revision, note=changes[0].note)
         return revision

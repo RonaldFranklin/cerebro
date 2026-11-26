@@ -28,11 +28,15 @@ def test_search_and_read_as_local_owner(config: str) -> None:
     assert RESTRICTED_MARKER in json.loads(result.stdout)["body"]
     hub = invoke("--config", config, "read", "infrastructure")
     assert "vault-layout" in {m["id"] for m in json.loads(hub.stdout)["members"]}
-    for reference in ("old-proxy", "absent"):
-        result = invoke("--config", config, "read", reference)
-        assert result.returncode == 1
-        assert result.stderr == "cerebro: note not found\n"
-    assert invoke("--config", config, "read", "old-proxy", "--include-history").returncode == 0
+    assert "old-proxy" not in {m["id"] for m in json.loads(hub.stdout)["members"]}
+    hub = invoke("--config", config, "read", "infrastructure", "--include-history")
+    assert "old-proxy" in {m["id"] for m in json.loads(hub.stdout)["members"]}
+    result = invoke("--config", config, "read", "absent")
+    assert result.returncode == 1
+    assert result.stderr == "cerebro: note not found\n"
+    old = invoke("--config", config, "read", "old-proxy")
+    assert old.returncode == 0, old.stderr
+    assert json.loads(old.stdout)["status"] == "superseded"
 
 
 def test_reindex_and_health(config: str) -> None:

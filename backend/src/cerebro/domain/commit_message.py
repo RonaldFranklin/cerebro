@@ -58,16 +58,13 @@ class AgentWriteCommit:
     note_id: NoteId
     written_by: str
     request_key: str | None = None
-    fingerprint: str | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.note_id, NoteId):
             raise InvalidValueError("note_id", "expected a note id")
         validate_agent_name(self.written_by)
-        if self.request_key is None and self.fingerprint is None:
-            return
-        if not is_content_hash(self.request_key) or not is_content_hash(self.fingerprint):
-            raise InvalidValueError("request", "a create requires two SHA-256 digests")
+        if self.request_key is not None and not is_content_hash(self.request_key):
+            raise InvalidValueError("request_key", "a create request key must be a SHA-256 digest")
 
     @property
     def subject(self) -> str:

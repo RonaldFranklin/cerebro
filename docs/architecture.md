@@ -131,7 +131,9 @@ Ports are `typing.Protocol` classes in `cerebro.application.ports`. Each one has
 - `GetGraph` — full graph (nodes + edges + attributes) for the UI, filtered by ceiling.
 
 All read use cases take `execute(request, ctx)`, require the `read` scope (`PermissionDenied` otherwise, checked
-first) and apply `ctx.ceiling` (`include_history` only adds `superseded`/`archived`). A hidden note, a missing note
+first) and apply `ctx.ceiling` (`include_history` only adds `superseded`/`archived`; `ReadNote` always serves them
+by id, with their status, so history found in search or through a link can be read and links to it stay
+complete). A hidden note, a missing note
 and a hidden neighbors center all raise the same `NoteNotFound`; search results, hub member lists, neighbors and
 the graph contain visible notes only and carry no totals, so nothing reveals a hidden note. `GetOverview` serves
 current P0 notes in id order within the 1,500-word core budget (`core_truncated` when some do not fit) plus the

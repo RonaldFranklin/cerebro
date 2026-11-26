@@ -12,7 +12,7 @@ from cerebro.application.dto import (
 )
 from cerebro.application.errors import NoteNotFound, PermissionDenied, SectionNotFound
 from cerebro.application.use_cases import GetGraph, GetNeighbors, GetOverview, ReadNote, SearchNotes
-from cerebro.domain.access import Scope
+from cerebro.domain.access import AccessCeiling, Scope
 from cerebro.domain.enums import Priority, Sensitivity, Status
 from cerebro.domain.errors import InvalidValueError
 from cerebro.domain.links import REDACTED_LINK, LinkKind
@@ -191,17 +191,30 @@ class TestReadNote:
 
     @pytest.mark.parametrize("field", ["body", "title", "summary", "related", "hub", "superseded_by"])
     def test_filtered_field_withholds_base_hash(self, field: str, world: World) -> None:
-        target = NID("old-proxy")
+        target = NID("vault-layout")  # restricted: above the writer's internal ceiling
         value: object = (target,) if field == "related" else target
         if field in {"title", "summary", "body"}:
-            value = "Legacy text mentioning `[[old-proxy|alias]]`."
+            value = "Legacy text mentioning `[[vault-layout|alias]]`."
         note = world.add(id=NID("legacy-note"), **{field: value})
         read = ReadNote(world.notes, world.graph)
         writer = replace(ctx(scopes=frozenset({Scope.READ, Scope.WRITE})), token_id="writer")
         request = ReadNoteRequest(note_id=note.id)
         assert read.execute(request, writer).base_hash is None
-        full = read.execute(replace(request, include_history=True), writer)
+        assert read.execute(replace(request, include_history=True), writer).base_hash is None
+        full = read.execute(request, replace(writer, ceiling=AccessCeiling(RESTRICTED)))
         assert full.base_hash == full.content_hash
+
+    @pytest.mark.parametrize("field", ["body", "related", "superseded_by"])
+    def test_references_to_readable_history_keep_the_base_hash(self, field: str, world: World) -> None:
+        target = NID("old-proxy")  # superseded, internal
+        value: object = (target,) if field == "related" else target
+        if field == "body":
+            value = "Replaces [[old-proxy#Setup|the old proxy]].\n"
+        note = world.add(id=NID("successor-note"), **{field: value})
+        writer = replace(ctx(scopes=frozenset({Scope.READ, Scope.WRITE})), token_id="writer")
+        view = ReadNote(world.notes, world.graph).execute(ReadNoteRequest(note_id=note.id), writer)
+        assert view.base_hash == view.content_hash == view.visible_content_hash
+        assert getattr(view, field) == getattr(note, field)
 
     def test_reads_a_note(self, world: World) -> None:
         view = ReadNote(world.notes, world.graph).execute(ReadNoteRequest(note_id=NID("server-ssh-access")), ctx())
@@ -273,13 +286,22 @@ class TestReadNote:
                 ReadNoteRequest(note_id=NID("vault-layout"), section="Whatever"), ctx(INTERNAL)
             )
 
-    def test_history_is_hidden_unless_asked(self, world: World) -> None:
+    @pytest.mark.parametrize("include_history", [False, True])
+    def test_history_is_readable_by_id_with_its_status(self, world: World, include_history: bool) -> None:
+        request = ReadNoteRequest(note_id=NID("old-proxy"), include_history=include_history)
+        view = ReadNote(world.notes, world.graph).execute(request, ctx())
+        assert view.id == NID("old-proxy")
+        assert not view.status.is_current
+
+    def test_hidden_history_fails_like_a_missing_note(self, world: World) -> None:
+        world.add(id=NID("old-vault"), sensitivity=RESTRICTED, status=Status.ARCHIVED, priority=Priority.P3)
         read = ReadNote(world.notes, world.graph)
-        with pytest.raises(NoteNotFound):
-            read.execute(ReadNoteRequest(note_id=NID("old-proxy")), ctx())
-        assert read.execute(ReadNoteRequest(note_id=NID("old-proxy"), include_history=True), ctx()).id == NID(
-            "old-proxy"
-        )
+        messages = []
+        for note_id in ("old-vault", "old-vaultx"):
+            with pytest.raises(NoteNotFound) as error:
+                read.execute(ReadNoteRequest(note_id=NID(note_id)), ctx(INTERNAL))
+            messages.append(str(error.value).replace(note_id, "X"))
+        assert messages[0] == messages[1]
 
     def test_include_history_does_not_raise_the_ceiling(self, world: World) -> None:
         with pytest.raises(NoteNotFound):
@@ -529,14 +551,12 @@ class TestWikilinkRedaction:
         view = ReadNote(w.notes, w.graph).execute(request, ctx(INTERNAL, owner=True))
         assert "vault-layout" not in repr(view)
 
-    def test_history_targets_are_redacted_unless_history_is_requested(self) -> None:
+    def test_history_targets_within_the_ceiling_are_not_redacted(self) -> None:
         w = standard_world()
-        w.add(id=NID("pointer"), hub=NID("infrastructure"), body="Was [[old-proxy]].\n")
-        read = ReadNote(w.notes, w.graph)
-        plain = read.execute(ReadNoteRequest(note_id=NID("pointer")), ctx(INTERNAL))
-        assert plain.body == f"Was {REDACTED_LINK}.\n"
-        with_history = read.execute(ReadNoteRequest(note_id=NID("pointer"), include_history=True), ctx(INTERNAL))
-        assert with_history.body == "Was [[old-proxy]].\n"
+        w.add(id=NID("old-vault"), sensitivity=RESTRICTED, status=Status.ARCHIVED, priority=Priority.P3)
+        w.add(id=NID("pointer"), hub=NID("infrastructure"), body="Was [[old-proxy]], not [[old-vault]].\n")
+        view = ReadNote(w.notes, w.graph).execute(ReadNoteRequest(note_id=NID("pointer")), ctx(INTERNAL))
+        assert view.body == f"Was [[old-proxy]], not {REDACTED_LINK}.\n"
 
     def test_non_ids_and_ordinary_text_are_left_alone(self) -> None:
         w = standard_world()
@@ -576,6 +596,18 @@ class TestWikilinkRedaction:
         assert "server-ssh-access" not in repr(public)
         internal = GetOverview(w.notes, w.search).execute(GetOverviewRequest(), ctx(INTERNAL))
         assert "[[server-ssh-access]]" in internal.core[0].body
+
+    def test_the_overview_keeps_links_to_readable_history_but_serves_only_current_core(self) -> None:
+        w = standard_world()
+        w.add(id=NID("old-vault"), sensitivity=RESTRICTED, status=Status.ARCHIVED, priority=Priority.P3)
+        w.add(id=NID("core-old"), type=CORE, priority=Priority.P0, hub=None, status=Status.ARCHIVED)
+        w.add(
+            id=NID("core-links"), type=CORE, priority=Priority.P0, hub=None, body="See [[old-proxy]] [[old-vault]].\n"
+        )
+        overview = GetOverview(w.notes, w.search).execute(GetOverviewRequest(), ctx(INTERNAL))
+        bodies = {note.id.value: note.body for note in overview.core}
+        assert "core-old" not in bodies
+        assert bodies["core-links"] == f"See [[old-proxy]] {REDACTED_LINK}.\n"
 
     def test_the_marker_is_not_a_valid_note_id(self) -> None:
         from cerebro.domain.links import extract_wikilinks

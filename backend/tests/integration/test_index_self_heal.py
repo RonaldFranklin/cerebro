@@ -4,6 +4,7 @@ A note is narrowed (raised to restricted, or archived) while an index update fai
 rebuilds before it answers, or fails; it never returns the note's title or summary to a narrower caller.
 """
 
+import contextlib
 from collections.abc import Callable, Sequence
 from dataclasses import replace
 from pathlib import Path
@@ -19,8 +20,10 @@ from cerebro.application.dto import (
     GetOverviewRequest,
     IssueAgentTokenRequest,
     OwnerEditNoteRequest,
+    ReadNoteRequest,
     SearchNotesRequest,
 )
+from cerebro.application.errors import NoteNotFound
 from cerebro.application.index_state import index_is_stale
 from cerebro.application.ports.notes import NoteChange
 from cerebro.bootstrap.container import Container, build_container
@@ -96,7 +99,26 @@ class Service:
             any(hit.note.id == self.note_id for hit in found)
             or any(node.id == self.note_id for node in graph)
             or MARKER in overview
+            or self.note_id in self.hub_members(include_history=False)
         )
+
+    def hub_members(self, *, include_history: bool) -> list[NoteId]:
+        """Hub members come from the graph index's backlinks."""
+        hub = self.container.use_cases.read_note.execute(
+            ReadNoteRequest(note_id=HUB_ID, include_history=include_history), self.reader
+        )
+        return [member.id for member in hub.members or ()]
+
+    def history_view(self) -> set[Status]:
+        """Statuses under which the reader finds the note when it asks for history (search, read, hub)."""
+        uc = self.container.use_cases
+        found = uc.search_notes.execute(SearchNotesRequest(text=MARKER, include_history=True), self.reader).results
+        statuses = {hit.note.status for hit in found if hit.note.id == self.note_id}
+        with contextlib.suppress(NoteNotFound):
+            statuses.add(uc.read_note.execute(ReadNoteRequest(note_id=self.note_id), self.reader).status)
+        if self.note_id in self.hub_members(include_history=True):
+            statuses.add(self.note().status)
+        return statuses
 
     def stale(self) -> bool:
         c = self.container
@@ -139,6 +161,8 @@ def test_a_failed_index_update_never_serves_the_wider_projection(
     assert service.stale()
     assert not service.visible_to_reader()
     assert not service.stale()
+    # History reads: an archived note stays readable as archived, a restricted one is gone.
+    assert service.history_view() == ({Status.ARCHIVED} if narrowing == "archived" else set())
 
 
 def test_reads_fail_rather_than_serve_stale_rows_when_the_rebuild_fails(
