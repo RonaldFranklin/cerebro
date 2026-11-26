@@ -506,16 +506,16 @@ def test_commit_with_paths_records_only_those_paths(tmp_path: Path) -> None:
     write(root, "a.md")
     write(root, "unrelated.txt")
     repo.stage(["a.md", "unrelated.txt"])
-    assert repo.has_staged_changes()
+    assert repo.staged_paths() == ("a.md", "unrelated.txt")
     repo.commit("only a", ["a.md"])
     assert raw_git(root, "show", "--name-only", "--format=", "HEAD").split() == ["a.md"]
-    assert repo.has_staged_changes()  # unrelated.txt is still staged, not committed
+    assert repo.staged_paths() == ("unrelated.txt",)  # unrelated.txt is still staged, not committed
 
 
 def test_matches_head_tracks_content_and_deletion(tmp_path: Path) -> None:
     repo = make_repo(tmp_path)
     root = tmp_path / "repo"
-    assert not repo.has_staged_changes()
+    assert repo.staged_paths() == ()
     assert not repo.matches_head("a.md")
     write(root, "a.md")
     repo.stage(["a.md"])
@@ -529,3 +529,28 @@ def test_matches_head_tracks_content_and_deletion(tmp_path: Path) -> None:
     assert not repo.matches_head("b.md")
     with pytest.raises(GitError):
         repo.commit("empty", [])
+
+
+def test_uncommitted_paths_lists_every_kind_of_change_under_note_folders(tmp_path: Path) -> None:
+    repo = make_repo(tmp_path)
+    root = tmp_path / "repo"
+    for name in ("notes/edited.md", "notes/deleted.md", "notes/staged.md", "core/clean.md", "other.md"):
+        write(root, name)
+    repo.stage(["notes/edited.md", "notes/deleted.md", "notes/staged.md", "core/clean.md", "other.md"])
+    repo.commit("add")
+    write(root, "notes/edited.md", "changed\n")
+    (root / "notes/deleted.md").unlink()
+    write(root, "notes/staged.md", "staged\n")
+    repo.stage(["notes/staged.md"])
+    write(root, "hubs/new.md")
+    write(root, "other.md", "changed\n")
+    assert repo.uncommitted_paths(["core", "hubs", "notes"]) == (
+        "hubs/new.md",
+        "notes/deleted.md",
+        "notes/edited.md",
+        "notes/staged.md",
+    )
+    assert repo.uncommitted_paths(["core/clean.md"]) == ()
+    for bad in ([], ["other.md"], ["notes/../other.md"], ["-notes"], ["."]):
+        with pytest.raises(GitError):
+            repo.uncommitted_paths(bad)

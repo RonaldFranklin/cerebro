@@ -12,7 +12,9 @@ from pathlib import Path
 import pytest
 
 from cerebro.adapters.outbound.crypto import FernetCipher, load_keys
-from cerebro.adapters.outbound.filesystem import FilesystemNoteRepository, NoteWriteError
+from cerebro.adapters.outbound.filesystem import FilesystemNoteRepository, NoteFileError, NoteWriteError
+from cerebro.adapters.outbound.filesystem.codec import render_note
+from cerebro.adapters.outbound.filesystem.repository import UNCOMMITTED_REASON
 from cerebro.application.agent_write import AgentWriteRequest
 from cerebro.application.dto import (
     AuthenticateTokenRequest,
@@ -223,3 +225,28 @@ def test_external_commits_become_visible_without_a_restart(service: Service) -> 
     assert service.container.notes.head() == added
     found = service.container.use_cases.search_notes.execute(SearchNotesRequest(text=MARKER), service.reader)
     assert [hit.note.id for hit in found.results] == [NoteId("added-outside")]
+
+
+def test_an_abandoned_uncommitted_edit_never_reaches_a_rebuilt_index(service: Service) -> None:
+    """The owner starts lowering a restricted note by hand, a commit moves HEAD meanwhile, then the edit is dropped."""
+    note = service.note()
+    service.container.use_cases.owner_edit_note.execute(
+        OwnerEditNoteRequest(note=replace(note, sensitivity=Sensitivity.RESTRICTED), expected_hash=content_hash(note)),
+        OWNER,
+    )
+    assert not service.visible_to_reader()
+    relative = f"notes/{service.note_id.value}.md"
+    (service.sample.root / relative).write_bytes(render_note(note))  # in progress: back to internal, plaintext
+    service.sample.commit_out_of_band(replace(note, id=NoteId("added-outside")))
+    assert service.stale()
+    with pytest.raises(NoteFileError) as refused:
+        service.container.use_cases.search_notes.execute(SearchNotesRequest(text=MARKER), service.reader)
+    assert refused.value.problems == ((relative, UNCOMMITTED_REASON),)
+    with pytest.raises(NoteFileError):
+        service.container.use_cases.read_note.execute(ReadNoteRequest(note_id=service.note_id), service.reader)
+    assert service.stale()  # nothing was recorded as built from HEAD
+
+    service.sample.git().discard_changes(created=[], modified=[relative])  # the owner drops the edit
+    found = service.container.use_cases.search_notes.execute(SearchNotesRequest(text=MARKER), service.reader)
+    assert [hit.note.id for hit in found.results] == [NoteId("added-outside")]
+    assert not service.stale()

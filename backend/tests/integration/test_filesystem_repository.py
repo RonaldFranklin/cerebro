@@ -22,6 +22,7 @@ from cerebro.adapters.outbound.filesystem import (
     safeio,
 )
 from cerebro.adapters.outbound.filesystem import repository as repository_module
+from cerebro.adapters.outbound.filesystem.codec import parse_note_bytes
 from cerebro.adapters.outbound.git import GitError, GitRepo
 from cerebro.application.ports import Cipher, NoteChange, NoteRepository
 from cerebro.application.ports.notes import CommittedCreate
@@ -171,12 +172,16 @@ def test_the_hash_is_stable_across_a_write_and_a_read(repo: FilesystemNoteReposi
     assert content_hash(stored) == content_hash(note)
 
 
-def test_reading_tolerates_a_bom_and_crlf_in_the_frontmatter(repo: FilesystemNoteRepository, root: Path) -> None:
+def test_reading_tolerates_a_bom_and_crlf_in_the_frontmatter(
+    repo: FilesystemNoteRepository, git: GitRepo, root: Path
+) -> None:
     note = plain(body="line\r\nnext\r\n")
     repo.apply([NoteChange(note=note)], MESSAGE)
     path = root / "notes/server-ssh-access.md"
     text = path.read_text(newline="")
     path.write_bytes(b"\xef\xbb\xbf" + text.replace("---\n", "---\r\n", 1).replace("\nupdated", "\r\nupdated").encode())
+    git.stage(["notes/server-ssh-access.md"])
+    git.commit("owner edit")
     assert repo.get(note.id) == note
 
 
@@ -727,8 +732,8 @@ def test_an_uncommitted_edit_of_a_tracked_note_refuses_the_update(
     base, head = committed_base(repo, git)
     path = root / "notes/base-note.md"
     path.write_text(path.read_text() + "hand edit\n")
-    edited = repo.get(base.id)
-    assert edited is not None
+    edited = replace(base, body=base.body + "hand edit\n")
+    assert content_hash(edited) == content_hash(parse_note_bytes(path.read_bytes()))
     change = NoteChange(note=replace(edited, summary=edited.summary + " x"), expected_hash=content_hash(edited))
     with pytest.raises(NoteWriteError, match="uncommitted"):
         repo.apply([change], MESSAGE)
@@ -745,6 +750,150 @@ def test_a_note_deleted_by_hand_and_created_again_is_refused(
         repo.apply([NoteChange(note=replace(base, body="Again.\n"))], MESSAGE)
     assert git.head() == head
     assert not (root / "notes/base-note.md").exists()
+
+
+# -- only committed note content is served ---------------------------------------------------------------------
+
+
+UNCOMMITTED = repository_module.UNCOMMITTED_REASON
+
+
+def test_reads_refuse_every_uncommitted_note_file_and_name_it(
+    repo: FilesystemNoteRepository, git: GitRepo, root: Path
+) -> None:
+    from cerebro.adapters.outbound.filesystem.codec import render_note
+
+    base, _ = committed_base(repo, git)
+    repo.apply([NoteChange(note=plain(id=NoteId("gone-note")))], MESSAGE)
+    repo.apply([NoteChange(note=plain(id=NoteId("staged-note")))], MESSAGE)
+    (root / "notes/base-note.md").write_bytes(render_note(replace(base, title="Edited by hand")))
+    (root / "notes/gone-note.md").unlink()
+    (root / "notes/staged-note.md").write_bytes(render_note(plain(id=NoteId("staged-note"), body="Staged.\n")))
+    git.stage(["notes/staged-note.md"])
+    (root / "notes/orphan-note.md").write_bytes(render_note(plain(id=NoteId("orphan-note"))))
+    with pytest.raises(NoteFileError) as listed:
+        repo.list_notes()
+    assert listed.value.problems == tuple(
+        (f"notes/{name}.md", UNCOMMITTED) for name in ("base-note", "gone-note", "orphan-note", "staged-note")
+    )
+    for name in ("base-note", "orphan-note", "staged-note"):
+        with pytest.raises(NoteFileError) as read:
+            repo.get(NoteId(name))
+        assert read.value.problems == ((f"notes/{name}.md", UNCOMMITTED),)
+    assert repo.get(NoteId("gone-note")) is None
+
+
+def test_an_ignored_note_file_is_refused(repo: FilesystemNoteRepository, git: GitRepo, root: Path) -> None:
+    from cerebro.adapters.outbound.filesystem.codec import render_note
+
+    committed_base(repo, git)
+    (root / ".git/info").mkdir(exist_ok=True)
+    (root / ".git/info/exclude").write_text("hidden-note.md\n")
+    (root / "notes/hidden-note.md").write_bytes(render_note(plain(id=NoteId("hidden-note"))))
+    with pytest.raises(NoteFileError, match="differs from the last commit"):
+        repo.list_notes()
+    with pytest.raises(NoteFileError, match="differs from the last commit"):
+        repo.get(NoteId("hidden-note"))
+
+
+def test_a_note_edited_while_the_listing_reads_it_is_refused(
+    repo: FilesystemNoteRepository, git: GitRepo, root: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from cerebro.adapters.outbound.filesystem.codec import render_note
+
+    base, _ = committed_base(repo, git)
+    real_load = FilesystemNoteRepository._load_all
+
+    def load_then_edit(self: FilesystemNoteRepository) -> tuple[Note, ...]:
+        loaded = real_load(self)
+        (root / "notes/base-note.md").write_bytes(render_note(replace(base, title="Edited meanwhile")))
+        return loaded
+
+    monkeypatch.setattr(FilesystemNoteRepository, "_load_all", load_then_edit)
+    with pytest.raises(NoteFileError) as listed:
+        repo.list_notes()
+    assert listed.value.problems == (("notes/base-note.md", UNCOMMITTED),)
+
+
+def test_a_read_during_an_apply_waits_for_the_commit_instead_of_failing(
+    repo: FilesystemNoteRepository, git: GitRepo, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    base, _ = committed_base(repo, git)
+    edited = replace(base, body="Edited.\n")
+    real_commit = GitRepo.commit
+    seen: list[Note | None] = []
+
+    def commit_while_reading(self: GitRepo, *args: Any, **kwargs: Any) -> str:
+        reader = threading.Thread(target=lambda: seen.append(repo.get(base.id)))
+        reader.start()  # the file is written but not committed: the reader must wait, not fail
+        reader.join(timeout=0.5)
+        assert reader.is_alive()
+        revision = real_commit(self, *args, **kwargs)
+        threads.append(reader)
+        return revision
+
+    threads: list[threading.Thread] = []
+    monkeypatch.setattr(GitRepo, "commit", commit_while_reading)
+    repo.apply([NoteChange(note=edited, expected_hash=content_hash(base))], MESSAGE)
+    threads[0].join(timeout=10)
+    assert seen == [edited]
+
+
+def test_files_the_listing_never_reads_do_not_block_reads(
+    repo: FilesystemNoteRepository, git: GitRepo, root: Path
+) -> None:
+    base, _ = committed_base(repo, git)
+    (root / "README.md").write_text("draft\n")
+    (root / "schema").mkdir(exist_ok=True)
+    (root / "schema/draft.yaml").write_text("draft: true\n")
+    (root / "notes/.base-note.md.0123456789abcdef.tmp").write_text("left by a crash\n")
+    (root / "notes/scratch.txt").write_text("draft\n")
+    assert repo.list_notes() == (base,)
+    assert repo.get(base.id) == base
+
+
+def test_a_note_left_staged_by_an_interrupted_write_names_the_path_and_the_fix(
+    repo: FilesystemNoteRepository, git: GitRepo, root: Path
+) -> None:
+    from cerebro.adapters.outbound.filesystem.codec import render_note
+
+    _, head = committed_base(repo, git)
+    (root / "notes/half-done.md").write_bytes(render_note(plain(id=NoteId("half-done"))))
+    git.stage(["notes/half-done.md"])
+    with pytest.raises(NoteWriteError, match=r"staged changes \('notes/half-done.md'\).*git restore --staged"):
+        repo.apply([NoteChange(note=plain(id=NoteId("other-note")))], MESSAGE)
+    assert git.head() == head
+    assert (root / "notes/half-done.md").exists()  # never discarded automatically
+
+
+def test_a_leftover_index_lock_refuses_the_write_with_a_hint(
+    repo: FilesystemNoteRepository, git: GitRepo, root: Path
+) -> None:
+    _, head = committed_base(repo, git)
+    (root / ".git/index.lock").write_text("")
+    with pytest.raises(NoteWriteError, match=r"stale \.git/index\.lock.*remove that file"):
+        repo.apply([NoteChange(note=plain(id=NoteId("other-note")))], MESSAGE)
+    assert git.head() == head
+    assert (root / ".git/index.lock").exists()
+
+
+def test_a_commit_failing_on_an_index_lock_mentions_it(
+    repo: FilesystemNoteRepository, git: GitRepo, root: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _, head = committed_base(repo, git)
+    real_stage = GitRepo.stage
+
+    def stage_then_lock(self: GitRepo, paths: Any) -> None:
+        real_stage(self, paths)
+        (root / ".git/index.lock").write_text("")  # another git command started meanwhile
+
+    monkeypatch.setattr(GitRepo, "stage", stage_then_lock)
+    with pytest.raises(NoteWriteError, match=r"rollback was incomplete.*\(.*stale \.git/index\.lock"):
+        repo.apply([NoteChange(note=plain(id=NoteId("other-note")))], MESSAGE)
+    assert git.head() == head
+    (root / ".git/index.lock").unlink()
+    with pytest.raises(NoteFileError, match="differs from the last commit"):
+        repo.list_notes()  # the half-written note is refused, never served, until the owner resolves it
 
 
 def test_a_failure_after_the_commit_does_not_roll_back_and_returns_the_revision(
