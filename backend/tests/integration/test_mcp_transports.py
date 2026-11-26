@@ -222,11 +222,21 @@ def test_stdio_sdk_contract_and_offline(tmp_path: Path) -> None:
     assert not result.stderr
 
 
-def test_container_server_selects_only_ipv4_wildcard(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_container_server_selects_only_ipv4_wildcard(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     from cerebro.bootstrap.mcp import _arguments
 
+    marker = tmp_path / "dockerenv"
+    monkeypatch.setattr("cerebro.bootstrap.mcp._DOCKER_MARKER", marker, raising=False)
     monkeypatch.setattr(sys, "argv", [SERVER, "--container"])
-    assert _arguments(stdio=False).host == "0.0.0.0"
+    with pytest.raises(SystemExit):
+        _arguments(stdio=False)
+    marker.touch()
+    monkeypatch.setenv("CEREBRO_PRIVATE_PORT", "8875")
+    options = _arguments(stdio=False)
+    assert (options.host, options.private_port) == ("0.0.0.0", 8875)
+    monkeypatch.setattr(sys, "argv", [SERVER, "--container", "--private-port", "8876"])
+    with pytest.raises(SystemExit):
+        _arguments(stdio=False)
     with pytest.raises(SystemExit):
         _arguments(stdio=True)
     monkeypatch.setattr(sys, "argv", [SERVER, "--host", "127.0.0.1", "--container"])

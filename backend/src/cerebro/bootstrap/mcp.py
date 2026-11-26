@@ -31,6 +31,8 @@ from cerebro.bootstrap.settings import load_settings
 from cerebro.domain.access import AccessCeiling
 from cerebro.domain.enums import Sensitivity
 
+_DOCKER_MARKER = Path("/.dockerenv")
+
 
 def _loopback(value: str) -> str:
     address = ipaddress.ip_address(value)
@@ -86,7 +88,7 @@ def _arguments(*, stdio: bool) -> argparse.Namespace:
             const="0.0.0.0",
             help="bind all IPv4 container interfaces; publish ports on host loopback only",
         )
-    parser.add_argument("--private-port", type=_port, default=8765)
+    parser.add_argument("--private-port", type=_port)
     if not stdio:
         parser.add_argument("--config", type=Path)
         parser.add_argument("--public-port", type=_port, default=8766)
@@ -97,6 +99,18 @@ def _arguments(*, stdio: bool) -> argparse.Namespace:
     if sum(len(os.fsencode(item)) + 1 for item in sys.argv[1:]) > MAX_INPUT_BYTES:
         parser.error("argument limit exceeded")
     options = parser.parse_args()
+    if options.host == "0.0.0.0":
+        if not _DOCKER_MARKER.is_file():
+            parser.error("container mode requires Docker")
+        try:
+            port = _port(os.environ.get("CEREBRO_PRIVATE_PORT", "8765"))
+        except ValueError:
+            parser.error("invalid container port")
+        if options.private_port is not None and options.private_port != port:
+            parser.error("container service and probe ports must match")
+        options.private_port = port
+    elif options.private_port is None:
+        options.private_port = 8765
     if not stdio and options.private_port == options.public_port:
         parser.error("ports must differ")
     if not stdio:

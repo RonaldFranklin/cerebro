@@ -12,10 +12,10 @@ container cannot receive that traffic.
 ## Decision
 
 Only the HTTP server accepts `--container`, which selects `0.0.0.0` inside the container's network namespace.
-Without this flag the HTTP server accepts only numeric loopback addresses. The stdio bridge remains loopback-only.
+The server requires Docker's `/.dockerenv` marker for this flag. Without this flag the HTTP server accepts only numeric loopback addresses. The stdio bridge remains loopback-only.
 
 Never publish a Cérebro listener outside host loopback. Use a dedicated Docker bridge network per environment and
-publish each enabled port as `127.0.0.1:PORT:PORT`. Host networking is incompatible with this mode. Keep the public
+publish each enabled port as `127.0.0.1:PORT:PORT`. The Docker marker identifies the runtime. The operator controls its network namespace and must use the dedicated bridge. Host networking is incompatible with this mode. Keep the public
 listener disabled unless explicitly enabled. The accepting port determines the ceiling. Tailscale Serve terminates
 HTTPS for the private listener as specified in [ADR-0010](0010-network-access.md).
 
