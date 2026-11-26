@@ -219,9 +219,19 @@ Workstation                                    Server (docker compose: cerebro-<
 
 Filesystem repository, operating notes (Phase 2):
 
-- `list_notes`/`list_refs` read the working tree while `head()` reports `HEAD`: the container must keep the content
-  tree clean (`Container` does not check this itself; start-up reindexing does not detect uncommitted edits). `apply` enforces it for writes (it refuses when anything is staged, or when a planned note is untracked,
-  has uncommitted edits, or a new note's path is already known to git) and commits only the planned paths.
+- Only committed note content is served. `get`, `list_notes` and `list_refs` refuse, naming every path, a note file
+  under `core/`, `hubs/` or `notes/` that differs from `HEAD` (staged, edited, deleted, untracked or ignored: an
+  abandoned hand edit, an orphan left by an interrupted create, a note left staged by a crash). An index rebuilt from
+  the working tree can therefore be recorded as built from `HEAD`; while such a file exists, rebuilds, the reads that
+  need one, the health report and agent writes (cross-note validation lists every note) fail. Nothing is discarded
+  automatically: the owner commits the file or runs `git restore --staged --worktree` on it (or deletes a file that
+  was never committed). Other files (`schema/`, `README.md`, dotfiles, non-`.md` files) are not checked.
+  Listings check before and after reading; `get` checks after reading and, when the file looks uncommitted, waits for
+  any running `apply` and checks again. Residual risk: index flags set by hand (`assume-unchanged`, `skip-worktree`)
+  hide a file's edits from git, so never set them on note files.
+- `apply` refuses when a `.git/index.lock` exists (the error tells the owner to remove a stale one), when anything is
+  staged (the paths are named), or when a planned note is untracked, has uncommitted edits, or a new note's path is
+  already known to git, and commits only the planned paths.
 - `get` takes no lock (each file is replaced atomically); whole-tree listings take a shared lock.
 - Replacing an encrypted restricted file by a plaintext file declaring `internal` or `public` cannot be detected by
   the adapter (the file is a valid plaintext note). Protect the working tree and review commits.
