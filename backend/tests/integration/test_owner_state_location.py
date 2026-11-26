@@ -122,7 +122,7 @@ def test_parent_sync_failure_prevents_first_provision(tmp_path: Path, monkeypatc
     assert verifier.verify(b"fixture") is not None
 
 
-@pytest.mark.parametrize("installation", ["source", "wheel", "wheel-linked-module"])
+@pytest.mark.parametrize("installation", ["source", "wheel", "wheel-linked-module", "wheel-shared-src"])
 def test_refuses_explicit_application_worktree_without_gitfile(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, installation: str
 ) -> None:
@@ -133,6 +133,11 @@ def test_refuses_explicit_application_worktree_without_gitfile(
     git_dir = tmp_path / "metadata"
     _git(tmp_path, "init", "--bare", str(git_dir))
     module = checkout / "backend/src/cerebro/bootstrap/browser.py"
+    if installation == "wheel-shared-src":
+        shared = checkout / "shared/src"
+        shared.mkdir(parents=True)
+        (checkout / "backend").mkdir()
+        (checkout / "backend/src").symlink_to("../shared/src", target_is_directory=True)
     module.parent.mkdir(parents=True)
     if installation == "wheel-linked-module":
         original = module.with_name("implementation.py")

@@ -16,7 +16,8 @@ def _repository_directory(path: Path, installed_module: Path) -> bool:
     if source == installed_module or (
         (path / "backend/pyproject.toml").is_file()
         and source.is_file()
-        and source.parent.resolve().is_relative_to(path / "backend")
+        and not (path / "backend").is_symlink()
+        and source.parent.resolve().is_relative_to(path)
     ):
         return True
     # Ordinary and linked worktrees have a .git directory or gitfile. Inspect the destination's
