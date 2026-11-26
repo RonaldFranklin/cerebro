@@ -161,3 +161,36 @@ def test_owner_messages_show_only_safe_texts() -> None:
     withheld = owner_message(RuntimeError("private note text"))
     assert "private note text" not in withheld
     assert "RuntimeError" in withheld
+
+
+def test_separate_index_directory(tmp_path: Path) -> None:
+    from dataclasses import replace
+
+    from cerebro.bootstrap.container import build_container
+    from tests.integration.content_kit import make_sample_repo
+
+    sample = make_sample_repo(tmp_path)
+    file = tmp_path / "example.toml"
+    file.write_text(SAMPLE + 'index_dir = "indexes"\n')
+    explicit = load_settings(file, {})
+    assert explicit.index_dir == tmp_path / "indexes"
+    index = load_settings(file, {"CEREBRO_INDEX_DIR": str(tmp_path / "derived")}).index_dir
+    assert index == tmp_path / "derived"
+    service = build_container(replace(sample.settings, index_dir=index))
+    service.start()
+    assert (index / "index.sqlite").is_file()
+    assert (sample.state_dir / "state.sqlite").is_file()
+    assert not (sample.state_dir / "index.sqlite").exists()
+
+
+def test_content_checkout_cannot_hold_plaintext_index(tmp_path: Path) -> None:
+    from dataclasses import replace
+
+    from cerebro.bootstrap.container import build_container
+    from tests.integration.content_kit import make_sample_repo
+
+    sample = make_sample_repo(tmp_path)
+    location = sample.root / "derived"
+    with pytest.raises(ConfigurationError, match="outside"):
+        build_container(replace(sample.settings, index_dir=location))
+    assert not location.exists()

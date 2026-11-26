@@ -220,7 +220,7 @@ Workstation                                    Server (docker compose: cerebro-<
 | What | Where (configurable) | In git? | Backup |
 |---|---|---|---|
 | Notes | content repo working copy | yes (private repo) | push to private remote |
-| Search/graph index | state dir, `index.sqlite` | no | no — rebuildable |
+| Search/graph index | `index_dir/index.sqlite` (defaults to the state directory) | no | no — rebuildable |
 | Tokens and login and write limits | state dir, `state.sqlite` | no | yes (file backup) |
 | Owner password verifier | `state_dir/owner.verifier` | no | back up separately from SQLite with private permissions |
 | Fernet key | secrets dir | no | owner keeps an offline copy of the key |

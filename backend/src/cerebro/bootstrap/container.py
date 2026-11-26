@@ -100,7 +100,7 @@ from cerebro.application.use_cases import (
 )
 from cerebro.application.use_cases.agent_write import AgentWrite
 from cerebro.application.use_cases.history import OwnerHistory
-from cerebro.bootstrap.browser import owner_credentials
+from cerebro.bootstrap.browser import owner_credentials, private_runtime_directory
 from cerebro.bootstrap.settings import Settings
 from cerebro.domain.access import AccessCeiling, AccessContext
 from cerebro.domain.enums import Sensitivity
@@ -223,8 +223,12 @@ class Container:
 
         self._quarantine = quarantine
         self._git = git
-        self.search: SearchIndex = SqliteSearchIndex(state_dir / INDEX_FILE)
-        self.graph: GraphIndex = SqliteGraphIndex(state_dir / INDEX_FILE)
+        index_dir = state_dir
+        if settings.index_dir is not None:
+            index_dir = private_runtime_directory(settings.index_dir, settings.content_repo, "index")
+            _prepare_state_dir(index_dir)
+        self.search: SearchIndex = SqliteSearchIndex(index_dir / INDEX_FILE)
+        self.graph: GraphIndex = SqliteGraphIndex(index_dir / INDEX_FILE)
         self.tokens: TokenStore = SqliteTokenStore(state_dir / STATE_FILE)
 
         self._rebuild = RebuildIndex(self.notes, self.search, self.graph)
