@@ -122,13 +122,13 @@ produced a scrubbed rejection. The acceptance test observed no state database or
 quota refusal. The [phase report](plans/phase-4.md#5-final-report) records verification and the security
 checkpoint. [Manual real-client checks](https://github.com/RonaldFranklin/cerebro/blob/e7264b869085e156140239e692b2c1a310650674/docs/agent-integration.md#3-propose-in-both-clients-and-approve-locally).
 
-The next delivery sequence is Phase 5 (API and web UI), Phase 7 (direct agent writes), then Phase 6 (deployment).
+Phase 7 retired the Phase 4 operational Inbox. The earlier manual checkpoint remains tied to the archived release.
 Phase 8 remains the later backlog.
 
 ## ✅ Phase 5 — HTTP API and web UI
 
-The owner browser API and web UI are delivered in PRs #56–#66. The private listener supports
-proposal review, revisions and owner edits. Both listeners serve scoped reads, including the
+The owner approved the browser API and web UI delivered in PRs #56–#66. The release supported
+proposal review, revisions and owner edits. Phase 7 replaced the Inbox with Recent changes. Both listeners serve scoped reads, including the
 sanitized reader, search and keyboard-accessible local and global graphs. The private health panel
 reports index checks and safe findings. Installed Chromium tests verified login, isolation, rendering
 under CSP, commit trailers and logout against the synthetic HTTPS service. The owner's manual visual
@@ -145,15 +145,16 @@ and security reviews remain open. [Final report and screenshots](plans/phase-5.m
 **Acceptance:** the owner can browse, read, search, explore the graph, approve proposals and edit notes from
 the browser.
 
-## 🟨 Phase 7 — Direct agent writes
+## ✅ Phase 7 — Direct agent writes
 
 The owner authorized implementation and merges on 2026-11-26. Agents with explicitly issued
 `write` scope create or update notes immediately after deterministic validation, with attributable
 Git commits, optimistic concurrency and per-token limits. The MCP write guide is loaded on demand.
 The private owner UI replaces the Inbox with Recent changes, including links to notes and diffs.
 
-The application, persistence and MCP cutover are implemented and tested. Both transports expose
-the writer and on-demand guide. Owner history and manual acceptance in Claude Code and Codex follow.
+The application, persistence, both MCP transports and the private history screen are implemented.
+The installed SDK and Chromium cover the automated acceptance. The owner can run the
+[Claude Code and Codex walkthrough](agent-integration.md#inspect-the-same-client-writes-in-recent-changes) against the same temporary instance.
 
 **Acceptance:** demonstrate create and update through MCP, safe validation and conflict recovery,
 upgrade without privilege escalation, and an owner inspecting the actor, time, note and diff.

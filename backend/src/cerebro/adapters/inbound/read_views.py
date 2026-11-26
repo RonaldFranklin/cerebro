@@ -54,7 +54,6 @@ def health_view(report: HealthReportResult) -> dict[str, object]:
     return {
         "ok": report.ok,
         "notes_checked": report.notes_checked,
-        "proposals_checked": report.proposals_checked,
         "search_index_checked": report.search_index_checked,
         "issues": [
             {

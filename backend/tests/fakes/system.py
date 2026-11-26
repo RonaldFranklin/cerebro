@@ -26,10 +26,10 @@ class FixedClock:
 
 
 class SequentialIdGenerator:
-    """``proposal-0001``, ``token-0001``, ... and secrets derived from a counter (deterministic, not secure)."""
+    """``edit-0001``, ``token-0001``, ... and secrets derived from a counter (deterministic, not secure)."""
 
     def __init__(self) -> None:
-        self._counters = {"note": 0, "proposal": 0, "token": 0, "secret": 0}
+        self._counters = {"note": 0, "edit": 0, "token": 0, "secret": 0}
 
     def _next(self, kind: str) -> int:
         self._counters[kind] += 1
@@ -38,8 +38,8 @@ class SequentialIdGenerator:
     def new_note_id(self) -> str:
         return f"note-{self._next('note'):04d}"
 
-    def new_proposal_id(self) -> str:
-        return f"proposal-{self._next('proposal'):04d}"
+    def new_edit_id(self) -> str:
+        return f"edit-{self._next('edit'):04d}"
 
     def new_token_id(self) -> str:
         return f"token-{self._next('token'):04d}"

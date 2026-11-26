@@ -8,12 +8,12 @@ from cerebro.application.access import require_scope, visible_id
 from cerebro.application.agent_write import AgentWriteRequest, AgentWriteResult, WriteFinding, WriteRejected, projected
 from cerebro.application.dto import sensitivity_raise_warnings
 from cerebro.application.errors import PermissionDenied
+from cerebro.application.note_validation import validate_candidate
 from cerebro.application.ports.graph import GraphIndex
 from cerebro.application.ports.notes import NoteChange, NoteRepository
 from cerebro.application.ports.search import SearchIndex
 from cerebro.application.ports.system import Clock, IdGenerator
 from cerebro.application.ports.write_attempts import WriteAttemptStore
-from cerebro.application.proposal_support import validate_candidate
 from cerebro.domain.access import AccessContext, Agent, Scope
 from cerebro.domain.commit_message import AgentWriteCommit, create_request_key
 from cerebro.domain.content_hash import content_hash, is_content_hash
@@ -22,7 +22,7 @@ from cerebro.domain.frontmatter import FIELD_ORDER, parse_note
 from cerebro.domain.links import loose_link_targets
 from cerebro.domain.note import Note, NoteId
 from cerebro.domain.note_ref import NoteRef
-from cerebro.domain.report import PROPOSAL_POLICY, Severity, ValidationReport
+from cerebro.domain.report import AGENT_WRITE_POLICY, Severity, ValidationReport
 from cerebro.domain.vocabulary import CORE, HUB, Vocabulary
 
 _REQUEST_ID = re.compile(r"[A-Za-z0-9_-]{1,64}")
@@ -120,7 +120,7 @@ class AgentWrite:
         if base and replace(candidate, updated=base.updated) == base:
             raise WriteRejected(WriteFinding("unchanged", "request", "The stored note already contains these changes."))
         report = validate_candidate(
-            candidate, notes=self._notes, vocabulary=self._vocabulary, policy=PROPOSAL_POLICY, base=base
+            candidate, notes=self._notes, vocabulary=self._vocabulary, policy=AGENT_WRITE_POLICY, base=base
         )
         errors = projected(report, Severity.ERROR)
         if errors:

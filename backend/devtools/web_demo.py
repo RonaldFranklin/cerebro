@@ -204,6 +204,7 @@ def main() -> int:
                 )
             else:
                 print(f"Private browser: {private_origin}\nPublic listener fixture: {public_origin}")
+                print(f"Private MCP in WSL: http://127.0.0.1:{private}/mcp\nFixture configuration: {config}")
                 print(
                     f"Local certificate SHA-256: {trust.fingerprint}\nPress Ctrl+C to stop and remove the fixture.",
                     flush=True,

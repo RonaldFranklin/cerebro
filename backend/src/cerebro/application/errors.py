@@ -1,11 +1,10 @@
 """Typed application exceptions: expected outcomes of use cases and ports.
 
 Inbound adapters map each of these to their own error format in one place. Domain errors
-(``InvalidValueError``, ``InvalidTransition``, ``ContentConflict``) propagate unchanged.
+(``InvalidValueError``, ``ContentConflict``) propagate unchanged.
 """
 
 from cerebro.domain.note import NoteId
-from cerebro.domain.report import ValidationReport
 
 
 class ApplicationError(Exception):
@@ -21,28 +20,6 @@ class NoteNotFound(ApplicationError):  # noqa: N818
     def __init__(self, note_id: NoteId) -> None:
         super().__init__("note not found")
         self.note_id = note_id
-
-
-class ProposalNotFound(ApplicationError):  # noqa: N818
-    def __init__(self, proposal_id: str) -> None:
-        super().__init__("proposal not found")
-        self.proposal_id = proposal_id
-
-
-class ProposalLimitReached(ApplicationError):  # noqa: N818
-    def __init__(self) -> None:
-        super().__init__("Proposal limit reached.")
-
-
-class ProposalConflict(ApplicationError):  # noqa: N818
-    """The stored proposal changed since it was loaded (its revision is not the expected one).
-
-    Never swallow it: the caller's decision was based on a stale proposal. Reload and decide again.
-    """
-
-    def __init__(self, proposal_id: str) -> None:
-        super().__init__("proposal changed concurrently")
-        self.proposal_id = proposal_id
 
 
 class TokenNotFound(ApplicationError):  # noqa: N818
@@ -62,7 +39,7 @@ class AuthenticationFailed(ApplicationError):  # noqa: N818
 
 
 class AlreadyExists(ApplicationError):  # noqa: N818
-    """A record with the same unique key (note id, proposal id, token id or token hash) is already stored."""
+    """A record with the same unique key (note id, token id or token hash) is already stored."""
 
     def __init__(self, entity: str, key: str) -> None:
         super().__init__(f"{entity} already exists")
@@ -76,23 +53,6 @@ class PermissionDenied(ApplicationError):  # noqa: N818
     def __init__(self, action: str) -> None:
         super().__init__(f"not allowed: {action}")
         self.action = action
-
-
-class ProposalNotApplicable(ApplicationError):  # noqa: N818
-    """The proposal and its decision cannot be turned into a change (e.g. the decision targets another note).
-
-    The reason is one of a few fixed texts: it never quotes proposal content.
-    """
-
-    def __init__(self, reason: str) -> None:
-        super().__init__(f"proposal cannot be applied: {reason}")
-        self.reason = reason
-
-
-class AmendmentValidationError(ProposalNotApplicable):
-    def __init__(self, report: ValidationReport) -> None:
-        super().__init__("amendment failed validation")
-        self.report = report
 
 
 class DecryptionError(ApplicationError):

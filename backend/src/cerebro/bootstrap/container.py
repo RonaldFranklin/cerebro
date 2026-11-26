@@ -7,7 +7,7 @@ enforce a clean content working tree; the filesystem adapter refuses writes on a
 
 **Writer lock (ADR-0002).** Reading ``head()``, ``apply`` and advancing the index revision must be serialised,
 otherwise a concurrent commit between them could make an index look fresh and hide a failed index update (see
-``cerebro.application.index_state``). Each use case that commits or rebuilds indexes (``AgentWrite``, ``ApplyProposal``,
+``cerebro.application.index_state``). Each use case that commits or rebuilds indexes (``AgentWrite``,
 ``OwnerEditNote``, ``RebuildIndex``) runs under ``WriterLock``: one ``threading.Lock`` for the threads of this
 process and one ``flock`` file in the state directory for other processes. The filesystem adapter keeps its own
 lock inside ``.git/`` for the commit itself; the two never share a file, so they cannot deadlock.
@@ -24,11 +24,11 @@ from pathlib import Path
 
 from cerebro.adapters.outbound.crypto import FernetCipher, load_keys
 from cerebro.adapters.outbound.filesystem import FilesystemNoteRepository, WriterBusyError, load_vocabulary
+from cerebro.adapters.outbound.filesystem.history import GitChangeHistory
 from cerebro.adapters.outbound.filesystem.lock import file_lock
 from cerebro.adapters.outbound.git import GitIdentity, GitRepo, GitVersionControl
 from cerebro.adapters.outbound.sqlite import (
     SqliteGraphIndex,
-    SqliteProposalStore,
     SqliteSearchIndex,
     SqliteTokenStore,
 )
@@ -39,11 +39,7 @@ from cerebro.adapters.outbound.system.sessions import MemorySessions
 from cerebro.application.agent_write import AgentWriteRequest, AgentWriteResult
 from cerebro.application.browser import BrowserAuth
 from cerebro.application.dto import (
-    AdmissionResult,
     AgentTokenSummary,
-    AmendmentResult,
-    AmendProposalRequest,
-    ApplyProposalResult,
     AuthenticateTokenRequest,
     GetGraphRequest,
     GetNeighborsRequest,
@@ -51,65 +47,49 @@ from cerebro.application.dto import (
     GraphView,
     HealthReportRequest,
     HealthReportResult,
-    InboxResult,
     IssueAgentTokenRequest,
     IssuedToken,
     ListAgentTokensRequest,
-    ListProposalsRequest,
     NoteView,
     Overview,
     OwnerEditNoteRequest,
     OwnerEditNoteResult,
-    ProposalIdRequest,
-    ProposalOutcome,
     ReadNoteRequest,
     RebuildIndexRequest,
     RebuildIndexResult,
-    ReviewProposalRequest,
     RevokeAgentTokenRequest,
     RevokedToken,
     SearchNotesRequest,
     SearchResults,
-    SubmitProposalRequest,
 )
 from cerebro.application.index_state import index_is_stale
-from cerebro.application.null_curator import NullCurator
 from cerebro.application.ports import (
     Cipher,
     Clock,
-    Curator,
     GraphIndex,
     IdGenerator,
     NoteRepository,
-    ProposalStore,
     SearchIndex,
     TokenStore,
     VersionControl,
 )
 from cerebro.application.use_case import AnonymousUseCase, ContextUseCase
 from cerebro.application.use_cases import (
-    AdmitProposal,
-    AmendProposal,
-    ApplyProposal,
     AuthenticateToken,
-    CurateProposal,
     GetGraph,
     GetNeighbors,
     GetOverview,
     HealthReport,
     IssueAgentToken,
     ListAgentTokens,
-    ListProposals,
     OwnerEditNote,
     ReadNote,
     RebuildIndex,
-    ReviewProposal,
     RevokeAgentToken,
     SearchNotes,
-    SubmitProposal,
-    ValidateProposal,
 )
 from cerebro.application.use_cases.agent_write import AgentWrite
+from cerebro.application.use_cases.history import OwnerHistory
 from cerebro.bootstrap.browser import owner_credentials
 from cerebro.bootstrap.settings import Settings
 from cerebro.domain.access import AccessCeiling, AccessContext
@@ -183,17 +163,11 @@ class UseCases:
     get_neighbors: ContextUseCase[GetNeighborsRequest, GraphView]
     get_graph: ContextUseCase[GetGraphRequest, GraphView]
     agent_write: ContextUseCase[AgentWriteRequest, AgentWriteResult]
-    submit_proposal: ContextUseCase[SubmitProposalRequest, AdmissionResult]
-    amend_proposal: ContextUseCase[AmendProposalRequest, AmendmentResult]
-    validate_proposal: ContextUseCase[ProposalIdRequest, ProposalOutcome]
-    curate_proposal: ContextUseCase[ProposalIdRequest, ProposalOutcome]
-    review_proposal: ContextUseCase[ReviewProposalRequest, ProposalOutcome]
-    apply_proposal: ContextUseCase[ProposalIdRequest, ApplyProposalResult]
+    history: OwnerHistory
     owner_edit_note: ContextUseCase[OwnerEditNoteRequest, OwnerEditNoteResult]
     rebuild_index: ContextUseCase[RebuildIndexRequest, RebuildIndexResult]
     health_report: ContextUseCase[HealthReportRequest, HealthReportResult]
     issue_agent_token: ContextUseCase[IssueAgentTokenRequest, IssuedToken]
-    list_proposals: ContextUseCase[ListProposalsRequest, InboxResult]
     list_agent_tokens: ContextUseCase[ListAgentTokensRequest, tuple[AgentTokenSummary, ...]]
     revoke_agent_token: ContextUseCase[RevokeAgentTokenRequest, RevokedToken]
     authenticate_token: AnonymousUseCase[AuthenticateTokenRequest, AccessContext]
@@ -223,18 +197,11 @@ class Container:
         self.vocabulary: Vocabulary = load_vocabulary(settings.content_repo)
         self.search: SearchIndex = SqliteSearchIndex(state_dir / INDEX_FILE)
         self.graph: GraphIndex = SqliteGraphIndex(state_dir / INDEX_FILE)
-        self.proposals: ProposalStore = SqliteProposalStore(state_dir / STATE_FILE, self.cipher)
         self.tokens: TokenStore = SqliteTokenStore(state_dir / STATE_FILE)
-        self.curator: Curator = NullCurator()
 
-        notes, proposals, search, graph = self.notes, self.proposals, self.search, self.graph
+        notes, search, graph = self.notes, self.search, self.graph
         clock, ids, vocabulary, lock = self.clock, self.ids, self.vocabulary, self.writer_lock
         self._rebuild = RebuildIndex(notes, search, graph)
-        validator = ValidateProposal(notes, proposals, search, clock, vocabulary)
-        curate = CurateProposal(notes, proposals, search, self.curator, clock)
-        intake = AdmitProposal(
-            SubmitProposal(notes, clock, ids), validator, curate, proposals, clock, settings.proposal_limits
-        )
         write = AgentWrite(
             notes,
             search,
@@ -252,17 +219,11 @@ class Container:
             read_note=ReadNote(notes, graph),
             get_neighbors=GetNeighbors(notes, graph),
             get_graph=GetGraph(graph),
-            submit_proposal=Serialized(intake, lock),
-            amend_proposal=Serialized(AmendProposal(proposals, validator, clock), lock),
-            validate_proposal=validator,
-            curate_proposal=curate,
-            review_proposal=Serialized(ReviewProposal(notes, proposals, clock), lock),
-            apply_proposal=Serialized(ApplyProposal(notes, proposals, search, graph, clock, vocabulary), lock),
+            history=OwnerHistory(notes, GitChangeHistory(git, self.cipher), lock.held),
             owner_edit_note=Serialized(OwnerEditNote(notes, search, graph, clock, ids, vocabulary), lock),
             rebuild_index=Serialized(self._rebuild, lock),
-            health_report=HealthReport(notes, proposals, search, graph, clock, vocabulary),
+            health_report=HealthReport(notes, search, graph, clock, vocabulary),
             issue_agent_token=IssueAgentToken(self.tokens, clock, ids),
-            list_proposals=ListProposals(proposals, notes, validator),
             list_agent_tokens=ListAgentTokens(self.tokens),
             revoke_agent_token=RevokeAgentToken(self.tokens, clock),
             authenticate_token=AuthenticateToken(self.tokens, clock),

@@ -3,11 +3,11 @@ import { expect, test, type Page } from "@playwright/test";
 async function owner(page: Page, ceiling = "restricted") {
   await page.route("**/api/session", route => route.fulfill({json:{ceiling,csrf_token:"fixture",absolute_remaining_seconds:28800}}));
   await page.route("**/api/graph?history=true", route => route.fulfill({json:{
-    nodes:[{id:"guide"},{id:"index"},{id:"core-budget"},{id:"p-1"}], edges:[],center:null,
+    nodes:[{id:"guide"},{id:"index"},{id:"core-budget"}], edges:[],center:null,
   }}));
 }
 
-const clean = {ok:true,notes_checked:4,proposals_checked:2,search_index_checked:true,issues:[]};
+const clean = {ok:true,notes_checked:4,search_index_checked:true,issues:[]};
 function issue(code: string, subject: string, severity: string) {
   return {code,subject,severity,field:null,message:"SENSITIVE_FIXTURE_RAW_MESSAGE"};
 }
@@ -16,14 +16,14 @@ test("health separates revision and index coverage and links only visible note s
   await owner(page);
   await page.route("**/api/health", route => route.fulfill({json:{...clean,ok:false,search_index_checked:false,issues:[
     issue("secret_detected","guide","error"),issue("index_stale","index","error"),issue("orphan_note","missing","warning"),
-    issue("core_over_budget","core-budget","warning"),issue("stale_proposal","p-1","warning"),
+    issue("core_over_budget","core-budget","warning"),
   ]}}));
   await page.goto("/health");
   await expect(page.getByRole("heading",{name:"Health",exact:true})).toBeVisible();
   await expect(page.getByText("Out of date",{exact:true})).toBeVisible();
   await expect(page.getByText("Not checked",{exact:true})).toBeVisible();
   await expect(page.getByRole("link",{name:"guide",exact:true})).toHaveAttribute("href","/notes/guide?history=true");
-  for (const name of ["missing","index","core-budget","p-1"]) await expect(page.getByRole("link",{name,exact:true})).toHaveCount(0);
+  for (const name of ["missing","index","core-budget"]) await expect(page.getByRole("link",{name,exact:true})).toHaveCount(0);
   await expect(page.getByText("SENSITIVE_FIXTURE_RAW_MESSAGE")).toHaveCount(0);
   await expect(page.getByText("secret_detected",{exact:true})).toBeVisible();
   await page.getByLabel("Severity").selectOption("warning");

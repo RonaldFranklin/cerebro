@@ -16,8 +16,8 @@ import uvicorn
 from cerebro.adapters.inbound.browser_api import browser_api
 from cerebro.adapters.inbound.browser_assets import browser_assets
 from cerebro.adapters.inbound.browser_edit import install_browser_edit
+from cerebro.adapters.inbound.browser_history import install_browser_history
 from cerebro.adapters.inbound.browser_http import BrowserListener, browser_http
-from cerebro.adapters.inbound.browser_inbox import install_browser_inbox, install_browser_write_errors
 from cerebro.adapters.inbound.browser_reads import BrowserReads, install_browser_reads
 from cerebro.adapters.inbound.cli import ArgumentParser
 from cerebro.adapters.inbound.input_limits import MAX_INPUT_BYTES
@@ -141,10 +141,9 @@ def serve() -> int:
                     "private" if private else "public", options.private_origin if private else options.public_origin
                 )
                 api = browser_api(auth, binding, ceiling)
+                install_browser_history(api, cases.history)
                 install_browser_reads(api, reads)
-                install_browser_write_errors(api)
                 install_browser_edit(api, cases.owner_edit_note)
-                install_browser_inbox(api, cases.list_proposals)
                 browsers[port] = BrowserListener(binding, api)
             app = browser_http(
                 http_app(tools, cases.authenticate_token, listeners), browsers, browser_assets(options.web_dist)

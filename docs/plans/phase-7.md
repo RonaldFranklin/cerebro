@@ -33,20 +33,21 @@ changes. Use one branch per step from updated main, independent diff review, gre
 - Document an isolated Claude Code and Codex walkthrough with explicit grants, guide discovery, create,
   update, stale-base handling and inspection in Git and the browser. Record which clients actually ran.
 
-## Status
+## Delivery report
 
-**Implemented.** Step 1 was approved in PR #68. The step 2 application writer runs under the shared
-writer lock. Creates record an opaque token-scoped request key and an encrypted content fingerprint in the same Git commit
-as the note. The durable receipt consists of its note id and original revision. Feedback from validation
-accompanies a fresh write. An unchanged update returns a bounded finding without a commit. The rolling-hour limit defaults to 20 and uses the state database.
-Before a write narrows visibility, the writer evicts the older search and graph projections. Startup
-compares both index revisions with HEAD and rebuilds after interrupted indexing.
+| PR | Delivered | Decisions for review |
+|---|---|---|
+| [#68](https://github.com/RonaldFranklin/cerebro/pull/68) | ADR, plan, architecture and roadmap | Issue write grants explicitly. Generate unpredictable note IDs server-side. Only a full, unredacted read exposes the update hash. Count attempts per authenticated token across restarts. |
+| [#69](https://github.com/RonaldFranklin/cerebro/pull/69) | Direct-write use case, Git attribution, receipts and persistent quota | A create receipt is recoverable from the original Git commit; its content fingerprint is authenticated and encrypted. Replaying an identical request returns the original ID and revision after current authorization. Changed or stale requests never overwrite another edit. Git is authoritative if index maintenance is interrupted. |
+| [#70](https://github.com/RonaldFranklin/cerebro/pull/70) | Scoped MCP writer and packaged guide, three-line project snippet and CLI cutover | Both transports report bounded field codes and corrective hints. Authenticated invalid requests consume quota, including unknown fields. A legacy proposal grant is inert. The owner can issue a new read/write grant explicitly. |
+| [#71](https://github.com/RonaldFranklin/cerebro/pull/71) | Recent changes with actor, timestamp, note and diff; retirement of legacy review and curator paths | Derive history from content Git. Preserve historical commits, sealed state and backups; old proposals are never executed. The history API and screen require a private owner session. |
 
-**Tested.** Application tests and shared fake/real storage contracts exercise scope, quota, replay,
-ceilings and Git attribution. Real-container tests cover two writers sharing a base, interrupted indexing
-and recovery on restart. The step 3 MCP cutover exposes `cerebro_write` and the packaged `cerebro_write_guide`
-only to agents with `write`. The CLI issues `read` and `write` grants and retires its Inbox commands.
-Owner browser review mutations also retire at cutover, leaving historical proposal rows inert. The SDK checks discovery, creates,
-idempotent retries, updates across HTTP and stdio, Git attribution, stale hashes, validation and quotas.
-An offline wheel installation serves the same guide as the source tree. Browser history and manual
-verification in Claude Code and Codex are pending.
+### Security and acceptance
+
+The installed MCP SDK creates by HTTP and updates through the stdio bridge with separate authenticated agents. It checks the Git parent and authorship, replay, stale hashes, safe scanner feedback and the per-token limit. A rejected attempt can consume a quota slot, but produces no note or pending task. Agents receive no writer authority from their old proposal grants. Restricted data remains subject to the accepting listener, token ceiling, encryption and full-read checks.
+
+The browser demo uses a disposable content repository and fixture credentials. After a direct write, Recent changes shows the committed result without an approval step. Owner edits and earlier attributed commits retain their original provenance. The owner can follow the [real-client walkthrough](../agent-integration.md#inspect-the-same-client-writes-in-recent-changes) to inspect both clients' writes in the same private browser instance. Real Claude Code and Codex sessions remain an owner-run check. The manual checkpoints for Phases 3–5 remain recorded in their respective delivery reports.
+
+**Final gates.** 1,995 backend tests passed with 98.07% combined domain/application coverage, alongside Ruff lint/format, strict mypy and four import contracts. Chromium passed 44 component tests and 10 installed-service HTTPS end-to-end tests. The earlier baseline included tests for the retired proposal/curator implementation. [Recent changes screenshot](../screenshots/phase-7/recent-changes.png)
+
+An additional interactive WSL run used the SDK to fetch the guide, create a note, read its hash and update it. The private HTTPS history returned the two matching Git revisions, actor and note, and the expected update diff. The printed certificate fingerprint matched and shutdown removed the fixture.

@@ -24,7 +24,7 @@ test("lower-ceiling navigation omits private destinations and empty overview sho
   await page.route("**/api/overview", route => route.fulfill({ json: { ...overview, core: [], hubs: [], areas: [] } }));
   await page.goto("/");
   await expect(page.getByRole("heading", { name: "Overview", exact: true })).toBeVisible();
-  await expect(page.getByRole("navigation").getByRole("link", { name: "Inbox" })).toHaveCount(0);
+  await expect(page.getByRole("navigation").getByRole("link", { name: "Recent changes" })).toHaveCount(0);
   await expect(page.getByRole("navigation").getByRole("link", { name: "Health" })).toHaveCount(0);
   await expect(page.getByText("No core notes are visible.")).toBeVisible();
 });

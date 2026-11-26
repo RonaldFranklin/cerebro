@@ -114,20 +114,10 @@ def test_write_quota_configuration(tmp_path: Path) -> None:
         load_settings(file, {"CEREBRO_WRITES_PER_HOUR": "0"})
 
 
-def test_quota_configuration(tmp_path: Path) -> None:
-    file = tmp_path / "settings.toml"
-    file.write_text(SAMPLE)
-    limits = load_settings(file, {}).proposal_limits
-    assert (limits.per_hour, limits.pending) == (20, 10)
-    file.write_text(SAMPLE + "proposals_per_hour = 7\nproposals_pending = 4\n")
-    limits = load_settings(file, {"CEREBRO_PROPOSALS_PENDING": "3"}).proposal_limits
-    assert (limits.per_hour, limits.pending) == (7, 3)
-
-
 @pytest.mark.parametrize("value", ["0", "-1", "true", "2.5", '"3"'])
 def test_invalid_toml_quota(tmp_path: Path, value: str) -> None:
     file = tmp_path / "settings.toml"
-    file.write_text(SAMPLE + "proposals_per_hour = " + value)
+    file.write_text(SAMPLE + "writes_per_hour = " + value)
     with pytest.raises(ConfigurationError):
         load_settings(file, {})
 
@@ -137,11 +127,17 @@ def test_invalid_environment_quota(tmp_path: Path, value: str) -> None:
     file = tmp_path / "settings.toml"
     file.write_text(SAMPLE)
     with pytest.raises(ConfigurationError):
-        load_settings(file, {"CEREBRO_PROPOSALS_PENDING": value})
+        load_settings(file, {"CEREBRO_WRITES_PER_HOUR": value})
 
 
 def test_large_toml_hex_quota_reports_configuration_error(tmp_path: Path) -> None:
     file = tmp_path / "settings.toml"
-    file.write_text(SAMPLE + "proposals_per_hour = 0x" + "f" * 8000)
+    file.write_text(SAMPLE + "writes_per_hour = 0x" + "f" * 8000)
     with pytest.raises(ConfigurationError):
         load_settings(file, {})
+
+
+def test_legacy_quota_keys_allow_an_existing_configuration_to_start(tmp_path: Path) -> None:
+    config = tmp_path / "legacy.toml"
+    config.write_text(SAMPLE + "proposals_per_hour = 1\nproposals_pending = 2\n")
+    assert load_settings(config, {}).writes_per_hour == 20

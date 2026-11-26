@@ -4,7 +4,7 @@ import pytest
 
 from cerebro.domain.enums import Priority, Sensitivity, Status
 from cerebro.domain.note import NoteId
-from cerebro.domain.report import OWNER_EDIT_POLICY, PROPOSAL_POLICY, Severity, SeverityPolicy, ViolationCode
+from cerebro.domain.report import AGENT_WRITE_POLICY, OWNER_EDIT_POLICY, Severity, SeverityPolicy, ViolationCode
 from cerebro.domain.validation import allowed_priorities, validate_note
 from cerebro.domain.vocabulary import Area, NoteType
 from tests.unit.domain.builders import VOCABULARY, make_note, words
@@ -14,11 +14,11 @@ HUB = {"type": NoteType("hub"), "priority": Priority.P1, "hub": None}
 
 
 def codes(**overrides: object) -> list[ViolationCode]:
-    return [v.code for v in validate_note(make_note(**overrides), VOCABULARY, PROPOSAL_POLICY).violations]
+    return [v.code for v in validate_note(make_note(**overrides), VOCABULARY, AGENT_WRITE_POLICY).violations]
 
 
 def test_a_valid_note_has_no_violations() -> None:
-    assert validate_note(make_note(), VOCABULARY, PROPOSAL_POLICY).violations == ()
+    assert validate_note(make_note(), VOCABULARY, AGENT_WRITE_POLICY).violations == ()
 
 
 @pytest.mark.parametrize("overrides", [CORE, HUB, {**HUB, "hub": NoteId("infrastructure")}])
@@ -102,12 +102,12 @@ class TestPriorityFollowsType:
         ],
     )
     def test_one_violation_per_mismatch(self, overrides: dict[str, object]) -> None:
-        report = validate_note(make_note(**overrides), VOCABULARY, PROPOSAL_POLICY)
+        report = validate_note(make_note(**overrides), VOCABULARY, AGENT_WRITE_POLICY)
 
         assert [v.code for v in report.violations] == [ViolationCode.PRIORITY_TYPE_MISMATCH]
 
     def test_message_names_the_expected_priority(self) -> None:
-        report = validate_note(make_note(**{**HUB, "priority": Priority.P3}), VOCABULARY, PROPOSAL_POLICY)
+        report = validate_note(make_note(**{**HUB, "priority": Priority.P3}), VOCABULARY, AGENT_WRITE_POLICY)
 
         assert report.violations[0].message == "this type requires priority P1"
 
@@ -138,7 +138,7 @@ class TestRelated:
     def test_cannot_contain_the_note_itself(self) -> None:
         assert codes(related=(NoteId("server-ssh-access"),)) == [ViolationCode.SELF_REFERENCE]
 
-    @pytest.mark.parametrize("policy", [PROPOSAL_POLICY, OWNER_EDIT_POLICY])
+    @pytest.mark.parametrize("policy", [AGENT_WRITE_POLICY, OWNER_EDIT_POLICY])
     def test_duplicates_only_warn(self, policy: SeverityPolicy) -> None:
         report = validate_note(make_note(related=(NoteId("a"), NoteId("a"))), VOCABULARY, policy)
 
@@ -158,14 +158,14 @@ class TestDates:
 
 class TestBudgetSeverity:
     def test_hard_limit_is_an_error(self) -> None:
-        report = validate_note(make_note(body=words(3001)), VOCABULARY, PROPOSAL_POLICY)
+        report = validate_note(make_note(body=words(3001)), VOCABULARY, AGENT_WRITE_POLICY)
 
         assert [(v.code, v.severity) for v in report.violations] == [
             (ViolationCode.BODY_OVER_HARD_LIMIT, Severity.ERROR)
         ]
 
     def test_soft_limit_is_a_warning(self) -> None:
-        report = validate_note(make_note(body=words(1501)), VOCABULARY, PROPOSAL_POLICY)
+        report = validate_note(make_note(body=words(1501)), VOCABULARY, AGENT_WRITE_POLICY)
 
         assert report.ok
         assert [(v.code, v.severity) for v in report.violations] == [

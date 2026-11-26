@@ -12,7 +12,7 @@ from cerebro.domain.enums import Priority, Sensitivity, Status
 from cerebro.domain.links import WikiLink
 from cerebro.domain.note import NoteId
 from cerebro.domain.note_ref import NoteRef
-from cerebro.domain.report import OWNER_EDIT_POLICY, PROPOSAL_POLICY, Severity, SeverityPolicy, ViolationCode
+from cerebro.domain.report import AGENT_WRITE_POLICY, OWNER_EDIT_POLICY, Severity, SeverityPolicy, ViolationCode
 from cerebro.domain.vocabulary import HUB, NoteType
 from tests.unit.domain.builders import make_note
 
@@ -86,7 +86,7 @@ def test_broken_link_is_warning_for_owner_and_error_for_proposal() -> None:
     me = ref("me", hub="area", body_links=["gone"])
     findings = cross_note_findings(me, snap(hub, me))
     assert [v.severity for v in OWNER_EDIT_POLICY.report(findings).violations] == [Severity.WARNING]
-    assert [v.severity for v in PROPOSAL_POLICY.report(findings).violations] == [Severity.ERROR]
+    assert [v.severity for v in AGENT_WRITE_POLICY.report(findings).violations] == [Severity.ERROR]
 
 
 def test_link_to_itself_is_not_broken_even_if_absent_from_snapshot() -> None:
@@ -100,7 +100,7 @@ def test_missing_hub_is_an_error_for_every_policy() -> None:
     findings = cross_note_findings(me, snap(me))
     assert [f.code for f in findings] == [ViolationCode.HUB_NOT_FOUND]
     assert OWNER_EDIT_POLICY.report(findings).errors
-    assert PROPOSAL_POLICY.report(findings).errors
+    assert AGENT_WRITE_POLICY.report(findings).errors
 
 
 def test_hub_must_have_type_hub() -> None:
@@ -201,7 +201,7 @@ def test_regular_note_reaching_a_hub_cycle_is_reported() -> None:
     assert codes(me, snap(h1, h2, me)) == [ViolationCode.HUB_CHAIN_CYCLE]
 
 
-@pytest.mark.parametrize("policy", [PROPOSAL_POLICY, OWNER_EDIT_POLICY])
+@pytest.mark.parametrize("policy", [AGENT_WRITE_POLICY, OWNER_EDIT_POLICY])
 def test_chain_and_cycle_rules_are_errors_on_every_path(policy: SeverityPolicy) -> None:
     h1 = ref("h1", is_hub=True, hub="h2")
     h2 = ref("h2", is_hub=True, hub="h1")
@@ -268,7 +268,7 @@ def test_the_rule_is_an_error_on_every_policy_and_never_a_warning() -> None:
         f for f in cross_note_findings(me, snap(secret, me)) if f.code is ViolationCode.LINK_TO_HIGHER_SENSITIVITY
     ]
     assert findings
-    for policy in (PROPOSAL_POLICY, OWNER_EDIT_POLICY):
+    for policy in (AGENT_WRITE_POLICY, OWNER_EDIT_POLICY):
         assert ViolationCode.LINK_TO_HIGHER_SENSITIVITY not in policy.warnings
         assert [v.severity for v in policy.report(findings).violations] == [Severity.ERROR]
 

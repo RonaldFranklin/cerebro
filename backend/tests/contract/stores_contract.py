@@ -2,54 +2,22 @@
 
 import hashlib
 import re
-from dataclasses import replace
 from datetime import UTC, datetime, timedelta
-from zoneinfo import ZoneInfo
 
 import pytest
 
 from cerebro.application.errors import (
     AlreadyExists,
     DecryptionError,
-    ProposalConflict,
-    ProposalLimitReached,
-    ProposalNotFound,
     TokenNotFound,
 )
-from cerebro.application.ports import Cipher, Clock, CurationRequest, Curator, IdGenerator, ProposalStore, TokenStore
-from cerebro.application.proposal_support import scrubbed
+from cerebro.application.ports import Cipher, Clock, IdGenerator, TokenStore
 from cerebro.domain.access import AccessCeiling, Scope
 from cerebro.domain.agent_token import AgentToken
-from cerebro.domain.commit_message import CommitMessage
-from cerebro.domain.decision import Decision
 from cerebro.domain.enums import Sensitivity
-from cerebro.domain.errors import InvalidValueError
-from cerebro.domain.note import NoteId
-from cerebro.domain.proposal import Proposal, ProposalKind, ProposalLimits, ProposalStatus, ProposedContent
-from cerebro.domain.report import ValidationReport
 from cerebro.domain.token_hash import TokenHash
-from tests.fakes.system import FixedClock
-from tests.unit.domain.test_proposal import BAD
 
 T0 = datetime(2026, 11, 25, 12, 0, tzinfo=UTC)
-
-
-def make_proposal(proposal_id: str = "proposal-0001", *, agent: str = "claude-code", at: datetime = T0) -> Proposal:
-    return Proposal(
-        id=proposal_id,
-        kind=ProposalKind.CREATE,
-        content=ProposedContent(title="A note", body="Body.\n"),
-        source_agent=agent,
-        created_at=at,
-        updated_at=at,
-    )
-
-
-def make_reviewable(proposal_id: str) -> Proposal:
-    proposal = make_proposal(proposal_id).mark_validated(ValidationReport(), T0)
-    return proposal.mark_curated(
-        Decision.needs_owner("review", target=NoteId("review-note")), "curator/null", T0
-    ).mark_needs_owner(T0)
 
 
 def make_token(token_id: str = "token-0001", secret: str = "s1", *, at: datetime = T0) -> AgentToken:
@@ -61,147 +29,6 @@ def make_token(token_id: str = "token-0001", secret: str = "s1", *, at: datetime
         token_hash=TokenHash(hashlib.sha256(secret.encode()).hexdigest()),
         created_at=at,
     )
-
-
-class ProposalStoreContract:
-    @pytest.fixture
-    def store(self) -> ProposalStore:
-        raise NotImplementedError
-
-    def test_admissions_use_a_rolling_hour_per_credential_and_count_rejections(self, store: ProposalStore) -> None:
-        clock = FixedClock(T0)
-        limits = ProposalLimits(per_hour=1, pending=2)
-        first = scrubbed(make_proposal("first").reject_invalid(BAD, T0))
-        store.admit(first, token_id="token-a", limits=limits, clock=clock)
-        store.admit(make_reviewable("second"), token_id="token-b", limits=limits, clock=clock)
-        clock.advance(timedelta(hours=1, microseconds=-1))
-        with pytest.raises(ProposalLimitReached, match=r"^Proposal limit reached\.$"):
-            store.admit(make_reviewable("third"), token_id="token-a", limits=limits, clock=clock)
-        assert store.get("third") is None
-        clock.advance(timedelta(microseconds=1))
-        store.admit(make_reviewable("third"), token_id="token-a", limits=limits, clock=clock)
-
-    def test_rolling_hour_uses_elapsed_time_across_daylight_saving(self, store: ProposalStore) -> None:
-        zone = ZoneInfo("America/New_York")
-        clock = FixedClock(datetime(2026, 3, 8, 3, 15, tzinfo=zone))
-        limits = ProposalLimits(per_hour=1, pending=10)
-        store.admit(make_reviewable("first"), token_id="a", limits=limits, clock=clock)
-        clock.set(datetime(2026, 3, 8, 3, 30, tzinfo=zone))
-        with pytest.raises(ProposalLimitReached):
-            store.admit(make_reviewable("second"), token_id="a", limits=limits, clock=clock)
-
-    def test_clock_correction_excludes_future_admissions_from_the_hour(self, store: ProposalStore) -> None:
-        clock = FixedClock(T0 + timedelta(hours=2))
-        limits = ProposalLimits(per_hour=1, pending=1)
-        old = scrubbed(make_proposal("old").reject_invalid(BAD, T0))
-        store.admit(old, token_id="token", limits=limits, clock=clock)
-        clock.set(T0)
-        store.admit(make_reviewable("new"), token_id="token", limits=limits, clock=clock)
-
-    def test_partial_null_curator_transition_is_not_admitted(self, store: ProposalStore) -> None:
-        proposal = make_proposal().mark_validated(ValidationReport(), T0)
-        partial = proposal.mark_curated(Decision.needs_owner("review"), "curator/null", T0)
-        with pytest.raises(InvalidValueError):
-            store.admit(partial, token_id="token", limits=ProposalLimits(), clock=FixedClock())
-        assert store.find() == ()
-
-    def test_received_and_unscrubbed_rejected_proposals_are_never_admitted(self, store: ProposalStore) -> None:
-        raw = make_proposal()
-        for state in (raw, raw.reject_invalid(BAD, T0), raw.mark_validated(ValidationReport(), T0)):
-            with pytest.raises(InvalidValueError):
-                store.admit(state, token_id="token", limits=ProposalLimits(), clock=FixedClock(T0))
-            assert store.find() == ()
-
-    def test_pending_capacity_reopens_on_terminal_transition_only(self, store: ProposalStore) -> None:
-        clock = FixedClock(T0)
-        limits = ProposalLimits(per_hour=8, pending=1)
-        first = make_reviewable("first")
-        store.admit(first, token_id="token", limits=limits, clock=clock)
-        approved = store.save(first.approve("owner", T0), expected_revision=0)
-        clock.advance(timedelta(days=1))
-        with pytest.raises(ProposalLimitReached):
-            store.admit(make_reviewable("second"), token_id="token", limits=limits, clock=clock)
-        assert store.find() == (approved,)
-        store.save(approved.mark_applied(clock.now()), expected_revision=1)
-        store.admit(make_reviewable("second"), token_id="token", limits=limits, clock=clock)
-
-    def test_add_then_get(self, store: ProposalStore) -> None:
-        proposal = make_proposal()
-        store.add(proposal)
-        assert store.get("proposal-0001") == proposal
-        assert store.get("unknown") is None
-
-    def test_add_duplicate_id_fails(self, store: ProposalStore) -> None:
-        store.add(make_proposal())
-        with pytest.raises(AlreadyExists):
-            store.add(make_proposal())
-
-    def test_save_replaces_and_unknown_fails(self, store: ProposalStore) -> None:
-        proposal = make_proposal()
-        store.add(proposal)
-        moved = proposal.mark_validated(ValidationReport(), T0 + timedelta(minutes=1))
-        saved = store.save(moved, expected_revision=0)
-        assert saved == replace(moved, revision=1)
-        assert store.get(proposal.id) == saved
-        with pytest.raises(ProposalNotFound):
-            store.save(make_proposal("proposal-0099"), expected_revision=0)
-
-    def test_save_stores_expected_plus_one_whatever_the_proposal_carries(self, store: ProposalStore) -> None:
-        proposal = make_proposal()
-        store.add(proposal)
-        saved = store.save(replace(proposal, revision=41), expected_revision=0)
-        assert saved.revision == 1
-        stored = store.get(proposal.id)
-        assert stored is not None
-        assert stored.revision == 1
-        assert [p.revision for p in store.find()] == [1]
-
-    def test_unknown_id_is_not_found_even_with_a_nonzero_expected_revision(self, store: ProposalStore) -> None:
-        with pytest.raises(ProposalNotFound):
-            store.save(make_proposal("proposal-0099"), expected_revision=7)
-
-    def test_add_requires_revision_zero(self, store: ProposalStore) -> None:
-        with pytest.raises(InvalidValueError):
-            store.add(replace(make_proposal(), revision=3))
-
-    def test_save_with_a_stale_revision_conflicts_and_changes_nothing(self, store: ProposalStore) -> None:
-        proposal = make_proposal()
-        store.add(proposal)
-        first = store.save(proposal.mark_validated(ValidationReport(), T0 + timedelta(minutes=1)), expected_revision=0)
-        with pytest.raises(ProposalConflict):
-            store.save(proposal.mark_validated(ValidationReport(), T0 + timedelta(minutes=2)), expected_revision=0)
-        with pytest.raises(ProposalConflict):
-            store.save(first, expected_revision=5)
-        assert store.get(proposal.id) == first
-        assert first.revision == 1
-        assert store.save(first, expected_revision=1).revision == 2
-
-    def test_two_saves_from_the_same_revision_second_fails(self, store: ProposalStore) -> None:
-        proposal = make_proposal()
-        store.add(proposal)
-        loaded_a = store.get(proposal.id)
-        loaded_b = store.get(proposal.id)
-        assert loaded_a is not None
-        assert loaded_b is not None
-        store.save(loaded_a.mark_validated(ValidationReport(), T0), expected_revision=loaded_a.revision)
-        later = loaded_b.mark_validated(ValidationReport(), T0 + timedelta(minutes=9))
-        with pytest.raises(ProposalConflict):
-            store.save(later, expected_revision=loaded_b.revision)
-        stored = store.get(proposal.id)
-        assert stored is not None
-        assert stored.updated_at == T0  # the first writer's copy
-
-    def test_find_filters_and_orders_oldest_first(self, store: ProposalStore) -> None:
-        store.add(make_proposal("p-late", at=T0 + timedelta(hours=2)))
-        store.add(make_proposal("p-b", agent="codex", at=T0))
-        store.add(make_proposal("p-a", at=T0))
-        assert [p.id for p in store.find()] == ["p-a", "p-b", "p-late"]
-        assert [p.id for p in store.find(source_agent="codex")] == ["p-b"]
-        assert [p.id for p in store.find(status=ProposalStatus.RECEIVED, source_agent="claude-code")] == [
-            "p-a",
-            "p-late",
-        ]
-        assert store.find(status=ProposalStatus.APPLIED) == ()
 
 
 class TokenStoreContract:
@@ -257,24 +84,6 @@ class TokenStoreContract:
         assert [t.id for t in store.all()] == ["t-a", "t-b", "t-late"]
 
 
-class CuratorContract:
-    @pytest.fixture
-    def curator(self) -> Curator:
-        raise NotImplementedError
-
-    def test_has_a_valid_attribution_name(self, curator: Curator) -> None:
-        CommitMessage.check_attribution(curator.name, "curated_by")
-
-    def test_returns_a_decision(self, curator: Curator) -> None:
-        decision = curator.curate(CurationRequest(proposal=make_proposal()))
-        assert isinstance(decision, Decision)
-
-    def test_curation_request_defaults(self) -> None:
-        request = CurationRequest(proposal=make_proposal())
-        assert request.target is None
-        assert request.similar == ()
-
-
 class CipherContract:
     @pytest.fixture
     def cipher(self) -> Cipher:
@@ -317,11 +126,11 @@ class IdGeneratorContract:
 
     def test_ids_are_unique_and_valid(self, ids: IdGenerator) -> None:
         pattern = re.compile(r"[A-Za-z0-9_-]{1,64}")
-        proposals = [ids.new_proposal_id() for _ in range(5)]
+        edits = [ids.new_edit_id() for _ in range(5)]
         tokens = [ids.new_token_id() for _ in range(5)]
-        assert len(set(proposals)) == 5
+        assert len(set(edits)) == 5
         assert len(set(tokens)) == 5
-        assert all(pattern.fullmatch(i) for i in (*proposals, *tokens))
+        assert all(pattern.fullmatch(i) for i in (*edits, *tokens))
 
     def test_secrets_are_unique_and_long_enough(self, ids: IdGenerator) -> None:
         secrets = {ids.new_token_secret() for _ in range(5)}

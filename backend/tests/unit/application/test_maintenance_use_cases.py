@@ -13,7 +13,6 @@ from cerebro.application.dto import (
     IssueAgentTokenRequest,
     ListAgentTokensRequest,
     RebuildIndexRequest,
-    ReviewAction,
     RevokeAgentTokenRequest,
 )
 from cerebro.application.errors import (
@@ -40,10 +39,10 @@ from cerebro.domain.errors import InvalidValueError
 from cerebro.domain.report import Finding, Severity, ViolationCode
 from cerebro.domain.secrets import secret_message
 from cerebro.domain.vocabulary import CORE, HUB
-from tests.fakes.stores import InMemoryProposalStore, InMemoryTokenStore
+from tests.fakes.stores import InMemoryTokenStore
 from tests.fakes.system import FixedClock, SequentialIdGenerator
-from tests.unit.application.world import MESSAGE, NID, World, ctx, standard_world
-from tests.unit.application.write_kit import SECRET, SSH, Kit
+from tests.unit.application.world import MESSAGE, NID, World, ctx
+from tests.unit.application.write_kit import SECRET
 from tests.unit.domain.builders import VOCABULARY, make_note
 
 PUB, INT, RES = Sensitivity.PUBLIC, Sensitivity.INTERNAL, Sensitivity.RESTRICTED
@@ -359,13 +358,10 @@ def healthy_world() -> World:
 class HealthKit:
     def __init__(self, world: World | None = None) -> None:
         self.world = world or healthy_world()
-        self.proposals = InMemoryProposalStore()
         self.clock = FixedClock()
 
     def run(self, c: Any = None) -> HealthReportResult:
-        use_case = HealthReport(
-            self.world.notes, self.proposals, self.world.search, self.world.graph, self.clock, VOCABULARY
-        )
+        use_case = HealthReport(self.world.notes, self.world.search, self.world.graph, self.clock, VOCABULARY)
         return use_case.execute(HealthReportRequest(), c or owner())
 
 
@@ -378,7 +374,7 @@ class TestHealthReport:
         report = HealthKit().run()
         assert report.issues == ()
         assert report.ok
-        assert (report.notes_checked, report.proposals_checked, report.search_index_checked) == (3, 0, True)
+        assert (report.notes_checked, report.search_index_checked) == (3, True)
 
     def test_only_the_owner_and_only_with_full_view(self) -> None:
         kit = HealthKit()
@@ -482,27 +478,6 @@ class TestHealthReport:
         by_code = {c: {i.subject for i in report.issues if i.code is c} for c in codes(report)}
         assert by_code[HealthCode.ORPHAN_NOTE] == {"alone"}
         assert by_code[HealthCode.REVIEW_OVERDUE] == {"due"}
-
-    def test_stale_and_orphan_proposals(self) -> None:
-        kit = HealthKit(standard_world())
-        agent_kit = Kit(world=kit.world, proposals=kit.proposals, clock=kit.clock)
-        stale = agent_kit.submit_create()
-        orphan = agent_kit.submit_update()  # targets server-ssh-access ...
-        kit.world.notes._notes.pop(SSH)  # ... which then disappears from the repository
-        kit.clock.advance(timedelta(days=31))
-        fresh = agent_kit.submit_create(title="Another note")
-        done = agent_kit.submit_create(title="Third note")
-        agent_kit.validate(done)
-        agent_kit.curate(done)
-        agent_kit.review(done, action=ReviewAction.REJECT, reason="no")
-        report = kit.run()
-        flagged = {(i.code, i.subject) for i in report.issues}
-        assert (HealthCode.STALE_PROPOSAL, stale) in flagged
-        assert (HealthCode.STALE_PROPOSAL, orphan) in flagged
-        assert (HealthCode.STALE_PROPOSAL, fresh) not in flagged
-        assert all(subject != done for _, subject in flagged)  # terminal proposals are not reported
-        assert (HealthCode.ORPHAN_PROPOSAL, orphan) in flagged
-        assert report.proposals_checked == 4
 
     def test_stale_indexes_are_errors(self) -> None:
         kit = HealthKit()

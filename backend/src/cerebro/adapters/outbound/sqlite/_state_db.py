@@ -1,4 +1,4 @@
-"""Connection handling for ``state.sqlite``: sealed proposals, agent tokens and the owner login attempt window.
+"""Connection handling for ``state.sqlite``: tokens, reservation windows and sealed legacy rows.
 
 Unlike the disposable search index, this file is the only copy of the proposal audit trail and of the token
 records, so nothing here ever deletes, recreates or "repairs" it: an unknown schema version or a damaged file

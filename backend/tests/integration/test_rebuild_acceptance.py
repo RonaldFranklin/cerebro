@@ -1,17 +1,14 @@
 """Phase 2 acceptance: a real content repository (with an encrypted restricted note) is indexed through the
-container, queried per ceiling, and written through the full proposal pipeline. Real git, files, SQLite, Fernet."""
+container, queried per ceiling. Real git, files, SQLite, Fernet."""
 
 import shutil
 import stat
 from collections.abc import Callable
-from dataclasses import replace
 from pathlib import Path
 
 import pytest
 
-from cerebro.adapters.outbound.sqlite import SqliteProposalStore
 from cerebro.application.dto import (
-    ApplyOutcome,
     AuthenticateTokenRequest,
     GetGraphRequest,
     GetNeighborsRequest,
@@ -19,25 +16,20 @@ from cerebro.application.dto import (
     HealthCode,
     HealthReportRequest,
     IssueAgentTokenRequest,
-    ProposalIdRequest,
     ReadNoteRequest,
     RebuildIndexRequest,
-    ReviewAction,
-    ReviewProposalRequest,
     SearchNotesRequest,
-    SubmitProposalRequest,
 )
 from cerebro.application.errors import AuthenticationFailed, NoteNotFound
 from cerebro.application.index_state import index_is_stale
 from cerebro.application.ports import SearchQuery
 from cerebro.bootstrap.container import Container, build_container
 from cerebro.domain.access import AccessCeiling, AccessContext, Scope
-from cerebro.domain.enums import Priority, Sensitivity
+from cerebro.domain.enums import Sensitivity
 from cerebro.domain.links import LinkKind
 from cerebro.domain.note import NoteId
-from cerebro.domain.proposal import ProposalKind, ProposalStatus, ProposedContent
 from cerebro.domain.report import Severity, ViolationCode
-from cerebro.domain.vocabulary import Area, NoteType
+from cerebro.domain.vocabulary import NoteType
 from tests.integration.content_kit import (
     BROKEN_ID,
     CORE_ID,
@@ -53,7 +45,6 @@ from tests.integration.content_kit import (
     make_sample_repo,
 )
 from tests.integration.test_git import raw_git
-from tests.unit.domain.builders import VALID_SUMMARY
 
 pytestmark = pytest.mark.skipif(shutil.which("git") is None, reason="the git executable is not installed")
 
@@ -61,8 +52,6 @@ PUBLIC = AccessCeiling(Sensitivity.PUBLIC)
 INTERNAL = AccessCeiling(Sensitivity.INTERNAL)
 RESTRICTED = AccessCeiling(Sensitivity.RESTRICTED)
 OWNER = AccessContext.for_owner(RESTRICTED)
-PEM_BEGIN = "-----BEGIN " + "RSA PRIVATE KEY-----"
-PEM_END = "-----END " + "RSA PRIVATE KEY-----"
 
 
 @pytest.fixture
@@ -264,105 +253,3 @@ class TestAuthentication:
     def test_a_wrong_secret_is_refused(self, container: Container) -> None:
         with pytest.raises(AuthenticationFailed):
             container.use_cases.authenticate_token.execute(AuthenticateTokenRequest(secret="x" * 43, listener=INTERNAL))
-
-
-def legacy_proposer(login: Login) -> AccessContext:
-    """Reproduce the historical authenticated proposal context for the Phase 2 pipeline tests."""
-    return replace(login(INTERNAL, INTERNAL), scopes=frozenset({Scope.READ, Scope.PROPOSE}))
-
-
-def create_content(**overrides: object) -> ProposedContent:
-    fields: dict[str, object] = {
-        "title": "Backup policy",
-        "body": "# Backups\n\nNightly, kept for 30 days. See [[docker-conventions]].\n",
-        "area": Area("infrastructure"),
-        "type": NoteType("guide"),
-        "priority": Priority.P2,
-        "sensitivity": Sensitivity.INTERNAL,
-        "summary": VALID_SUMMARY,
-        "hub": HUB_ID,
-        "rationale": "agents keep asking how backups work",
-    }
-    return ProposedContent(**{**fields, **overrides})  # type: ignore[arg-type]
-
-
-class TestWritePath:
-    def test_submit_validate_curate_review_apply_commits_with_trailers_and_updates_the_indexes(
-        self, container: Container, sample: SampleRepo, login: Login
-    ) -> None:
-        cases = container.use_cases
-        proposer = legacy_proposer(login)
-        before = container.notes.head()
-        submitted = cases.submit_proposal.execute(
-            SubmitProposalRequest(kind=ProposalKind.CREATE, content=create_content()), proposer
-        )
-        pid = submitted.proposal_id
-        assert submitted.valid
-        curated = container.proposals.get(pid)
-        assert curated is not None
-        assert curated.status is ProposalStatus.NEEDS_OWNER
-        reviewed = cases.review_proposal.execute(
-            ReviewProposalRequest(proposal_id=pid, action=ReviewAction.APPROVE), OWNER
-        )
-        assert reviewed.status is ProposalStatus.APPROVED
-        assert container.notes.head() == before  # nothing is written before the owner applies it
-
-        applied = cases.apply_proposal.execute(ProposalIdRequest(proposal_id=pid), OWNER)
-        assert applied.outcome is ApplyOutcome.APPLIED
-        assert applied.revision == container.notes.head() != before
-        new_id = applied.note_id
-        assert new_id is not None
-
-        message = raw_git(sample.root, "log", "-1", "--format=%B").strip()
-        subject, _, trailers = message.partition("\n\n")
-        assert subject == f"Add note: {new_id.value}"
-        lines = dict(line.split(": ", 1) for line in trailers.splitlines())
-        assert lines["Proposed-by"] == "claude-code"
-        assert lines["Curated-by"] == "curator/null"
-        assert lines["Approved-by"] == "owner"
-        assert lines["Proposal-Id"] == pid
-        assert raw_git(sample.root, "rev-list", "--count", f"{before}..HEAD").strip() == "1"
-
-        assert container.search.built_from() == applied.revision
-        assert container.graph.built_from() == applied.revision
-        assert not index_is_stale(container.notes, container.search, container.graph)
-        assert new_id.value in search_ids(container, proposer, "Backup policy")
-        assert any(link.source == new_id for link in container.graph.backlinks(DOCKER_ID, ceiling=INTERNAL))
-        report = cases.health_report.execute(HealthReportRequest(), OWNER)
-        assert not any(i.severity is Severity.ERROR for i in report.issues)
-
-        # The proposal is sealed in state.sqlite: reopen the store from the files and read it back.
-        store = SqliteProposalStore(sample.state_dir / "state.sqlite", container.cipher)
-        stored = store.get(pid)
-        assert stored is not None
-        assert stored.status is ProposalStatus.APPLIED
-        raw = b"".join(p.read_bytes() for p in sample.state_dir.glob("state.sqlite*"))
-        assert b"Backup policy" not in raw
-        assert b"Nightly" not in raw
-
-        again = cases.apply_proposal.execute(ProposalIdRequest(proposal_id=pid), OWNER)
-        assert again.outcome is ApplyOutcome.ALREADY_APPLIED
-
-    def test_a_proposal_with_a_private_key_is_blocked_and_never_persisted_in_clear(
-        self, container: Container, sample: SampleRepo, login: Login
-    ) -> None:
-        cases = container.use_cases
-        proposer = legacy_proposer(login)
-        material = "TWFya2VyRm9yVGhlUHJpdmF0ZUtleUJvZHlOb3RSZWFsMTIzNDU2"
-        body = f"# Deploy key\n\n{PEM_BEGIN}\n{material}\n{PEM_END}\n"
-        before = container.notes.head()
-        submitted = cases.submit_proposal.execute(
-            SubmitProposalRequest(kind=ProposalKind.CREATE, content=create_content(title="Deploy key", body=body)),
-            proposer,
-        )
-        assert not submitted.valid
-        rejected = container.proposals.get(submitted.proposal_id)
-        assert rejected is not None
-        assert rejected.status is ProposalStatus.REJECTED
-        assert rejected.validation
-        assert not rejected.validation.ok
-        assert material not in repr(submitted)
-        assert container.notes.head() == before
-        raw = b"".join(p.read_bytes() for p in sample.state_dir.glob("state.sqlite*"))
-        assert material.encode() not in raw
-        assert PEM_BEGIN.encode() not in raw

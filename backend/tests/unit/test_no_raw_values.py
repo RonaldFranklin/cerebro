@@ -10,9 +10,6 @@ from cerebro.application.errors import (
     AlreadyExists,
     NoteNotFound,
     PermissionDenied,
-    ProposalConflict,
-    ProposalNotApplicable,
-    ProposalNotFound,
     SectionNotFound,
     TokenNotFound,
 )
@@ -21,21 +18,16 @@ from cerebro.domain.access import AccessCeiling, Scope, validate_agent_name
 from cerebro.domain.agent_token import AgentToken
 from cerebro.domain.commit_message import CommitMessage
 from cerebro.domain.cross_note import cross_note_findings
-from cerebro.domain.decision import Decision, DecisionKind
 from cerebro.domain.enums import Priority, Sensitivity, Status
-from cerebro.domain.errors import InvalidTransition
 from cerebro.domain.frontmatter import parse_note
 from cerebro.domain.note import NoteId
 from cerebro.domain.note_ref import NoteRef
-from cerebro.domain.proposal import Proposal, ProposedContent
-from cerebro.domain.report import PROPOSAL_POLICY, ValidationReport, ViolationCode
+from cerebro.domain.report import AGENT_WRITE_POLICY, ValidationReport, ViolationCode
 from cerebro.domain.token_hash import TokenHash
 from cerebro.domain.validation import validate_note
 from cerebro.domain.vocabulary import HUB, Area, NoteType
-from tests.fakes.stores import InMemoryProposalStore
 from tests.fakes.system import FixedClock
 from tests.unit.application.world import World, ctx
-from tests.unit.application.write_kit import Kit
 from tests.unit.domain.builders import VOCABULARY, make_note, make_raw
 
 SECRET = "sk-SECRET-VALUE-123"
@@ -73,8 +65,6 @@ RAISING: list[tuple[str, Callable[[], Any]]] = [
     ("token hash long", lambda: TokenHash(LONG_SECRET)),
     ("search text", lambda: SearchNotesRequest(text=1, limit=SECRET)),  # type: ignore[arg-type]
     ("search limit", lambda: SearchNotesRequest(limit=SECRET)),  # type: ignore[arg-type]
-    ("decision reason", lambda: Decision(kind=DecisionKind.REJECT, reason=LONG_SECRET)),
-    ("decision kind", lambda: Decision(kind=SECRET, reason="x")),  # type: ignore[arg-type]
     (
         "commit message",
         lambda: CommitMessage(
@@ -95,28 +85,8 @@ RAISING: list[tuple[str, Callable[[], Any]]] = [
             created_at=SECRET,  # type: ignore[arg-type]
         ),
     ),
-    ("invalid transition", lambda: (_ for _ in ()).throw(InvalidTransition("approve", "rejected"))),
     ("permission denied", lambda: (_ for _ in ()).throw(PermissionDenied("read"))),
-    ("not applicable", lambda: (_ for _ in ()).throw(ProposalNotApplicable("no decision"))),
-    ("proposed content", lambda: ProposedContent(title=SECRET.encode(), body=SECRET, rationale=SECRET.encode())),  # type: ignore[arg-type]
-    ("proposed content related", lambda: ProposedContent(related=SECRET)),  # type: ignore[arg-type]
-    (
-        "proposal",
-        lambda: Proposal(
-            id=SECRET + " ",
-            kind=SECRET,  # type: ignore[arg-type]
-            status=SECRET,  # type: ignore[arg-type]
-            target=SECRET,  # type: ignore[arg-type]
-            base_hash=SECRET,
-            content=SECRET,  # type: ignore[arg-type]
-            source_agent=SECRET,
-            created_at=SECRET,  # type: ignore[arg-type]
-            updated_at=SECRET,  # type: ignore[arg-type]
-        ),
-    ),
     ("note not found", lambda: (_ for _ in ()).throw(NoteNotFound(NoteId(SLUG_SECRET)))),
-    ("proposal not found", lambda: (_ for _ in ()).throw(ProposalNotFound(SECRET))),
-    ("proposal conflict", lambda: (_ for _ in ()).throw(ProposalConflict(SECRET))),
     ("token not found", lambda: (_ for _ in ()).throw(TokenNotFound(SECRET))),
     ("already exists", lambda: (_ for _ in ()).throw(AlreadyExists("token", SECRET))),
     ("section not found", lambda: (_ for _ in ()).throw(SectionNotFound(NoteId(SLUG_SECRET), SECRET))),
@@ -160,7 +130,7 @@ def test_validation_findings_never_carry_received_ids_or_vocabulary() -> None:
         superseded_by=NoteId(SLUG_SECRET + "-b"),
         body=f"see [[{SLUG_SECRET}-c]] and [[{SLUG_SECRET}-d#Part]]",
     )
-    report = validate_note(note, VOCABULARY, PROPOSAL_POLICY)
+    report = validate_note(note, VOCABULARY, AGENT_WRITE_POLICY)
     _assert_clean(*(v.message for v in report.violations), *(v.field for v in report.violations))
     findings = cross_note_findings(NoteRef.from_note(note), {})
     assert findings
@@ -211,27 +181,13 @@ def _hub_world() -> World:
 
 def test_health_report_messages_never_name_ids_of_chains_or_targets() -> None:
     world = _hub_world()
-    proposals = InMemoryProposalStore()
     clock = FixedClock()
-    report = HealthReport(world.notes, proposals, world.search, world.graph, clock, VOCABULARY).execute(
+    report = HealthReport(world.notes, world.search, world.graph, clock, VOCABULARY).execute(
         HealthReportRequest(), ctx(Sensitivity.RESTRICTED, owner=True)
     )
     codes = {i.code for i in report.issues}
     assert {ViolationCode.HUB_CHAIN_TOO_DEEP, ViolationCode.HUB_CHAIN_CYCLE, ViolationCode.SUPERSEDED_BY_CYCLE} <= codes
     _assert_clean(*(i.message for i in report.issues), *(i.field for i in report.issues))
-
-
-def test_validate_proposal_report_never_names_received_targets() -> None:
-    kit = Kit()
-    proposal_id = kit.submit_create(
-        related=(NoteId(SLUG_SECRET + "-r"),), body=f"See [[{SLUG_SECRET}-b]] and [[{SLUG_SECRET}-c#Part]].\n"
-    )
-    outcome = kit.validate(proposal_id)
-    assert outcome.validation is not None
-    assert ViolationCode.BROKEN_LINK in {v.code for v in outcome.validation.violations}
-    _assert_clean(
-        *(v.message for v in outcome.validation.violations), *(v.field for v in outcome.validation.violations)
-    )
 
 
 def test_secret_in_a_list_value_is_flagged_not_quoted() -> None:
