@@ -5,13 +5,13 @@ import fcntl
 import json
 import os
 import re
+import secrets
 import shutil
 import sqlite3
 import stat
 import subprocess
 import sys
-import tempfile
-from contextlib import closing
+from contextlib import ExitStack, closing
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -45,11 +45,14 @@ def backup(content: Path, state: Path, destination: Path, repository: str, branc
     if not all(stat.S_ISREG(p.lstat().st_mode) for p in (source, verifier)):
         raise ValueError("expected regular state.sqlite and owner.verifier files")
     destination.mkdir(mode=0o700, parents=True, exist_ok=True)
-    if any(destination.glob(".pending-*")):
-        raise ValueError("backup in progress or interrupted: inspect .pending-* before retrying")
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S.%fZ")
-    with tempfile.TemporaryDirectory(dir=destination, prefix=".pending-") as staging:
-        work = Path(staging)
+    work = destination / ".pending"
+    with ExitStack() as cleanup:
+        try:
+            work.mkdir(mode=0o700)
+        except FileExistsError:
+            raise ValueError("backup in progress or interrupted: inspect .pending before retrying") from None
+        cleanup.callback(shutil.rmtree, work)
         snapshot = work / "snapshot"
         snapshot.mkdir(mode=0o700)
         # The same lock serializes service writes. Release it before contacting the remote.
@@ -113,7 +116,7 @@ def backup(content: Path, state: Path, destination: Path, repository: str, branc
             f"{revision}:refs/heads/{branch}",
             cwd=transport,
         )
-        completed = destination / (stamp + "-" + work.name.removeprefix(".pending-"))
+        completed = destination / (stamp + "-" + secrets.token_hex(4))
         snapshot.rename(completed)
         sync(destination)
         return completed

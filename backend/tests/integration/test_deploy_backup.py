@@ -1,11 +1,14 @@
 """Run the host backup command with a synthetic private remote. No test calls GitHub."""
 
+import fcntl
 import os
 import shutil
 import sqlite3
 import subprocess
 import sys
+import time
 from collections.abc import Iterator
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import closing
 from dataclasses import dataclass
 from pathlib import Path
@@ -43,6 +46,7 @@ class Backup:
             capture_output=True,
             text=True,
             check=False,
+            timeout=10,
         )
 
 
@@ -139,7 +143,7 @@ def test_failed_backup_preserves_the_last_snapshot(backup: Backup, failure: str)
     elif failure == "branch":
         subprocess.run(["git", "-C", str(backup.content), "branch", "-m", "prod"], check=True)
     elif failure == "pending":
-        pending = backup.copies / ".pending-interrupted"
+        pending = backup.copies / ".pending"
         pending.mkdir()
         (pending / "sentinel").write_text("owner inspection")
         previous.add(pending)
@@ -175,3 +179,17 @@ def test_refuses_a_checkout_with_excluded_artifacts_in_history(backup: Backup, e
     subprocess.run([*git, "commit", "-qm", "removed from working tree"], check=True)
     assert backup.run().returncode != 0
     assert subprocess.check_output(["git", "--git-dir", str(backup.remote), "for-each-ref"]) == b""
+
+
+def test_overlapping_backups_reserve_one_destination(backup: Backup) -> None:
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        with (backup.state / "writer.lock").open("rb") as lock:
+            fcntl.flock(lock, fcntl.LOCK_EX)
+            first = executor.submit(backup.run)
+            deadline = time.monotonic() + 5
+            while not (backup.copies / ".pending").exists() and time.monotonic() < deadline:
+                time.sleep(0.01)
+            assert (backup.copies / ".pending").exists()
+            assert backup.run().returncode != 0
+        assert first.result().returncode == 0
+    assert len(list(backup.copies.iterdir())) == 1

@@ -34,7 +34,7 @@ owner's separate offline custody. The verifier is sensitive; retain the owner's 
 
 The push sends the recorded commit and its ancestors to the chosen environment branch. Missing credentials,
 public repositories, excluded files in commit history, and divergent branches fail the job. A failed job leaves
-earlier completed snapshots available. The command refuses to start if a hidden `.pending-*` directory
+earlier completed snapshots available. The command refuses to start if a hidden `.pending` directory
 already exists. Check for an active backup. After a timeout or power loss, confirm no backup is running
 and ask the owner to inspect and move the interrupted directory aside before retrying. Git pushes never include
 untracked checkout or Git metadata. The state backup reads an explicit list of files. Keep all `quarantine-*`
