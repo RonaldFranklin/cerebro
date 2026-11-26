@@ -208,7 +208,7 @@ else
 fi
 ```
 
-**Commands the implementation PRs must provide.** From the repository root in WSL, run the following against a disposable synthetic instance. The web commands and fixture launcher are planned deliverables. Keep the existing CLI and MCP entry points usable without installing Node on the service host.
+**Commands the implementation PRs must provide.** From the repository root on x86-64 WSL Ubuntu, run the following against a disposable synthetic instance. The browser binary inventory covers Linux x64; the ARM64 instructions above cover the Node and pnpm installations. The web commands and fixture launcher are planned deliverables. Keep the existing CLI and MCP entry points usable without installing Node on the service host.
 
 ```bash
 (cd backend && uv sync --locked && uv run --locked ruff check . && uv run --locked ruff format --check . &&
@@ -246,5 +246,5 @@ the Chromium system packages were installed. Node and pnpm were installed under 
 The Linux x64 browser downloads matched the three URLs and dates in §4. The committed web lock
 matches the approved inventory, and the Python lock adds only FastAPI and annotated-doc.
 TypeScript 7 checks Vite, Playwright and CodeMirror types in strict mode. The native Vite build
-bundles a Markdown editor. Playwright opens it over fixture HTTPS and verifies editor styling under the browser CSP. Run this compatibility check with
+bundles a Markdown editor. Playwright opens it over fixture HTTPS and verifies editor styling under the browser CSP. On x86-64 WSL Ubuntu, run this compatibility check with
 `cd web && pnpm install --frozen-lockfile && pnpm exec playwright install chromium && pnpm run test:toolchain`.

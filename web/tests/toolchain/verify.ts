@@ -49,10 +49,21 @@ try {
           document.documentElement.dataset.violation = event.effectiveDirective;
         });
       });
-      await page.goto(`https://127.0.0.1:${address.port}/`);
+      const response = await page.goto(`https://127.0.0.1:${address.port}/`);
+      const policy = await response?.headerValue("Content-Security-Policy");
+      expect(policy).toContain("default-src 'none'");
+      expect(policy).toMatch(/style-src 'self' 'nonce-[A-Za-z0-9+/=]+'/);
       await expect(page.locator(".cm-content")).toHaveText("Toolchain test");
       await expect(page.locator(".cm-editor")).toHaveCSS("display", "flex");
-      expect(await page.locator("html").getAttribute("data-violation")).toBeNull();
+      const html = page.locator("html");
+      expect(await html.getAttribute("data-violation")).toBeNull();
+      await page.evaluate(() => {
+        const style = document.createElement("style");
+        style.textContent = ".cm-editor { display: none !important }";
+        document.head.append(style);
+      });
+      await expect(html).toHaveAttribute("data-violation", "style-src-elem");
+      await expect(page.locator(".cm-editor")).toHaveCSS("display", "flex");
     } finally {
       await browser.close();
     }
