@@ -33,7 +33,9 @@ rewrites and ``remote.<name>.receivepack`` / ``uploadpack`` (a configured remote
 a push by URL does not read them). ssh itself reads the real ``~/.ssh/config`` of the service user (``HOME`` only
 hides git's own config), so keep that file trustworthy. The content repository is the owner's own private
 repository; do not point Cérebro at one you do not trust. Refusing to stage ``.gitattributes`` narrows how a
-note write could activate such a driver.
+note write could activate such a driver. Index flags set by hand (``git update-index --assume-unchanged`` or
+``--skip-worktree``) make ``status`` and ``diff`` skip a file, so ``uncommitted_paths`` and ``matches_head`` cannot see
+its edits; ``core.checkStat`` and ``core.trustctime`` are forced to their defaults so configuration cannot do the same.
 """
 
 import contextlib
@@ -186,6 +188,8 @@ class GitRepo:
             f"core.hooksPath={os.devnull}",
             f"core.attributesFile={os.devnull}",
             "core.fsmonitor=false",
+            "core.checkStat=default",  # a repository config cannot make the clean-tree check ignore changed files
+            "core.trustctime=true",
             "core.pager=cat",
             "core.askPass=",
             "core.sshCommand=ssh",

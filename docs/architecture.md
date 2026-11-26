@@ -226,6 +226,9 @@ Filesystem repository, operating notes (Phase 2):
   need one, the health report and agent writes (cross-note validation lists every note) fail. Nothing is discarded
   automatically: the owner commits the file or runs `git restore --staged --worktree` on it (or deletes a file that
   was never committed). Other files (`schema/`, `README.md`, dotfiles, non-`.md` files) are not checked.
+  Listings check before and after reading; `get` checks after reading and, when the file looks uncommitted, waits for
+  any running `apply` and checks again. Residual risk: index flags set by hand (`assume-unchanged`, `skip-worktree`)
+  hide a file's edits from git, so never set them on note files.
 - `apply` refuses when a `.git/index.lock` exists (the error tells the owner to remove a stale one), when anything is
   staged (the paths are named), or when a planned note is untracked, has uncommitted edits, or a new note's path is
   already known to git, and commits only the planned paths.

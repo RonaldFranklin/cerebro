@@ -43,10 +43,12 @@ hour are deleted at the start of each ``apply``.
 
 Residual risks: writers outside this class that change the tree between the clean-state check and the write are
 overwritten (the lock covers only our writers); a killed ``git`` can leave a stale ``.git/index.lock`` that makes later
-applies fail until the owner removes it (the error says so); ``get`` takes no lock; a file edited by hand between the
-clean-tree check and its read can still be served once; replacing an encrypted file by a plaintext one declaring
-``internal`` is indistinguishable from a normal note; listing a folder reads its entries by path (an attacker would need
-write access to the repository directory).
+applies fail until the owner removes it (the error says so); ``get`` takes no lock unless the file looks uncommitted
+(then it waits for any ``apply`` and checks again, so a read during a write is not refused spuriously); a file edited by
+hand and restored again while it is being read can still be served once; git index flags set by hand
+(``assume-unchanged``, ``skip-worktree``) hide edits from the check, so never set them on note files; replacing an
+encrypted file by a plaintext one declaring ``internal`` is indistinguishable from a normal note; listing a folder reads
+its entries by path (an attacker would need write access to the repository directory).
 """
 
 import os
@@ -176,22 +178,35 @@ class FilesystemNoteRepository:
         if len(found) > 1:
             raise NoteFileError(found[0], "the same note id exists in several folders")
         note = self._read(found[0])
-        if self._uncommitted(found):
-            raise NoteFileError(found[0], UNCOMMITTED_REASON)
-        return note
+        if not self._uncommitted(found):  # checked after the read: what was read was not being edited
+            return note
+        # An ``apply`` may be between writing this file and committing it: wait for it (shared lock), then decide.
+        with file_lock(self._lock_path, exclusive=False, timeout=self._lock_timeout):
+            found = self._existing_paths(note_id)
+            if not found:
+                return None
+            if len(found) > 1:
+                raise NoteFileError(found[0], "the same note id exists in several folders")
+            note = self._read(found[0])
+            if self._uncommitted(found):
+                raise NoteFileError(found[0], UNCOMMITTED_REASON)
+            return note
 
     def list_notes(self) -> tuple[Note, ...]:
+        """Checked before and after reading: a file edited by hand during the listing is refused too."""
         with file_lock(self._lock_path, exclusive=False, timeout=self._lock_timeout):
-            uncommitted = [(path, UNCOMMITTED_REASON) for path in self._uncommitted(FOLDERS)]
+            before = self._uncommitted(FOLDERS)
+            notes: tuple[Note, ...] = ()
+            problems: list[tuple[str, str]] = []
             try:
                 notes = self._load_all()
             except NoteFileError as exc:
-                reported = {path for path, _ in exc.problems}
-                raise NoteFileError.from_problems(
-                    [*exc.problems, *(p for p in uncommitted if p[0] not in reported)]
-                ) from None
-            if uncommitted:
-                raise NoteFileError.from_problems(uncommitted)
+                problems.extend(exc.problems)
+            reported = {path for path, _ in problems}
+            uncommitted = sorted(set(before) | set(self._uncommitted(FOLDERS)))
+            problems.extend((path, UNCOMMITTED_REASON) for path in uncommitted if path not in reported)
+            if problems:
+                raise NoteFileError.from_problems(problems)
             return notes
 
     def list_refs(self) -> tuple[NoteRef, ...]:
