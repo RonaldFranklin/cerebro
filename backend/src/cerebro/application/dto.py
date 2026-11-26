@@ -423,6 +423,8 @@ class RebuildIndexRequest:
 @dataclass(frozen=True, slots=True, kw_only=True)
 class RebuildIndexResult:
     notes_indexed: int
+    files_excluded: int = 0
+    """Note files left out for a stable problem; the health report names them."""
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -438,11 +440,15 @@ class HealthCode(StrEnum):
     SEARCH_INDEX_STALE = "search_index_stale"
     GRAPH_INDEX_STALE = "graph_index_stale"
     INDEX_STALE = "index_stale"
+    NOTE_FILE_EXCLUDED = "note_file_excluded"
+    """A committed file that is not a valid note: left out of reads, search and the graph."""
+    NOTE_FILE_BLOCKING = "note_file_blocking"
+    """A note file that differs from the last commit or cannot be read: index rebuilds and writes fail."""
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class HealthIssue:
-    """One problem. ``subject`` is a note id or the name of an index. ``message`` never contains
+    """One problem. ``subject`` is a note id, the name of an index or a note file path. ``message`` never contains
     note text or a secret value (secret findings keep the detector, the field and the line only).
     """
 

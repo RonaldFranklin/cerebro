@@ -204,3 +204,24 @@ def test_private_read_with_a_redacted_reference_has_no_edit_hash(service: Servic
     assert response.status_code == 200
     assert "ghost-note" not in response.json()["body"]
     assert "content_hash" not in response.json()
+
+
+def test_note_file_problems_are_listed_in_health_and_logged_without_content(
+    service: Service, capsys: pytest.CaptureFixture[str]
+) -> None:
+    stray = service.container.settings.content_repo / "notes/stray-draft.md"
+    stray.write_text(f"---\ntitle: {RESTRICTED_MARKER}\n")  # never committed
+    try:
+        health = service.private.get("/api/health")
+        assert health.status_code == 200
+        issues = [i for i in health.json()["issues"] if i["code"] == "note_file_blocking"]
+        assert [i["subject"] for i in issues] == ["notes/stray-draft.md"]
+        assert "differs from the last commit" in issues[0]["message"]
+        service.container.search.set_revision("rev-elsewhere")  # the next read must rebuild, which refuses
+        failed = service.private.get("/api/search", params={"q": "ssh"})
+        assert (failed.status_code, failed.json()["error"]) == (503, "Some note files need attention: open Health.")
+        assert capsys.readouterr().err == "cerebro: GET /api/search failed: NoteReadError\n"
+    finally:
+        stray.unlink()
+    assert service.private.get("/api/search", params={"q": "ssh"}).status_code == 200
+    assert RESTRICTED_MARKER not in capsys.readouterr().err

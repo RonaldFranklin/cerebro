@@ -18,11 +18,12 @@ from cerebro.application.dto import (
 from cerebro.application.errors import (
     AlreadyExists,
     AuthenticationFailed,
+    NoteReadError,
     PermissionDenied,
     TokenNotFound,
 )
 from cerebro.application.index_state import advance_revision, index_is_stale
-from cerebro.application.ports.notes import NoteChange
+from cerebro.application.ports.notes import FileProblem, NoteChange
 from cerebro.application.ports.search import SearchQuery
 from cerebro.application.use_cases import (
     AuthenticateToken,
@@ -95,6 +96,29 @@ class TestRebuildIndex:
         w = World()
         with pytest.raises(PermissionDenied):
             self.make(w).execute(RebuildIndexRequest(), agent())
+
+    def test_a_stable_problem_file_is_left_out_and_the_index_is_fresh(self) -> None:
+        w = World()
+        w.add(id=NID("kept"), hub=None)
+        w.notes.problems.append(FileProblem("notes/broken.md", "invalid frontmatter", stable=True))
+        w.search.set_revision("rev-old")
+        result = self.make(w).execute(RebuildIndexRequest(), owner())
+        assert (result.notes_indexed, result.files_excluded) == (1, 1)
+        assert not index_is_stale(w.notes, w.search, w.graph)  # the next read does not rebuild again
+
+    def test_an_unstable_problem_fails_and_never_marks_the_index_fresh(self) -> None:
+        w = World()
+        w.add(id=NID("kept"), hub=None)
+        w.notes.problems += [
+            FileProblem("notes/broken.md", "invalid frontmatter", stable=True),
+            FileProblem("notes/edited.md", "differs from the last commit", stable=False),
+        ]
+        w.search.set_revision("rev-old")
+        with pytest.raises(NoteReadError) as info:
+            self.make(w).execute(RebuildIndexRequest(), owner())
+        assert info.value.problems == (("notes/edited.md", "differs from the last commit"),)
+        assert w.search.built_from() == "rev-old"
+        assert index_is_stale(w.notes, w.search, w.graph)
 
 
 # -- tokens ---------------------------------------------------------------------------------------------------------
@@ -382,6 +406,38 @@ class TestHealthReport:
         assert report.ok
         assert (report.notes_checked, report.search_index_checked) == (3, True)
 
+    def test_problem_files_are_listed_and_the_other_notes_still_checked(self) -> None:
+        kit = HealthKit()
+        kit.world.notes.problems.append(FileProblem("notes/broken.md", "invalid frontmatter", stable=True))
+        report = kit.run()
+        (issue,) = report.issues
+        assert (issue.subject, issue.code, issue.severity) == (
+            "notes/broken.md",
+            HealthCode.NOTE_FILE_EXCLUDED,
+            Severity.ERROR,
+        )
+        assert issue.message.startswith("invalid frontmatter (")
+        assert (report.notes_checked, report.search_index_checked) == (3, True)
+
+    def test_unstable_problem_files_block_and_skip_the_entry_comparison(self) -> None:
+        kit = HealthKit()
+        kit.world.notes.problems.append(FileProblem("notes/edited.md", "differs from the last commit", stable=False))
+        kit.world.search.rebuild([], revision=kit.world.notes.head())  # would differ entry by entry
+        report = kit.run()
+        assert [(i.subject, i.code) for i in report.issues] == [("notes/edited.md", HealthCode.NOTE_FILE_BLOCKING)]
+        assert not report.search_index_checked
+
+    def test_a_scan_that_cannot_run_is_reported_not_raised(self) -> None:
+        kit = HealthKit()
+
+        def fail() -> Any:
+            raise NoteReadError(problems=[("notes", "is not a real directory (symlink or file)")])
+
+        kit.world.notes.scan = fail  # type: ignore[method-assign]
+        report = kit.run()
+        assert [(i.subject, i.code) for i in report.issues] == [("notes", HealthCode.NOTE_FILE_BLOCKING)]
+        assert (report.ok, report.notes_checked) == (False, 0)
+
     def test_only_the_owner_and_only_with_full_view(self) -> None:
         kit = HealthKit()
         for c in (agent(), ctx(INT, frozenset(Scope)), owner(INT), owner(PUB)):
@@ -576,14 +632,14 @@ class TestIndexRevision:
     def test_rebuild_reads_the_head_before_the_notes(self) -> None:
         w = healthy_world()
         seen = w.notes.head()
-        original = w.notes.list_notes
+        original = w.notes.scan
 
-        def commit_then_list() -> Any:
-            notes = original()
+        def commit_then_scan() -> Any:
+            scan = original()
             w.notes.apply([NoteChange(note=_unindexed())], MESSAGE)  # a commit lands while the notes are read
-            return notes
+            return scan
 
-        w.notes.list_notes = commit_then_list  # type: ignore[method-assign]
+        w.notes.scan = commit_then_scan  # type: ignore[method-assign]
         RebuildIndex(w.notes, w.search, w.graph).execute(RebuildIndexRequest(), owner())
         assert w.search.built_from() == seen != w.notes.head()
         assert index_is_stale(w.notes, w.search, w.graph)

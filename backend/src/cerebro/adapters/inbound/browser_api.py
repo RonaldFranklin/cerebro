@@ -10,8 +10,10 @@ from starlette.middleware.base import RequestResponseEndpoint
 from starlette.responses import JSONResponse, Response
 from starlette.types import ASGIApp, Receive, Scope, Send
 
+from cerebro.adapters.inbound.diagnostics import log_failure
 from cerebro.adapters.inbound.input_limits import MAX_INPUT_BYTES
 from cerebro.application.browser import AuthenticationFailed, BrowserAuth, BrowserBinding, CsrfRejected, SessionInfo
+from cerebro.application.errors import NoteReadError
 from cerebro.domain.access import AccessCeiling, AccessContext
 from cerebro.domain.enums import Sensitivity
 from cerebro.domain.errors import InvalidValueError
@@ -32,6 +34,12 @@ class BrowserBodyLimit:
         read = scope["type"] == "http" and scope["method"] in {"GET", "HEAD"}
         limiter = self._read if read else self._write
         await limiter(scope, receive, send)
+
+
+def _route(request: Request) -> str:
+    """The matched route's template (``/api/notes/{note_id}``), never the raw path."""
+    path = getattr(request.scope.get("route"), "path", None)
+    return path if isinstance(path, str) else "unmatched route"
 
 
 def _error(status: int, message: str) -> JSONResponse:
@@ -156,8 +164,12 @@ def browser_api(auth: BrowserAuth, binding: BrowserBinding, ceiling: AccessCeili
                 response.headers["Retry-After"] = str(exc.retry_after)
                 return response
             return _error(401, "Authentication required.")
-        except Exception:
-            # No credentials, note fields may reach server error logs.
+        except NoteReadError as exc:
+            log_failure(f"{request.method} {_route(request)}", exc)
+            return _error(503, "Some note files need attention: open Health.")
+        except Exception as exc:
+            # Only the route template and the exception class are logged: messages may carry note fields.
+            log_failure(f"{request.method} {_route(request)}", exc)
             return _error(503, "Service unavailable.")
         if response.status_code == 413:
             if request.method in {"GET", "HEAD"}:

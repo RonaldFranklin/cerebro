@@ -10,6 +10,7 @@ import pytest
 from mcp import MCPError, types
 from mcp.client import Client
 
+from cerebro.adapters.inbound.diagnostics import LOCAL_FAILURE, NOTE_FILES_FAILURE
 from cerebro.adapters.inbound.mcp_tools import MCPTools, parse_tool
 from cerebro.application.dto import GetNeighborsRequest, SearchNotesRequest
 from cerebro.application.errors import AuthenticationFailed
@@ -240,3 +241,34 @@ def test_sdk_discovery_reauthenticates_even_after_a_success(container: Container
                 await client.list_tools(cache_mode="bypass")
 
     asyncio.run(run())
+
+
+def text_of(result: types.CallToolResult) -> str:
+    (content,) = result.content
+    assert isinstance(content, types.TextContent)
+    return content.text
+
+
+def test_local_failures_are_not_offline_and_reveal_nothing(
+    container: Container, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    tools = tools_for(container)
+    root = container.settings.content_repo
+    vault = root / f"notes/{VAULT_ID.value}.md"
+    vault.write_bytes(vault.read_bytes() + b"\n")  # a restricted note edited by hand, not committed
+    missing = text_of(tools.call("cerebro_read", {"id": "absent-note"}, lambda: AGENT))
+    assert text_of(tools.call("cerebro_read", {"id": VAULT_ID.value}, lambda: AGENT)) == missing == "Not found."
+
+    container.search.set_revision("rev-elsewhere")  # the next read rebuilds, which refuses uncommitted files
+    failed = tools.call("cerebro_search", {"query": ""}, lambda: AGENT)
+    assert failed.is_error
+    assert text_of(failed) == NOTE_FILES_FAILURE
+    assert capsys.readouterr().err == "cerebro: mcp cerebro_search failed: NoteReadError\n"
+
+    vault.write_bytes(vault.read_bytes()[:-1])
+    monkeypatch.setattr(container.graph, "neighbors", lambda *a, **k: (_ for _ in ()).throw(OSError(RESTRICTED_MARKER)))
+    failed = tools.call("cerebro_neighbors", {"id": SSH_ID.value}, lambda: AGENT)
+    assert text_of(failed) == LOCAL_FAILURE
+    err = capsys.readouterr().err
+    assert err == "cerebro: mcp cerebro_neighbors failed: OSError\n"
+    assert RESTRICTED_MARKER not in err

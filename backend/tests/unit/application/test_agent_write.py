@@ -6,9 +6,9 @@ import pytest
 
 from cerebro.application.agent_write import AgentWriteRequest, WriteRejected
 from cerebro.application.dto import GetVocabularyRequest
-from cerebro.application.errors import PermissionDenied
+from cerebro.application.errors import NoteReadError, PermissionDenied
 from cerebro.application.index_state import index_is_stale
-from cerebro.application.ports.notes import NoteChange
+from cerebro.application.ports.notes import FileProblem, NoteChange
 from cerebro.application.ports.search import SearchQuery
 from cerebro.application.use_cases.agent_write import AgentWrite
 from cerebro.application.use_cases.get_vocabulary import GetVocabulary
@@ -468,3 +468,17 @@ def test_a_failed_index_update_after_the_commit_is_flagged_not_raised(method: st
 
 def _query(ctx: AccessContext) -> SearchQuery:
     return SearchQuery(ceiling=ctx.ceiling, text="Direct write")
+
+
+def test_a_note_file_problem_fails_the_write_and_still_counts_against_the_quota() -> None:
+    kit = Kit()
+    write = writer(kit, 1)
+    ctx = replace(agent_ctx(scopes=frozenset({Scope.WRITE})), token_id="token-one")
+    kit.world.notes.problems.append(FileProblem("notes/broken.md", "invalid frontmatter", stable=True))
+    commits = kit.commits
+    with pytest.raises(NoteReadError):  # writes validate against every note: an incomplete set is refused
+        write.execute(request(), ctx)
+    assert kit.commits == commits
+    kit.world.notes.problems.clear()
+    with pytest.raises(WriteRejected, match="rate_limited"):  # the rate limit holds whatever the failure
+        write.execute(request(), ctx)

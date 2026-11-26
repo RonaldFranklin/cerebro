@@ -248,7 +248,7 @@ def test_stdio_framing_and_invalid_calls_keep_the_request_id() -> None:
     assert output.getvalue() == b""
 
 
-def test_sdk_gets_offline_error_when_token_store_fails(tmp_path: Path) -> None:
+def test_sdk_gets_a_local_failure_when_token_store_fails(tmp_path: Path) -> None:
     from mcp import MCPError
 
     from cerebro.adapters.inbound.mcp_http import http_app
@@ -277,7 +277,19 @@ def test_sdk_gets_offline_error_when_token_store_fails(tmp_path: Path) -> None:
             ) as client,
         ):
             store.online = False
-            with pytest.raises(MCPError, match="Cérebro offline"):
+            with pytest.raises(MCPError, match="Cérebro local failure"):
                 await client.call_tool("cerebro_overview", {})
 
     asyncio.run(run())
+
+
+def test_the_bridge_waits_longer_than_a_writer_may_wait_for_its_locks() -> None:
+    from dataclasses import fields
+
+    from cerebro.adapters.inbound.mcp_stdio import REPLY_TIMEOUT
+    from cerebro.adapters.outbound.filesystem.repository import DEFAULT_LOCK_TIMEOUT
+    from cerebro.bootstrap.settings import Settings
+
+    (writer_lock,) = (f.default for f in fields(Settings) if f.name == "writer_lock_timeout")
+    assert isinstance(writer_lock, float)
+    assert 2 * (writer_lock + DEFAULT_LOCK_TIMEOUT) < REPLY_TIMEOUT

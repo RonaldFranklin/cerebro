@@ -8,8 +8,8 @@ async function owner(page: Page, ceiling = "restricted") {
 }
 
 const clean = {ok:true,notes_checked:4,search_index_checked:true,issues:[]};
-function issue(code: string, subject: string, severity: string) {
-  return {code,subject,severity,field:null,message:"SENSITIVE_FIXTURE_RAW_MESSAGE"};
+function issue(code: string, subject: string, severity: string, message = `${code} fixture message`) {
+  return {code,subject,severity,field:null,message};
 }
 
 test("health separates revision and index coverage and links only visible note subjects", async ({page}) => {
@@ -24,7 +24,7 @@ test("health separates revision and index coverage and links only visible note s
   await expect(page.getByText("Not checked",{exact:true})).toBeVisible();
   await expect(page.getByRole("link",{name:"guide",exact:true})).toHaveAttribute("href","/notes/guide?history=true");
   for (const name of ["missing","index","core-budget"]) await expect(page.getByRole("link",{name,exact:true})).toHaveCount(0);
-  await expect(page.getByText("SENSITIVE_FIXTURE_RAW_MESSAGE")).toHaveCount(0);
+  await expect(page.getByText("orphan_note fixture message",{exact:true})).toBeVisible();
   await expect(page.getByText("secret_detected",{exact:true})).toBeVisible();
   await page.getByLabel("Severity").selectOption("warning");
   await expect(page.getByText("secret_detected",{exact:true})).toHaveCount(0);
@@ -70,4 +70,18 @@ test("health shows entry drift even when revisions match and omits links if grap
   await expect(page.getByText("Entries differ",{exact:true})).toHaveCount(2);
   await expect(page.getByText("guide",{exact:true})).toHaveCount(2);
   await expect(page.getByRole("link",{name:"guide",exact:true})).toHaveCount(0);
+});
+
+test("health names problem note files with their reason and never links them", async ({page}) => {
+  await owner(page);
+  await page.route("**/api/health", route => route.fulfill({json:{...clean,ok:false,issues:[
+    issue("note_file_excluded","notes/guide.md","error","invalid frontmatter (left out of reads, search and the graph until fixed)"),
+    issue("note_file_blocking","notes/draft.md","error","differs from the last commit (index rebuilds and writes fail until it is fixed)"),
+  ]}}));
+  await page.goto("/health");
+  await expect(page.getByText("Committed file is not a valid note",{exact:true})).toBeVisible();
+  await expect(page.getByText("notes/guide.md",{exact:true})).toBeVisible();
+  await expect(page.getByText(/^invalid frontmatter \(left out/)).toBeVisible();
+  await expect(page.getByText(/^differs from the last commit/)).toBeVisible();
+  await expect(page.getByRole("link",{name:"notes/guide.md"})).toHaveCount(0);
 });

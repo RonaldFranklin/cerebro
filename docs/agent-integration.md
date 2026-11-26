@@ -191,6 +191,15 @@ Record the two offline messages and the first successful read after restart for 
 listener cannot send a protocol response. The prompt tells the real agent how to report that connection failure.
 The stdio development bridge can return the fixed offline error directly. Its command is
 `cerebro-mcp-stdio --private-port PORT` with the token in `CEREBRO_MCP_TOKEN` in the bridge environment.
+The bridge gives up connecting after 5 seconds but waits up to 120 seconds for a reply, longer than a write or an
+index rebuild may wait for the writer lock, so a busy server is never reported as offline.
+
+“Cérebro offline” means the server could not be reached. A running server that fails answers with a fixed
+**local failure** instead: “Cérebro local failure: some note files need the owner's attention …” when a note file
+blocks the request (for example a hand edit that was never committed), or a generic local failure otherwise. Neither
+names a path or a note; retrying does not help until the owner fixes the file. The server's standard error
+gets one line per failure with the route and the exception class only; the owner finds the files in **Health** or
+with `cerebro health`.
 
 ## Inspect the same client writes in Recent changes
 

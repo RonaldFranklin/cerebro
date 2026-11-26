@@ -85,6 +85,8 @@ class NoteRepositoryContract:
         ids = [n.id.value for n in repo.list_notes()]
         assert ids == ["alpha-note", "mid-note", "zeta-note"]
         assert [r.id.value for r in repo.list_refs()] == ids
+        scan = repo.scan()
+        assert (scan.notes, scan.problems, scan.stable) == (repo.list_notes(), (), True)
 
     def test_refs_equal_the_refs_built_from_the_stored_notes(self, repo: NoteRepository) -> None:
         body = "[[a-note]] `[[b-note]]` [[c-note|alias]]"

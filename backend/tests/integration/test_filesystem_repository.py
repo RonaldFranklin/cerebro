@@ -633,6 +633,61 @@ def test_hostile_file_names_cannot_inject_control_characters_into_errors(
     assert "\n" not in str(info.value)
 
 
+def commit_all(root: Path) -> None:
+    raw_git(root, "add", "-A")
+    raw_git(root, "-c", "user.name=t", "-c", "user.email=t@example.invalid", "commit", "-q", "-m", "by hand")
+
+
+def test_a_committed_invalid_file_is_left_out_and_does_not_hide_the_others(
+    repo: FilesystemNoteRepository, root: Path
+) -> None:
+    good_text(repo, root, plain())
+    write_note_file(root, "notes/broken-note.md", "no frontmatter\n")
+    write_note_file(root, "notes/huge-note.md", "---\n" + "x" * (600 * 1024))
+    commit_all(root)
+    scan = repo.scan()
+    assert [n.id.value for n in scan.notes] == ["server-ssh-access"]
+    assert [(p.path, p.stable) for p in scan.problems] == [("notes/broken-note.md", True), ("notes/huge-note.md", True)]
+    assert scan.stable
+    assert repo.get(NoteId("broken-note")) is None
+    assert repo.get(NoteId("server-ssh-access")) == plain()
+    with pytest.raises(NoteFileError) as info:  # cross-note validation still needs every note
+        repo.list_notes()
+    assert {p for p, _ in info.value.problems} == {"notes/broken-note.md", "notes/huge-note.md"}
+    path = write_note_file(root, "notes/broken-note.md", "still broken\n")  # edited, not committed
+    with pytest.raises(NoteFileError, match="does not start"):
+        repo.get(NoteId("broken-note"))
+    assert not repo.scan().stable
+    path.unlink()  # a committed file deleted by hand is not stable either
+    assert ("notes/broken-note.md", False) in [(p.path, p.stable) for p in repo.scan().problems]
+
+
+def test_a_committed_id_in_two_folders_is_left_out_entirely(repo: FilesystemNoteRepository, root: Path) -> None:
+    text = good_text(repo, root, plain())
+    write_note_file(root, "core/server-ssh-access.md", text)
+    commit_all(root)
+    scan = repo.scan()
+    assert scan.notes == ()  # neither copy stands for the id, whichever folder is valid
+    assert [(p.path, p.stable) for p in scan.problems] == [
+        ("core/server-ssh-access.md", True),
+        ("notes/server-ssh-access.md", True),
+    ]
+    assert repo.get(NoteId("server-ssh-access")) is None
+    with pytest.raises(ContentConflict):
+        repo.apply([NoteChange(note=plain())], MESSAGE)
+
+
+def test_an_undecryptable_committed_note_is_never_stable(git: GitRepo, root: Path, cipher: Cipher) -> None:
+    FilesystemNoteRepository(root, git=git, cipher=cipher).apply([NoteChange(note=make_note())], MESSAGE)
+    other = FilesystemNoteRepository(root, git=git, cipher=FernetCipher([generate_key()]))
+    scan = other.scan()  # a wrong key must not leave restricted notes out of a fresh index
+    assert [(p.path, p.stable) for p in scan.problems] == [("notes/server-ssh-access.md", False)]
+    assert "cannot be decrypted" in scan.problems[0].reason
+    assert not scan.stable
+    with pytest.raises(NoteFileError, match="cannot be decrypted"):
+        other.get(make_note().id)
+
+
 # -- vocabulary ----------------------------------------------------------------------------------------------------
 
 
@@ -804,7 +859,7 @@ def test_a_note_edited_while_the_listing_reads_it_is_refused(
     base, _ = committed_base(repo, git)
     real_load = FilesystemNoteRepository._load_all
 
-    def load_then_edit(self: FilesystemNoteRepository) -> tuple[Note, ...]:
+    def load_then_edit(self: FilesystemNoteRepository) -> Any:
         loaded = real_load(self)
         (root / "notes/base-note.md").write_bytes(render_note(replace(base, title="Edited meanwhile")))
         return loaded

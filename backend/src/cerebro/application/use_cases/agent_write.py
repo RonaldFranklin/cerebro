@@ -6,7 +6,7 @@ from collections.abc import Iterator
 from dataclasses import replace
 from datetime import date
 
-from cerebro.application.access import require_scope, visible_id
+from cerebro.application.access import require_scope, stored_note, visible_id
 from cerebro.application.agent_write import AgentWriteRequest, AgentWriteResult, WriteFinding, WriteRejected, projected
 from cerebro.application.dto import sensitivity_raise_warnings
 from cerebro.application.errors import PermissionDenied
@@ -194,7 +194,7 @@ class AgentWrite:
         ]
 
     def _visible_target(self, note_id: NoteId, ctx: AccessContext) -> Note:
-        note = self._notes.get(note_id)
+        note = stored_note(self._notes, note_id, ctx)
         if note is None or not ctx.ceiling.allows(note.sensitivity) or self._unavailable_references(note, ctx):
             raise WriteRejected(_UNAVAILABLE)
         return note

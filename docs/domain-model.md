@@ -288,7 +288,7 @@ Allowed-value lists are fine. Exactly what is and is not named:
 - Named, by exception: the id of a note similar to a new one, in the `possible_duplicate` warning, only to a
   token with `read` and within its ceiling (see above); the id of a *stored* note that links to the one being checked, in the inbound-link
   sensitivity finding (`<id> links to this note`). That note is by definition below the checked note's
-  sensitivity, so naming it reveals nothing the reader could not see; and health-issue subjects (stored note ids in the owner-only health report).
+  sensitivity, so naming it reveals nothing the reader could not see; and health-issue subjects (stored note ids, and the paths of problem note files with a fixed reason, in the owner-only health report).
 - Exception chains carry no value either: handlers that catch a stdlib error raise the replacement outside the
   `except` block, so `__context__` does not keep the received value (the sweep test checks `__cause__`,
   `__context__` and `__notes__`).

@@ -2,7 +2,8 @@
 
 from collections.abc import Sequence
 
-from cerebro.application.ports.notes import CommittedCreate, NoteChange, check_agent_commit
+from cerebro.application.errors import NoteReadError
+from cerebro.application.ports.notes import CommittedCreate, FileProblem, NoteChange, NoteScan, check_agent_commit
 from cerebro.domain.commit_message import AgentWriteCommit, OwnerCommit
 from cerebro.domain.content_hash import content_hash, is_content_hash
 from cerebro.domain.errors import ContentConflict, InvalidValueError
@@ -17,15 +18,27 @@ class InMemoryNoteRepository:
         self._creates: dict[str, CommittedCreate] = {}
         self.apply_error: Exception | None = None
         """Raised by the next ``apply`` before it writes anything, like the real ``NoteWriteError``."""
+        self.problems: list[FileProblem] = []
+        """Problem files reported by ``scan`` (and by the strict listings, which then raise)."""
+        self.unreadable: set[NoteId] = set()
+        """Ids whose ``get`` raises ``NoteReadError``, like a real note file that differs from ``HEAD``."""
 
     def get(self, note_id: NoteId) -> Note | None:
+        if note_id in self.unreadable:
+            raise NoteReadError("note file differs from the last commit")
         return self._notes.get(note_id)
 
     def list_refs(self) -> tuple[NoteRef, ...]:
         return tuple(NoteRef.from_note(n) for n in self.list_notes())
 
     def list_notes(self) -> tuple[Note, ...]:
-        return tuple(self._notes[i] for i in sorted(self._notes))
+        scan = self.scan()
+        if scan.problems:
+            raise NoteReadError(problems=[(p.path, p.reason) for p in scan.problems])
+        return scan.notes
+
+    def scan(self) -> NoteScan:
+        return NoteScan(notes=tuple(self._notes[i] for i in sorted(self._notes)), problems=tuple(self.problems))
 
     def head(self) -> str | None:
         return self.commits[-1][0] if self.commits else None

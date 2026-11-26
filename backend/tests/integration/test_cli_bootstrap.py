@@ -143,3 +143,21 @@ def test_retired_quota_keys_are_unknown(tmp_path: Path, key: str) -> None:
     config.write_text(SAMPLE + f"{key} = 1\n")
     with pytest.raises(ConfigurationError, match="unknown key"):
         load_settings(config, {})
+
+
+def test_owner_messages_show_only_safe_texts() -> None:
+    from cerebro.adapters.outbound.filesystem import NoteFileError
+    from cerebro.bootstrap.container import StateDirectoryError
+    from cerebro.bootstrap.diagnostics import owner_message
+
+    assert owner_message(StateDirectoryError("the state directory is not a directory")) == (
+        "the state directory is not a directory"
+    )
+    many = [(f"notes/n{i}.md", "invalid frontmatter") for i in range(22)]
+    message = owner_message(NoteFileError.from_problems([("notes/evil\nname.md", "invalid frontmatter"), *many]))
+    assert message.startswith("note files need attention: 'notes/evil\\nname.md': invalid frontmatter; ")
+    assert message.endswith("... and 3 more")
+    assert "\n" not in message
+    withheld = owner_message(RuntimeError("private note text"))
+    assert "private note text" not in withheld
+    assert "RuntimeError" in withheld

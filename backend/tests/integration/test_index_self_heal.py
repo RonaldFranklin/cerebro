@@ -12,7 +12,7 @@ from pathlib import Path
 import pytest
 
 from cerebro.adapters.outbound.crypto import FernetCipher, load_keys
-from cerebro.adapters.outbound.filesystem import FilesystemNoteRepository, NoteFileError, NoteWriteError
+from cerebro.adapters.outbound.filesystem import FilesystemNoteRepository, NoteWriteError
 from cerebro.adapters.outbound.filesystem.codec import render_note
 from cerebro.adapters.outbound.filesystem.repository import UNCOMMITTED_REASON
 from cerebro.application.agent_write import AgentWriteRequest
@@ -20,12 +20,14 @@ from cerebro.application.dto import (
     AuthenticateTokenRequest,
     GetGraphRequest,
     GetOverviewRequest,
+    HealthCode,
+    HealthReportRequest,
     IssueAgentTokenRequest,
     OwnerEditNoteRequest,
     ReadNoteRequest,
     SearchNotesRequest,
 )
-from cerebro.application.errors import NoteNotFound
+from cerebro.application.errors import NoteNotFound, NoteReadError
 from cerebro.application.index_state import index_is_stale
 from cerebro.application.ports.notes import NoteChange
 from cerebro.bootstrap.container import Container, build_container
@@ -239,10 +241,10 @@ def test_an_abandoned_uncommitted_edit_never_reaches_a_rebuilt_index(service: Se
     (service.sample.root / relative).write_bytes(render_note(note))  # in progress: back to internal, plaintext
     service.sample.commit_out_of_band(replace(note, id=NoteId("added-outside")))
     assert service.stale()
-    with pytest.raises(NoteFileError) as refused:
+    with pytest.raises(NoteReadError) as refused:
         service.container.use_cases.search_notes.execute(SearchNotesRequest(text=MARKER), service.reader)
     assert refused.value.problems == ((relative, UNCOMMITTED_REASON),)
-    with pytest.raises(NoteFileError):
+    with pytest.raises(NoteReadError):
         service.container.use_cases.read_note.execute(ReadNoteRequest(note_id=service.note_id), service.reader)
     assert service.stale()  # nothing was recorded as built from HEAD
 
@@ -250,3 +252,27 @@ def test_an_abandoned_uncommitted_edit_never_reaches_a_rebuilt_index(service: Se
     found = service.container.use_cases.search_notes.execute(SearchNotesRequest(text=MARKER), service.reader)
     assert [hit.note.id for hit in found.results] == [NoteId("added-outside")]
     assert not service.stale()
+
+
+def test_one_invalid_committed_file_is_left_out_without_a_rebuild_per_request(
+    service: Service, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    hidden = replace(service.note(), id=NoteId("broken-secret"), sensitivity=Sensitivity.RESTRICTED)
+    relative = f"notes/{hidden.id.value}.md"
+    (service.sample.root / relative).write_text("---\nnot: [valid\n---\n")
+    service.sample.git().stage([relative])
+    service.sample.git().commit("Add a broken note by hand", [relative])
+    uc = service.container.use_cases
+    assert service.visible_to_reader()  # the rebuild before the read left the broken file out
+    assert not service.stale()
+    rebuilds: list[object] = []
+    monkeypatch.setattr(service.container.search, "rebuild", lambda *a, **k: rebuilds.append(a))
+    assert uc.read_note.execute(ReadNoteRequest(note_id=service.note_id), service.reader).id == service.note_id
+    for ctx in (service.reader, service.writer):  # missing for everyone: nothing of it can be served
+        with pytest.raises(NoteNotFound):
+            uc.read_note.execute(ReadNoteRequest(note_id=hidden.id), ctx)
+    assert rebuilds == []
+    report = uc.health_report.execute(HealthReportRequest(), OWNER)
+    assert [(i.subject, i.code) for i in report.issues if i.code is HealthCode.NOTE_FILE_EXCLUDED] == [
+        (relative, HealthCode.NOTE_FILE_EXCLUDED)
+    ]

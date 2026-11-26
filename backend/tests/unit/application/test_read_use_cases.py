@@ -10,7 +10,7 @@ from cerebro.application.dto import (
     ReadNoteRequest,
     SearchNotesRequest,
 )
-from cerebro.application.errors import NoteNotFound, PermissionDenied, SectionNotFound
+from cerebro.application.errors import NoteNotFound, NoteReadError, PermissionDenied, SectionNotFound
 from cerebro.application.use_cases import GetGraph, GetNeighbors, GetOverview, ReadNote, SearchNotes
 from cerebro.domain.access import AccessCeiling, Scope
 from cerebro.domain.enums import Priority, Sensitivity, Status
@@ -709,3 +709,19 @@ class TestEchoedReferencesAndFaultyIndexes:
         )
         assert "vault-layout" not in {n.id.value for n in near.nodes}
         assert all(e.source.value != "vault-layout" and e.target.value != "vault-layout" for e in near.edges)
+
+
+def test_an_unservable_note_file_reads_as_missing_below_the_full_ceiling() -> None:
+    w = standard_world()
+    w.notes.unreadable.add(NID("vault-layout"))  # restricted, edited by hand and not committed
+    case = ReadNote(w.notes, w.graph)
+    internal = ctx(Sensitivity.INTERNAL)
+    with pytest.raises(NoteNotFound) as hidden:
+        case.execute(ReadNoteRequest(note_id=NID("vault-layout")), internal)
+    with pytest.raises(NoteNotFound) as missing:
+        case.execute(ReadNoteRequest(note_id=NID("absent-note")), internal)
+    assert str(hidden.value) == str(missing.value)
+    view = case.execute(ReadNoteRequest(note_id=NID("server-ssh-access")), internal)  # links to it: redacted
+    assert view.related == ()
+    with pytest.raises(NoteReadError):  # nothing can be hidden at the full ceiling: the failure is reported
+        case.execute(ReadNoteRequest(note_id=NID("vault-layout")), ctx(Sensitivity.RESTRICTED))

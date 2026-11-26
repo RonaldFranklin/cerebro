@@ -42,12 +42,25 @@ def test_search_and_read_as_local_owner(config: str) -> None:
 def test_reindex_and_health(config: str) -> None:
     result = invoke("--config", config, "reindex")
     assert result.returncode == 0, result.stderr
-    assert json.loads(result.stdout)["notes_indexed"] == 8
+    assert json.loads(result.stdout) == {"notes_indexed": 8, "files_excluded": 0}
     result = invoke("--config", config, "health")
     report = json.loads(result.stdout)
     assert report["notes_checked"] == 8
     assert any(issue["subject"] == "broken-link-note" for issue in report["issues"])
     assert "zebrafruit" not in result.stdout
+
+
+def test_note_file_problems_are_named_for_the_owner(config: str) -> None:
+    stray = Path(config).parent / "content/notes/stray-draft.md"
+    stray.write_text(f"---\ntitle: {RESTRICTED_MARKER}\n")  # never committed
+    result = invoke("--config", config, "search", "ssh")
+    assert result.returncode == 1
+    assert result.stderr.startswith("cerebro: note files need attention: 'notes/stray-draft.md': the frontmatter")
+    assert RESTRICTED_MARKER not in result.stderr
+    health = invoke("--config", config, "health")
+    assert (health.returncode, health.stderr) == (1, "")  # a report with errors, not a failure
+    issues = json.loads(health.stdout)["issues"]
+    assert [i["subject"] for i in issues if i["code"] == "note_file_blocking"] == ["notes/stray-draft.md"]
 
 
 @pytest.mark.parametrize(
