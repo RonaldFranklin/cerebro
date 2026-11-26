@@ -1,10 +1,10 @@
 # Phase 5 plan — HTTP API and owner web UI
 
-**Proposed for owner approval, 2026-11-25.** Deliver the six owner screens on the existing private service. Phase 7 follows this phase. Docker validation in WSL and deployment to the server belong to Phase 6. The Phase 3 manual checks and the Phase 4 security checkpoint retain their recorded status. [Roadmap](../roadmap.md) · [Architecture](../architecture.md) · [Previous delivery](phase-4.md)
+**Approved by the owner on 2026-11-25, including the adjustments in §6.** Deliver the six owner screens on the existing private service. Phase 7 follows this phase. Docker validation in WSL and deployment to the server belong to Phase 6. The Phase 3 manual checks and the Phase 4 security checkpoint retain their recorded status. [Roadmap](../roadmap.md) · [Architecture](../architecture.md) · [Previous delivery](phase-4.md)
 
 ## 1. Delivery sequence
 
-Every row is planned. Start each branch from current main after the previous PR merges. Record owner adjustments here before implementation. Use the independent review, CI, security hand-off and merge rules in AGENTS.md §5. Approval of this document will establish the scope. Prior phase merge authorizations were phase-specific.
+PR 1 records the decision in [ADR-0019](../adr/0019-owner-browser-api.md). PRs 2–11 are planned. Start each branch from current main after the preceding PR merges. The owner authorizes merges for all eleven PRs, including security and dependency changes, with independent review, findings resolved, completed green CI and scripts/merge-pr.sh. The dependency, ADR and privileged setup boundaries are recorded in §6.
 
 | PR and branch | Deliverable | Verification before merge |
 |---|---|---|
@@ -195,7 +195,7 @@ pnpm --version                                                    # 12.22.0
 (cd backend && uv sync --locked && uv run --locked ruff check . && uv run --locked ruff format --check . &&
   uv run --locked mypy && uv run --locked lint-imports --no-cache && uv run --locked pytest --cov)
 (cd web && pnpm install --frozen-lockfile && pnpm run typecheck && pnpm run build &&
-  pnpm exec playwright install --with-deps chromium && pnpm run test:component && pnpm run test:e2e)
+  pnpm exec playwright install chromium && pnpm run test:component && pnpm run test:e2e)
 (cd backend && uv run --locked python -m devtools.web_demo --dist ../web/dist)
 ```
 
@@ -208,6 +208,14 @@ The demo launcher creates a temporary git/SQLite/Fernet fixture with public, int
 - Run at least one E2E in Chromium against the built distribution and real backend. Log in, find a synthetic note, open its graph neighborhood and translated-prose reader, review a diff, approve the inspected revision, save an owner edit, verify the resulting git history and sign out. Confirm reloading a protected route requests login. Run a negative session on the lower-ceiling test socket and assert restricted identifiers never occur in API responses or the DOM. Also exercise the ADR-0010 boundary with a test-only TLS terminator forwarding to the plain loopback HTTP socket. Verify login, a CSRF-protected mutation and logout against the configured external HTTPS origin, then verify forwarding headers cannot elevate the public listener. This fixture needs neither Tailscale nor Docker. Capture CSP violations for the editor, Markdown preview and graph worker. Disable traces containing cookies, passwords or note bodies.
 - Record packages and artifact ages, CI results, coverage, observed accessibility/CSP behavior, unresolved decisions and the owner security checkpoint in the final report.
 
-## 6. Owner approval
+## 6. Owner approval and adjustments
 
-Pending approval of the ordered PRs, dependency inventory, same-origin browser API and session design, six screens and verification gates. Record changes requested by the owner here before the first implementation branch.
+The owner approved PR #55, all dependencies in §4, user-space Node 26.13.1 and pnpm 12.22.0. Run the eleven approved steps autonomously. Stop for the one-time WSL provisioning below, a dependency outside the approved list, a required deviation from an ADR, or a blocker.
+
+| Applies to | Required adjustment |
+|---|---|
+| Start of PR 2 | Inventory all privileged WSL setup for the entire phase, including Chromium system libraries. Check installed packages and the pinned browser's requirements without elevation. Give the owner the exact commands in a single hand-off and wait for the owner to run them. Use user-space installs and ordinary unprivileged test commands thereafter. |
+| PR 2 onward | Try TypeScript 7 against Vite, Playwright and CodeMirror. If a verified incompatibility requires a fallback, select the newest stable preceding compatible TypeScript release at least seven days old and record the failing scenario, version, release date, changed lock and passing reproduction. The owner has authorized this fallback. |
+| Each of PRs 7–11 | Capture the screens delivered by that PR with Playwright against synthetic fixtures and commit the images in `docs/screenshots/phase-5/`. Link directly to those images in that PR's description. The owner's visual review follows delivery and is independent of the CI and merge gates. |
+
+At close, document the exact WSL command to open the UI through `devtools.web_demo`, alongside the usual delivery, tests, decisions and security report.

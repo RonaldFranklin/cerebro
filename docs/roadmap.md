@@ -123,11 +123,13 @@ quota refusal. The [phase report](plans/phase-4.md#5-final-report) records verif
 checkpoint. [Manual real-client checks](agent-integration.md#3-propose-in-both-clients-and-approve-locally).
 
 The next delivery sequence is Phase 5 (API and web UI), Phase 7 (curator), then Phase 6 (deployment).
-Phase 8 remains the later backlog. The owner reviews the Phase 5 plan before implementation.
+Phase 8 remains the later backlog.
 
-## ⬜ Phase 5 — HTTP API and web UI
+## 🟨 Phase 5 — HTTP API and web UI
 
-- Choose the Node version per [ADR-0013](adr/0013-stack-and-dependency-policy.md) (Active LTS at phase start),
+Owner-approved delivery plan, dependencies, verification and adjustments: [phase-5.md](plans/phase-5.md).
+
+- Use Node 26.13.1 per [ADR-0013](adr/0013-stack-and-dependency-policy.md) (Active LTS at phase start),
   pin it (`package.json` `engines`, `.nvmrc`, CI) and record it with the frontend versions in
   `docs/architecture.md` §7.
 - FastAPI routers for read, graph, inbox and owner edit; single-user login (scrypt hash, secure session cookie).
