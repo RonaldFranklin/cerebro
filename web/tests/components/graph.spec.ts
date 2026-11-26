@@ -1,12 +1,16 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 
 const guide = {id:"guide", title:"Field guide", area:"research", type:"guide", priority:"P1", status:"verified", sensitivity:"internal", summary:"Guide."};
 const hub = {...guide, id:"catalog", title:"Catalog", type:"hub", priority:"P0"};
 const archived = {...guide, id:"archive", title:"Archive", status:"archived", area:"archive", sensitivity:"restricted"};
 const edge = {source:"guide", target:"catalog", kind:"related", section:null};
 
-test("global filters, keyboard exploration, hops and return preserve graph context", async ({page}) => {
+async function session(page: Page) {
   await page.route("**/api/session", route => route.fulfill({json:{ceiling:"restricted",csrf_token:"fixture",absolute_remaining_seconds:28800}}));
+}
+
+test("global filters, keyboard exploration, hops and return preserve graph context", async ({page}) => {
+  await session(page);
   await page.route("**/api/graph**", route => {
     const params = new URL(route.request().url()).searchParams;
     const candidates = params.get("history") === "true" ? [guide, hub, archived] : [guide, hub];
@@ -25,6 +29,16 @@ test("global filters, keyboard exploration, hops and return preserve graph conte
   await expect(page.getByText(/2 notes · 1 links?/)).toBeVisible();
   await page.getByLabel("Include history").check();
   await expect(explore("Archive")).toBeVisible();
+  for (const [key, value, excluded] of [
+    ["Area", "research", "Archive"], ["Type", "guide", "Catalog"], ["Priority", "P1", "Catalog"],
+    ["Status", "verified", "Archive"], ["Sensitivity", "internal", "Archive"],
+  ]) {
+    await select(key).selectOption(value);
+    await expect(explore("Field guide")).toBeVisible();
+    await expect(explore(excluded)).toHaveCount(0);
+    await select(key).selectOption("");
+    await expect(explore(excluded)).toBeVisible();
+  }
   await select("Color by").selectOption("type");
   for (const [key,value] of Object.entries({Area:"research", Type:"guide", Priority:"P1", Status:"verified", Sensitivity:"internal"})) {
     await select(key).selectOption(value);
@@ -35,7 +49,9 @@ test("global filters, keyboard exploration, hops and return preserve graph conte
   await explore("Field guide").focus();
   const local = page.waitForResponse(response => new URL(response.url()).pathname === "/api/notes/guide/neighbors");
   await page.keyboard.press("Enter");
-  await local;
+  expect(Object.fromEntries(new URL((await local).url()).searchParams)).toEqual({
+    hops:"1", history:"true", area:"research", type:"guide", priority:"P1", status:"verified", sensitivity:"internal",
+  });
   await expect(page.getByRole("radio",{name:"1 hop",exact:true})).toBeChecked();
   for (const key of ["Area", "Type", "Priority", "Status", "Sensitivity"]) await select(key).selectOption("");
   await expect(explore("Catalog")).toBeVisible();
@@ -51,4 +67,49 @@ test("global filters, keyboard exploration, hops and return preserve graph conte
   }
   await expect(page.getByLabel("Include history")).toBeChecked();
   await expect(explore("Catalog")).toHaveCount(0);
+});
+
+test("the HTML neighborhood follows two-hop connections through matching nodes only", async ({page}) => {
+  await session(page);
+  await page.addInitScript(() => {
+    const get = HTMLCanvasElement.prototype.getContext;
+    Object.defineProperty(HTMLCanvasElement.prototype, "getContext", {
+      value(this: HTMLCanvasElement, kind: string, ...args: unknown[]) {
+        return kind.includes("webgl") ? null : Reflect.apply(get, this, [kind, ...args]);
+      },
+    });
+  });
+  const entry = {...guide, id:"entry", title:"Entry"};
+  const bridge = {...guide, id:"bridge", title:"Bridge", type:"hub"};
+  const destination = {...guide, id:"destination", title:"Destination"};
+  const first = {...edge, source:"entry", target:"bridge", kind:"related"};
+  const second = {...edge, source:"bridge", target:"destination", kind:"wikilink"};
+  const all = {nodes:[entry, bridge, destination], edges:[first, second]};
+  await page.route("**/api/graph**", route => route.fulfill({json:{...all, center:null}}));
+  await page.route("**/api/notes/entry/neighbors**", route => {
+    const params = new URL(route.request().url()).searchParams;
+    const data = params.get("type") === "guide" ? {nodes:[entry], edges:[]}
+      : params.get("hops") === "2" ? all : {nodes:[entry,bridge], edges:[first]};
+    return route.fulfill({json:{...data,center:"entry"}});
+  });
+  await page.goto("/graph");
+  const explore = (title: string) => page.getByRole("button", {name:"Explore " + title, exact:true});
+  await explore("Entry").click();
+  await page.getByRole("radio",{name:"2 hops",exact:true}).check();
+  await expect(explore("Destination")).toBeVisible();
+  await expect(page.locator('[data-renderer="fallback"]')).toBeVisible();
+  await page.getByText("Connections", {exact:true}).click();
+  const connections = page.getByRole("region",{name:"Graph connections"}).getByRole("listitem");
+  await expect(connections).toHaveCount(2);
+  await expect(connections.filter({hasText:"Entry → Bridge · related"})).toBeVisible();
+  await expect(connections.filter({hasText:"Bridge → Destination · wikilink"})).toBeVisible();
+  await expect(connections.filter({hasText:"Entry → Destination"})).toHaveCount(0);
+
+  const response = page.waitForResponse(res => new URL(res.url()).pathname === "/api/notes/entry/neighbors");
+  await page.getByRole("combobox",{name:"Type",exact:true}).selectOption("guide");
+  expect(Object.fromEntries(new URL((await response).url()).searchParams)).toEqual({history:"false",hops:"2",type:"guide"});
+  await expect(explore("Entry")).toBeVisible();
+  await expect(explore("Bridge")).toHaveCount(0);
+  await expect(explore("Destination")).toHaveCount(0);
+  await expect(connections).toHaveCount(0);
 });

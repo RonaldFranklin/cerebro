@@ -385,7 +385,8 @@ graph restores its filters, history and color selection. Opening a note preserve
 The canvas uses Sigma and Graphology. A same-origin worker runs synchronous ForceAtlas2 on numeric
 node indices and edges. Labels and note summaries stay out of the worker. Colors are consistent for
 each area or type. The four priority sizes decrease from P0 to P3. The HTML list remains available
-to keyboard users and browsers without WebGL. Layout workers and renderers are disposed when their
+to keyboard users and browsers without WebGL. Its Connections disclosure lists the source, target,
+kind and optional section of each visible relationship. Layout workers and renderers are disposed when their
 graph unmounts. Graph settings and selection live in session memory.
 
 [Global graph](../screenshots/phase-5/09-graph.png) ·

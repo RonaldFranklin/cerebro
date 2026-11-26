@@ -30,3 +30,6 @@
 .graph-list .graph-action { margin-left: auto; font-size: .82rem; }
 @media(max-width: 52rem) { .graph-filter-row { grid-template-columns: repeat(3,minmax(0,1fr)); } }
 @media(max-width: 35rem) { .graph-filter-row { grid-template-columns: repeat(2,minmax(0,1fr)); } .graph-size-key { margin-left: 0; } }
+.graph-connections { margin-top: .8rem; font-size: .9rem; }
+.graph-connections summary { width: fit-content; cursor: pointer; color: var(--accent); }
+.graph-connections li { display: block; color: var(--muted); overflow-wrap: anywhere; }

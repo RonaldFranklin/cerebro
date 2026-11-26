@@ -71,6 +71,7 @@ export default function GraphScreen({api}: {api: ApiClient}) {
   });
   const source = local ? nearby : catalog;
   const graph = useMemo(() => source.data && filterGraph(source.data, view.filters), [source.data, view.filters]);
+  const titles = useMemo(() => new Map(graph?.nodes.map(node => [node.id, node.title])), [graph]);
   const legend = useMemo(() => [...new Set(graph?.nodes.map(node => node[view.colorBy]))].sort(), [graph, view.colorBy]);
   const center = local && graph?.nodes.find(node => node.id === local.center);
   useEffect(() => { client.setQueryData(graphState, workspace); }, [client, workspace]);
@@ -126,6 +127,14 @@ export default function GraphScreen({api}: {api: ApiClient}) {
         </div>}
       </section>
       <section className="graph-list" aria-labelledby="graph-notes"><h2 id="graph-notes">Notes</h2>
+        {graph.edges.length > 0 && <details className="graph-connections">
+          <summary>Connections</summary>
+          <section aria-label="Graph connections">
+            <ul>{graph.edges.map((edge, index) => <li key={index}>
+              {titles.get(edge.source)} → {titles.get(edge.target)} · {edge.kind}{edge.section && ` · ${edge.section}`}
+            </li>)}</ul>
+          </section>
+        </details>}
         <ul>{graph.nodes.map(node => <li key={node.id}>
           <Dot value={node[view.colorBy]}/><div><a href={notePath(node.id, view.history)}>{node.title}</a>
             <span translate="no">{node.area} · {node.priority}</span></div>
