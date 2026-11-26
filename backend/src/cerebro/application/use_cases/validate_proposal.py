@@ -1,7 +1,5 @@
 """``ValidateProposal``: deterministic validation of a ``received`` proposal."""
 
-from datetime import date
-
 from cerebro.application.access import require_owner, visible_id, visible_note
 from cerebro.application.dto import ProposalIdRequest, ProposalOutcome
 from cerebro.application.errors import ProposalNotFound
@@ -79,19 +77,17 @@ class ValidateProposal:
                 [Finding(code=ViolationCode.BROKEN_LINK, field="references", message="a reference is unavailable")]
             )
         else:
-            report = self.assess(proposal, ctx, now.date())
+            report = self.assess(proposal, ctx)
         return proposal.mark_validated(report, now) if report.ok else scrubbed(proposal.reject_invalid(report, now))
 
-    def assess(
-        self, proposal: Proposal, ctx: AccessContext, today: date, *, candidate_id: NoteId | None = None
-    ) -> ValidationReport:
+    def assess(self, proposal: Proposal, ctx: AccessContext, *, candidate_id: NoteId | None = None) -> ValidationReport:
         """Validate submitted or amended content, using the chosen id for an owner's edit."""
         require_owner(ctx, "validate proposals")
         base = None
         if proposal.kind is not ProposalKind.CREATE and proposal.target is not None:
             base = visible_note(self._notes, proposal.target, ctx, include_history=True)
         candidate_id = candidate_id or proposal.target or provisional_note_id(proposal.content.title)
-        candidate, problems = build_candidate(proposal, note_id=candidate_id, base=base, today=today)
+        candidate, problems = build_candidate(proposal, note_id=candidate_id, base=base)
         # Free text that is not part of the note (rationale, session, context) is scanned too.
         report = PROPOSAL_POLICY.report((*problems, *secret_findings(proposal)))
         if candidate is None:

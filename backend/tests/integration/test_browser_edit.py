@@ -148,3 +148,21 @@ def test_edit_requires_session_csrf(editor: tuple[TestClient, Path]) -> None:
     response = client.put(PATH, json=inspected, headers={"X-CSRF-Token": "invalid"})
     assert response.status_code == 403
     assert git(repo, "rev-parse", "HEAD") == before
+
+
+def test_editor_counts_metadata_in_utf8_bytes(editor: tuple[TestClient, Path]) -> None:
+    client, repo = editor
+    inspected = payload(client)
+    before = git(repo, "rev-parse", "HEAD")
+    # 129 code points fit a character-based limit but occupy 258 UTF-8 bytes.
+    oversized = "é" * 129
+    for name in ("lang", "area", "type", "priority", "status", "sensitivity"):
+        response = client.put(PATH, json={**inspected, "note": {**inspected["note"], name: oversized}})
+        assert response.status_code == 422
+        fields = response.json()["validation"]["violations"]
+        assert {v["field"] for v in fields if v["code"] == "invalid_field"} == {name}
+        assert oversized not in response.text
+        assert git(repo, "rev-parse", "HEAD") == before
+    exact = {**inspected["note"], "lang": "é" * 128}
+    assert client.put(PATH, json={**inspected, "note": exact}).status_code == 200
+    assert client.get(PATH).json()["lang"] == exact["lang"]

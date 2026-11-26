@@ -117,6 +117,9 @@ def _preview(preview: InboxPreview) -> dict[str, object]:
         "base_label": preview.base_label,
         "stale_base": preview.stale_base,
         "validation": validation_view(preview.validation) if preview.validation else None,
+        "historical_validation": validation_view(preview.historical_validation)
+        if preview.historical_validation
+        else None,
         "decision": {
             "kind": decision.kind.value,
             "target": decision.target.value if decision.target else None,

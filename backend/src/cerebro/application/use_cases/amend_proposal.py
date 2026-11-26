@@ -43,7 +43,7 @@ class AmendProposal:
             raise ProposalNotApplicable("only reviewable creates and updates may be amended")
         now = self._clock.now()
         candidate = replace(proposal, content=replace(proposal.content, body=request.body), updated_at=now)
-        report = self._validator.assess(candidate, ctx, now.date(), candidate_id=commit_target(candidate))
+        report = self._validator.assess(candidate, ctx, candidate_id=commit_target(candidate))
         if not report.ok:
             raise AmendmentValidationError(report)
         saved = self._proposals.save(replace(candidate, validation=report), expected_revision=request.expected_revision)

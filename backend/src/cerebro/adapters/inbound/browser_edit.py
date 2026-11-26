@@ -13,7 +13,7 @@ from cerebro.application.dto import OwnerEditNoteRequest, OwnerEditNoteResult
 from cerebro.application.use_case import ContextUseCase
 from cerebro.domain.frontmatter import parse_note
 from cerebro.domain.note import MAX_NOTE_ID_LENGTH
-from cerebro.domain.report import ValidationReport
+from cerebro.domain.report import Severity, ValidationReport, Violation, ViolationCode
 
 
 class _Closed(BaseModel):
@@ -21,21 +21,30 @@ class _Closed(BaseModel):
 
 
 type _Id = Annotated[str, Field(max_length=MAX_NOTE_ID_LENGTH)]
-type _Metadata = Annotated[str, Field(max_length=MAX_FIELD_BYTES)]
+_BYTE_LIMITS = {
+    "title": 480,
+    "type": MAX_FIELD_BYTES,
+    "area": MAX_FIELD_BYTES,
+    "priority": MAX_FIELD_BYTES,
+    "sensitivity": MAX_FIELD_BYTES,
+    "status": MAX_FIELD_BYTES,
+    "summary": 1200,
+    "lang": MAX_FIELD_BYTES,
+}
 
 
 class EditableNote(_Closed):
-    title: str = Field(max_length=480)
-    type: _Metadata
-    area: _Metadata
-    priority: _Metadata
-    sensitivity: _Metadata
-    status: _Metadata
-    summary: str = Field(max_length=1200)
+    title: str
+    type: str
+    area: str
+    priority: str
+    sensitivity: str
+    status: str
+    summary: str
     hub: _Id | None
     related: list[_Id] = Field(max_length=256)
     superseded_by: _Id | None
-    lang: _Metadata
+    lang: str
     review_by: str | None = Field(max_length=10)
     body: str = Field(max_length=MAX_INPUT_BYTES)
 
@@ -51,6 +60,18 @@ def install_browser_edit(
     @app.put("/api/notes/{note_id}")
     def edit(request: Request, note_id: str, payload: Edit) -> JSONResponse:
         raw = payload.note.model_dump(exclude={"body"})
+        oversized = tuple(
+            Violation(
+                code=ViolationCode.INVALID_FIELD,
+                field=name,
+                message="Field exceeds its UTF-8 byte limit.",
+                severity=Severity.ERROR,
+            )
+            for name, maximum in _BYTE_LIMITS.items()
+            if len(raw[name].encode("utf-8")) > maximum
+        )
+        if oversized:
+            return JSONResponse({"validation": validation_view(ValidationReport(oversized))}, 422)
         # OwnerEditNote keeps the stored creation date and assigns its clock's date on update.
         raw.update(id=note_id, created=date.min, updated=date.min)
         note = parse_note(raw, payload.note.body)

@@ -5,12 +5,18 @@ from cerebro.application.dto import InboxItem, InboxPreview, InboxResult, ListPr
 from cerebro.application.errors import PermissionDenied, ProposalNotApplicable, ProposalNotFound
 from cerebro.application.ports.notes import NoteRepository
 from cerebro.application.ports.proposals import ProposalStore
-from cerebro.application.ports.system import Clock
-from cerebro.application.proposal_support import build_candidate, provisional_note_id, stale_proposal_base
+from cerebro.application.proposal_support import (
+    build_candidate,
+    provisional_note_id,
+    stale_proposal_base,
+    validate_candidate,
+)
 from cerebro.domain.access import AccessContext
 from cerebro.domain.enums import Sensitivity
 from cerebro.domain.note import Note
 from cerebro.domain.proposal import Proposal, ProposalKind, ProposalStatus
+from cerebro.domain.report import PROPOSAL_POLICY
+from cerebro.domain.vocabulary import Vocabulary
 
 
 def _metadata(proposal: Proposal) -> InboxItem:
@@ -34,10 +40,10 @@ def _preview_note(note: Note | None) -> NoteView | None:
 
 
 class ListProposals:
-    def __init__(self, proposals: ProposalStore, notes: NoteRepository, clock: Clock) -> None:
+    def __init__(self, proposals: ProposalStore, notes: NoteRepository, vocabulary: Vocabulary) -> None:
         self._proposals = proposals
         self._notes = notes
-        self._clock = clock
+        self._vocabulary = vocabulary
 
     def execute(self, request: ListProposalsRequest, ctx: AccessContext) -> InboxResult:
         require_owner(ctx, "inspect the inbox")
@@ -59,13 +65,21 @@ class ListProposals:
         create = proposal.kind is ProposalKind.CREATE
         base = None if create else current
         stale = stale_proposal_base(proposal, current)
-        candidate, _ = build_candidate(proposal, note_id=target, base=base, today=self._clock.now().date())
+        candidate, findings = build_candidate(proposal, note_id=target, base=base)
+        validation = None
+        if candidate is None:
+            validation = PROPOSAL_POLICY.report(findings)
+        elif not stale:
+            validation = validate_candidate(
+                candidate, notes=self._notes, vocabulary=self._vocabulary, policy=PROPOSAL_POLICY, base=base
+            )
         preview = InboxPreview(
             decision=proposal.decision,
             candidate=_preview_note(candidate),
             base=_preview_note(base),
             base_label="empty" if create else ("current" if stale else "base"),
             stale_base=stale,
-            validation=proposal.validation,
+            validation=validation,
+            historical_validation=proposal.validation,
         )
         return InboxResult(items=(_metadata(proposal),), preview=preview)

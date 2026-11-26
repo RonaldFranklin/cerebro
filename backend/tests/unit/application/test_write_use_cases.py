@@ -1423,20 +1423,17 @@ def _a_note() -> Note:
 
 
 def test_build_candidate_findings_never_quote_content() -> None:
-    from datetime import date as _date
-
     from cerebro.application.proposal_support import build_candidate
     from tests.unit.domain.test_proposal import make_proposal, make_update
 
-    today = _date(2026, 11, 25)
-    note, found = build_candidate(make_update(), note_id=SSH, base=None, today=today)
+    note, found = build_candidate(make_update(), note_id=SSH, base=None)
     assert note is None
     assert [f.field for f in found] == ["target"]
     content = new_content(superseded_by=NID("core-rules"))
-    note, found = build_candidate(make_proposal(content=content), note_id=NEW_ID, base=None, today=today)
+    note, found = build_candidate(make_proposal(content=content), note_id=NEW_ID, base=None)
     assert note is None
     assert [f.field for f in found] == ["superseded_by"]
-    note, found = build_candidate(make_proposal(), note_id=NEW_ID, base=None, today=today)
+    note, found = build_candidate(make_proposal(), note_id=NEW_ID, base=None)
     assert note is None
     assert {f.field for f in found} == {"type", "area", "priority", "sensitivity", "summary"}
 

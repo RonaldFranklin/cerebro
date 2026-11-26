@@ -439,6 +439,7 @@ class InboxPreview:
     base_label: Literal["empty", "base", "current"]
     stale_base: bool
     validation: ValidationReport | None
+    historical_validation: ValidationReport | None
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)

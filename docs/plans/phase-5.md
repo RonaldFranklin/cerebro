@@ -315,11 +315,14 @@ returns the new content hash, commit, validation and warnings. A stale edit retu
 the note. Validation failures return 422. The editor can retain the draft and reload the current revision.
 
 GET `/api/inbox` returns proposal metadata in `items`. GET `/api/inbox/{id}` adds a reviewable candidate,
-its base, the curator decision and validation, plus `diff.fields` and a unified Markdown `diff.body`.
+its base, the curator decision, current validation and historical validation, plus `diff.fields` and a unified Markdown `diff.body`.
 The diff compares at most 512 lines and 32,768 characters on each side, caps the returned text at
 32,768 characters and marks clipping through `diff.truncated`. The full base and candidate remain available.
 A create has an empty base. When the stored hash differs from the live target, the preview labels that
-target as current and sets `stale_base`. Rejected proposal bodies are unavailable.
+target as current and sets `stale_base`. The preview reports validation as indeterminate when that base
+prevents assessment. A missing target carries structural errors. Candidate note dates use the durable
+submission date so reopening or resuming on a later day preserves the displayed change. Rejected proposal
+bodies are unavailable.
 
 POST to `/api/inbox/{id}/amend`, `/approve`, `/resume` or `/reject` with the inspected `revision`.
 Amend also takes a replacement Markdown `body`. Reject requires a `reason`. Approval rechecks the

@@ -8,14 +8,22 @@ from starlette.testclient import TestClient
 
 from cerebro.adapters.inbound.browser_api import browser_api
 from cerebro.adapters.inbound.browser_inbox import BrowserInbox, install_browser_inbox, install_browser_write_errors
+from cerebro.adapters.inbound.read_views import read_view
+from cerebro.adapters.outbound.filesystem import WriterBusyError
 from cerebro.application.browser import BrowserBinding
-from cerebro.application.dto import OwnerEditNoteRequest, ReviewAction, ReviewProposalRequest, SubmitProposalRequest
+from cerebro.application.dto import (
+    NoteView,
+    OwnerEditNoteRequest,
+    ReviewAction,
+    ReviewProposalRequest,
+    SubmitProposalRequest,
+)
 from cerebro.bootstrap.browser import owner_credentials
 from cerebro.bootstrap.container import Container, build_container
 from cerebro.domain.access import AccessCeiling
 from cerebro.domain.content_hash import content_hash
 from cerebro.domain.enums import Priority, Sensitivity
-from cerebro.domain.proposal import ProposalKind, ProposedContent
+from cerebro.domain.proposal import Proposal, ProposalKind, ProposedContent
 from cerebro.domain.vocabulary import Area, NoteType
 from tests.integration.content_kit import HUB_ID, ISLAND_ID, make_sample_repo
 from tests.integration.test_git import raw_git
@@ -90,12 +98,22 @@ def test_update_diff_approval_commit_and_resume(service: Service) -> None:
     assert preview["validation"]["ok"]
     assert preview["candidate"]["body"] in preview["diff"]["body"]
     assert "sensitivity" in preview["diff"]["fields"]
+    initial_head = service.container.notes.head()
     response = client.post(path + "/approve", json={"revision": item["revision"]})
     assert response.status_code == 200, response.text
     result = response.json()
     assert result["commit"] == service.container.notes.head()
     assert result["warnings"][0]["code"] == "previous_version_in_history"
-    log = raw_git(service.container.settings.content_repo, "log", "-1", "--format=%B")
+    root = service.container.settings.content_repo
+    assert raw_git(root, "rev-parse", result["commit"] + "^").strip() == initial_head
+    assert not raw_git(root, "status", "--porcelain")
+    saved = service.container.notes.get(ISLAND_ID)
+    assert saved
+    committed = NoteView.from_note(
+        saved, body=saved.body, hub=saved.hub, related=saved.related, superseded_by=saved.superseded_by
+    )
+    assert read_view(committed) == preview["candidate"]
+    log = raw_git(root, "log", "-1", "--format=%B")
     for trailer in (
         "Proposed-by: claude-code",
         "Curated-by: curator/policy",
@@ -198,3 +216,28 @@ def test_create_uses_preview_target(service: Service) -> None:
     assert response.status_code == 200, response.text
     assert response.json()["note_id"] == preview["candidate"]["id"]
     assert response.json()["commit"] == service.container.notes.head()
+
+
+def test_review_transition_excludes_competing_note_writer(service: Service, monkeypatch: pytest.MonkeyPatch) -> None:
+    path = service.submit()
+    preview = service.private.get(path).json()
+    container = service.container
+    other = build_container(replace(container.settings, writer_lock_timeout=0.02))
+    source = other.notes.get(ISLAND_ID)
+    assert source
+    edit = OwnerEditNoteRequest(note=replace(source, body="Competing edit."), expected_hash=content_hash(source))
+    save = container.proposals.save
+    blocked = []
+
+    def competing_save(proposal: Proposal, *, expected_revision: int) -> Proposal:
+        if proposal.status.value == "approved":
+            try:
+                other.use_cases.owner_edit_note.execute(edit, owner_ctx())
+            except WriterBusyError:
+                blocked.append(True)
+        return save(proposal, expected_revision=expected_revision)
+
+    monkeypatch.setattr(container.proposals, "save", competing_save)
+    result = service.private.post(path + "/approve", json={"revision": preview["revision"]})
+    assert blocked == [True]
+    assert result.json()["outcome"] == "applied"

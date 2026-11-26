@@ -80,7 +80,7 @@ def _missing(field: str) -> Finding:
 
 
 def build_candidate(
-    proposal: Proposal, *, note_id: NoteId | None, base: Note | None, today: date
+    proposal: Proposal, *, note_id: NoteId | None, base: Note | None
 ) -> tuple[Note | None, tuple[Finding, ...]]:
     """The note the proposal would write, or the findings that stop it from being built.
 
@@ -90,6 +90,8 @@ def build_candidate(
     the body and any metadata given and adds ``related``; ``link`` only adds ``related``; ``deprecate`` makes the
     note ``superseded`` (if ``superseded_by`` is given) or ``archived``. ``related`` ids are only ever added.
     """
+    # The persisted submission date binds validation, preview and a later apply to the same note.
+    today = proposal.created_at.date()
     c = proposal.content
     if proposal.kind is ProposalKind.CREATE:
         return _create(c, note_id, today)
