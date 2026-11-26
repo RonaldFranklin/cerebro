@@ -325,8 +325,10 @@ replay is checked against the candidate and the stored note in the same way. Hub
 On create, the service converts the title to an ASCII kebab-case stem of up to 60 characters, using
 `note` if the stem is empty. It appends a hyphen and four random characters from `a-z` and `0-9`,
 and retries collisions internally. Existing ids stay valid. Changing a title preserves the id.
-An identical create replay with the same token and `request_id` returns the original receipt after
-authorization. Use non-sensitive titles because restricted filenames and Git history can reveal title words.
+An identical create replay with the same token and `request_id` returns the original note id and revision
+after authorization. The service compares the candidate with the note in the create commit, ignoring `created`
+and `updated`; any other difference returns `request_conflict` without writing
+([ADR-0024](adr/0024-create-replay-from-git.md)). Use non-sensitive titles because restricted filenames and Git history can reveal title words.
 
 The application issues an update hash only with an eligible full read. A section or a representation
 with redacted body links or metadata cannot be used as the basis for a full-note replacement. The writer

@@ -15,7 +15,7 @@ from cerebro.domain.note import Note, NoteId
 
 _DIRECT = re.compile(
     r"(?P<verb>Add|Update) note: (?P<id>[a-z0-9-]{1,80})\n\nWritten-by: (?P<actor>[^\n]+)"
-    r"(?P<receipt>\nWrite-Request: [0-9a-f]{64}\nWrite-Receipt: [a-zA-Z0-9+/=]{1,4096})?"
+    r"(?P<request>\nWrite-Request: [0-9a-f]{64})?"
 )
 
 
@@ -41,12 +41,12 @@ class GitChangeHistory:
         try:
             note_id = NoteId(match["id"])
             actor = match["actor"]
-            if actor == OWNER:  # owner edits only update existing notes and carry no receipt
-                if match["verb"] != "Update" or match["receipt"]:
+            if actor == OWNER:  # owner edits only update existing notes and carry no request key
+                if match["verb"] != "Update" or match["request"]:
                     return None
             else:
                 validate_agent_name(actor)
-                if (match["verb"] == "Add") != bool(match["receipt"]):
+                if (match["verb"] == "Add") != bool(match["request"]):
                     return None
             moment = datetime.fromisoformat(timestamp)
         except InvalidValueError, ValueError:

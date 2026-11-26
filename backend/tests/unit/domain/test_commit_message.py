@@ -40,10 +40,10 @@ def test_direct_write_requires_a_valid_agent(agent: str) -> None:
         AgentWriteCommit(note_id=NoteId("sample"), written_by=agent)
 
 
-@pytest.mark.parametrize(("key", "fingerprint"), [(None, "0" * 64), ("a" * 64, None), ("raw", "f" * 64)])
-def test_create_commit_requires_both_digests(key: str | None, fingerprint: str | None) -> None:
+@pytest.mark.parametrize("key", ["raw", "A" * 64, "a" * 63, "a" * 64 + "\nWritten-by: owner"])
+def test_create_commit_requires_a_digest_request_key(key: str) -> None:
     with pytest.raises(InvalidValueError):
-        AgentWriteCommit(note_id=NoteId("sample"), written_by="codex", request_key=key, fingerprint=fingerprint)
+        AgentWriteCommit(note_id=NoteId("sample"), written_by="codex", request_key=key)
 
 
 def test_replay_key_encodes_the_token_request_pair_unambiguously() -> None:

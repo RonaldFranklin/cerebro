@@ -3,7 +3,8 @@
 - **Status:** accepted; ID generation and the default quota are superseded by [ADR-0021](0021-readable-note-ids.md);
   authority over core and P0 notes is amended by [ADR-0022](0022-core-scope.md); its preservation of legacy
   tokens, proposal rows, state upgrades and Inbox-era attribution is superseded by
-  [ADR-0023](0023-no-legacy-compatibility.md)
+  [ADR-0023](0023-no-legacy-compatibility.md); its replay fingerprint is replaced by
+  [ADR-0024](0024-create-replay-from-git.md)
 - **Date:** 2026-11-26
 
 ## Context
@@ -37,7 +38,8 @@ and review through Git history.
   attempts including invalid candidates and conflicts, so a failing loop also stops. Atomically reserve
   before application validation and keep only quota metadata. A refusal at capacity records nothing.
   A crash may consume a slot. Create requests carry a client-generated request id scoped to the token.
-  Bind it durably to the committed create and a canonical fingerprint of the validated request.
+  Bind it durably to the committed create and a canonical fingerprint of the validated request
+  (amended by ADR-0024: the replay is compared with the note in the create commit).
   Identical replay after a lost response returns the existing receipt. Reuse with different input
   returns a bounded conflict without writing.
   A replay must pass current authorization and cannot reveal a now-hidden note.

@@ -1,5 +1,6 @@
 from collections.abc import Callable
 from dataclasses import replace
+from datetime import timedelta
 
 import pytest
 
@@ -83,6 +84,20 @@ def test_create_replay_conflict_update_and_stale_retry() -> None:
     assert kit.commits == commits + 1
     with pytest.raises(WriteRejected, match="stale_base"):
         write.execute(update, ctx)
+
+
+def test_replay_compares_with_the_originally_committed_note_and_stays_per_token() -> None:
+    kit = Kit()
+    write = writer(kit)
+    ctx = replace(agent_ctx(scopes=frozenset({Scope.WRITE, Scope.READ})), token_id="token-one")
+    created = write.execute(request(), ctx)
+    kit.clock.advance(timedelta(days=3))
+    replay = write.execute(request(), ctx)
+    assert (replay.note_id, replay.revision) == (created.note_id, created.revision)
+    with pytest.raises(WriteRejected, match="request_conflict"):
+        write.execute(request(priority="P3"), ctx)
+    other = write.execute(request(), replace(ctx, token_id="token-two"))
+    assert other.note_id != created.note_id
 
 
 @pytest.mark.parametrize("body", ["[[{}]]", "`[[{}]]`", "```\n[[{}]]\n```", "[[{}|alias]]"])

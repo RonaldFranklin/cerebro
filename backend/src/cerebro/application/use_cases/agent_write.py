@@ -74,19 +74,19 @@ class AgentWrite:
                 )
             )
 
-        key = fingerprint = None
+        key = None
         base = None
-        receipt = None
+        created = None
         if request.operation == "create":
             if not isinstance(request.request_id, str) or not _REQUEST_ID.fullmatch(request.request_id):
                 raise WriteRejected(WriteFinding("invalid_field", "request_id", "Supply a 1-64 character request id."))
             if request.target is not None or request.base_hash is not None:
                 raise WriteRejected(WriteFinding("invalid_field", "target", "Omit target and base_hash on create."))
             key = create_request_key(ctx.token_id, request.request_id)
-            receipt = self._notes.find_create(key)
-            if receipt is not None:
-                _require_core_scope(self._visible_target(receipt.note_id, ctx), ctx, "target")
-            note_id = receipt.note_id if receipt else _CREATE_PLACEHOLDER
+            created = self._notes.find_create(key)
+            if created is not None:
+                _require_core_scope(self._visible_target(created.note.id, ctx), ctx, "target")
+            note_id = created.note.id if created else _CREATE_PLACEHOLDER
         elif request.operation == "update":
             if request.request_id is not None or not is_content_hash(request.base_hash):
                 raise WriteRejected(WriteFinding("invalid_field", "base_hash", "Supply the hash from a full read."))
@@ -104,24 +104,24 @@ class AgentWrite:
         try:
             candidate = _parse(request, note_id, now.date(), base)
         except WriteRejected:
-            if receipt:
+            if created:
                 raise WriteRejected(_CONFLICT) from None
             raise
         if not ctx.ceiling.allows(candidate.sensitivity):
             raise WriteRejected(WriteFinding("outside_ceiling", "sensitivity", "Choose an authorized sensitivity."))
         _require_core_scope(candidate, ctx, "priority")
-        if key is not None and receipt is None:
+        if key is not None and created is None:
             note_id = self._new_id(candidate.title)
             candidate = replace(candidate, id=note_id)
         if not self._references_visible(candidate, ctx):
             raise WriteRejected(_REFERENCE)
-        if key is not None:
-            # Canonical user-controlled content, independent of service timestamps and allocated identifiers.
-            fingerprint = content_hash(replace(candidate, id=_CREATE_PLACEHOLDER, created=date.min, updated=date.min))
-        if receipt is not None and receipt.fingerprint != fingerprint:
-            raise WriteRejected(_CONFLICT)
-        if receipt is not None:
-            return AgentWriteResult(receipt.note_id, receipt.revision)
+        if created is not None:
+            # Compare with the note as the original commit stored it, ignoring service timestamps (ADR-0024).
+            if replace(candidate, created=date.min, updated=date.min) != replace(
+                created.note, created=date.min, updated=date.min
+            ):
+                raise WriteRejected(_CONFLICT)
+            return AgentWriteResult(created.note.id, created.revision)
         if base and base.type != candidate.type and {base.type, candidate.type} & {CORE, HUB}:
             raise WriteRejected(
                 WriteFinding("invalid_field", "type", "Keep the note in its original core, hub or regular category.")
@@ -139,9 +139,7 @@ class AgentWrite:
             hits = self._search.find_similar(f"{candidate.title} {candidate.summary}", ceiling=ctx.ceiling, limit=3)
             if any(hit.score >= 0.5 and visible_id(self._notes, hit.id, ctx, include_history=False) for hit in hits):
                 warnings += (WriteFinding("possible_duplicate", "title", "Search for a note covering the same topic."),)
-        message = AgentWriteCommit(
-            note_id=note_id, written_by=ctx.principal.name, request_key=key, fingerprint=fingerprint
-        )
+        message = AgentWriteCommit(note_id=note_id, written_by=ctx.principal.name, request_key=key)
         revision = self._commit(candidate, base, message, request.base_hash)
         return AgentWriteResult(
             note_id,
