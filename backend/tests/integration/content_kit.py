@@ -12,20 +12,14 @@ from cerebro.adapters.outbound.filesystem import FilesystemNoteRepository
 from cerebro.adapters.outbound.git import GitIdentity, GitRepo
 from cerebro.application.ports.notes import NoteChange
 from cerebro.bootstrap.settings import Settings
-from cerebro.domain.commit_message import CommitMessage
+from cerebro.domain.commit_message import OwnerCommit
 from cerebro.domain.enums import Priority, Sensitivity, Status
 from cerebro.domain.note import Note, NoteId
 from cerebro.domain.vocabulary import CORE, HUB, NoteType
 from tests.unit.domain.builders import make_note
 
 IDENTITY = GitIdentity(name="Cerebro Test", email="cerebro@example.invalid")
-SEED = CommitMessage(
-    subject="Seed the sample content",
-    proposal_id="seed-0001",
-    proposed_by="owner",
-    curated_by="owner",
-    approved_by="owner",
-)
+SEED = OwnerCommit(subject="Seed the sample content")
 
 RESTRICTED_MARKER = "zebrafruit"
 """A word that appears only in the restricted note (title, summary and body)."""
@@ -143,9 +137,7 @@ class SampleRepo:
         repo = FilesystemNoteRepository(
             self.root, git=self.git(), cipher=FernetCipher(load_keys(self.settings.key_file))
         )
-        message = CommitMessage(
-            subject=subject, proposal_id="manual-0001", proposed_by="owner", curated_by="owner", approved_by="owner"
-        )
+        message = OwnerCommit(subject=subject)
         return repo.apply([NoteChange(note=note)], message)
 
 

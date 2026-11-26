@@ -1,12 +1,10 @@
-"""Connection handling for ``state.sqlite``: tokens, reservation windows and sealed legacy rows.
+"""Connection handling for ``state.sqlite``: tokens and the login and write reservation windows.
 
-Unlike the disposable search index, this file is the only copy of the proposal audit trail and of the token
-records, so nothing here ever deletes, recreates or "repairs" it: an unknown schema version or a damaged file
-raises a clear error and leaves the file alone.
+Unlike the disposable search index, this file is the only copy of the token records, so nothing here ever deletes,
+recreates, upgrades or "repairs" it: an unknown schema version (including every version written before ADR-0023) or
+a damaged file raises a clear error and leaves the file alone.
 
-Integrity model: there is no rollback or replay protection for proposal rows (each is authenticated by the
-cipher and bound to its id, but restoring the whole file, or one row, from an older backup passes), and token rows
-are plain, unauthenticated columns protected only by the ``0600`` mode.
+Integrity model: token rows are plain, unauthenticated columns protected only by the ``0600`` mode.
 
 Hardening: the file is created ``0600`` with ``O_NOFOLLOW`` (a symlink in its place is refused), its leaf
 directory is ``0700``, WAL journaling, ``secure_delete`` and foreign keys are on, one short-lived connection per
@@ -21,25 +19,11 @@ from contextlib import closing, contextmanager, suppress
 from pathlib import Path
 from typing import Final
 
-SCHEMA_VERSION: Final = 4
+SCHEMA_VERSION: Final = 5
+"""Versions 1-4 belong to releases with the retired Inbox; ADR-0023 dropped them without an upgrade path."""
 BUSY_TIMEOUT_MS: Final = 5000
 
-_SCHEMA_V1: Final = """
-CREATE TABLE proposals (
-    id           TEXT PRIMARY KEY,
-    kind         TEXT NOT NULL,
-    status       TEXT NOT NULL,
-    revision     INTEGER NOT NULL CHECK (revision >= 0),
-    source_agent TEXT NOT NULL,
-    created_key  TEXT NOT NULL,
-    updated_key  TEXT NOT NULL,
-    curated_by   TEXT,
-    approved_by  TEXT,
-    payload      BLOB NOT NULL
-) STRICT;
-CREATE INDEX proposals_by_status ON proposals (status, created_key, id);
-CREATE INDEX proposals_by_agent ON proposals (source_agent, created_key, id);
-CREATE INDEX proposals_by_created ON proposals (created_key, id);
+_SCHEMA: Final = """
 CREATE TABLE tokens (
     id          TEXT PRIMARY KEY,
     token_hash  TEXT NOT NULL UNIQUE,
@@ -52,36 +36,10 @@ CREATE TABLE tokens (
     revoked_at  TEXT
 ) STRICT;
 CREATE INDEX tokens_by_created ON tokens (created_key, id);
-"""
-
-
-_UPGRADE_V2: Final = """
-ALTER TABLE proposals ADD COLUMN admission_token_id TEXT;
-ALTER TABLE proposals ADD COLUMN admitted_key TEXT;
-CREATE INDEX proposals_by_admission ON proposals(admission_token_id, admitted_key);
-CREATE INDEX pending_by_token ON proposals(admission_token_id) WHERE status NOT IN ('rejected','applied');
-"""
-
-
-_UPGRADE_V3: Final = "CREATE TABLE login_attempts (reserved_us INTEGER NOT NULL) STRICT"
-_UPGRADE_V4: Final = """
+CREATE TABLE login_attempts (reserved_us INTEGER NOT NULL) STRICT;
 CREATE TABLE write_attempts (token_id TEXT NOT NULL, reserved_us INTEGER NOT NULL) STRICT;
 CREATE INDEX write_attempts_by_token ON write_attempts(token_id, reserved_us);
 """
-
-
-def _apply_schema(conn: sqlite3.Connection, script: str) -> None:
-    # executescript would commit the surrounding migration transaction.
-    for statement in script.split(";"):
-        if statement.strip():
-            conn.execute(statement)
-
-
-def _schema_statements(conn: sqlite3.Connection) -> set[str]:
-    return {
-        row[0]
-        for row in conn.execute("SELECT sql FROM sqlite_schema WHERE sql IS NOT NULL AND name NOT GLOB 'sqlite_*'")
-    }
 
 
 class StateStoreError(RuntimeError):
@@ -145,8 +103,8 @@ class StateDatabase:
                 conn.execute("ROLLBACK")
                 raise
             conn.execute("COMMIT")
-            # Best effort: fold the WAL into the main file and truncate it, so replaced (sealed) row images do not
-            # linger there. A concurrent reader can keep part of it until its snapshot ends.
+            # Best effort: fold the WAL into the main file and truncate it, so replaced row images do not linger
+            # there. A concurrent reader can keep part of it until its snapshot ends.
             with suppress(sqlite3.OperationalError):
                 conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
 
@@ -210,40 +168,24 @@ class StateDatabase:
         version = int(conn.execute("PRAGMA user_version").fetchone()[0])
         if version == SCHEMA_VERSION:
             return
-        if version not in (0, 1, 2, 3):
+        if version != 0:
             raise StateSchemaError(
-                f"{self._path} has schema version {version}; this build understands {SCHEMA_VERSION}"
+                f"{self._path} has schema version {version}; this build understands only {SCHEMA_VERSION} and "
+                "never upgrades or deletes it: move the file aside and issue new tokens"
             )
         conn.execute("BEGIN IMMEDIATE")
         try:
             version = int(conn.execute("PRAGMA user_version").fetchone()[0])
-            if version == SCHEMA_VERSION:  # another process finished the migration
+            if version == SCHEMA_VERSION:  # another process created the schema
                 conn.execute("COMMIT")
                 return
-            if version == 0:
-                if conn.execute("SELECT count(*) FROM sqlite_master").fetchone()[0] != 0:
-                    raise StateSchemaError(f"{self._path} holds tables but no schema version; refusing to touch it")
-                _apply_schema(conn, _SCHEMA_V1)
-            elif version not in (1, 2, 3) or not self._matches_previous(conn, version):
-                raise StateSchemaError("unexpected state schema during migration")
-            if version < 2:
-                _apply_schema(conn, _UPGRADE_V2)
-            if version < 3:
-                _apply_schema(conn, _UPGRADE_V3)
-            _apply_schema(conn, _UPGRADE_V4)
+            if version != 0 or conn.execute("SELECT count(*) FROM sqlite_master").fetchone()[0] != 0:
+                raise StateSchemaError(f"{self._path} holds tables but no known schema version; refusing to touch it")
+            for statement in _SCHEMA.split(";"):  # executescript would commit the surrounding transaction
+                if statement.strip():
+                    conn.execute(statement)
             conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
         except BaseException:
             conn.execute("ROLLBACK")
             raise
         conn.execute("COMMIT")
-
-    @staticmethod
-    def _matches_previous(conn: sqlite3.Connection, version: int) -> bool:
-        """Compare SQLite's normalized DDL against the previous application's own schema."""
-        with closing(sqlite3.connect(":memory:")) as reference:
-            _apply_schema(reference, _SCHEMA_V1)
-            if version >= 2:
-                _apply_schema(reference, _UPGRADE_V2)
-            if version >= 3:
-                _apply_schema(reference, _UPGRADE_V3)
-            return _schema_statements(reference) == _schema_statements(conn)

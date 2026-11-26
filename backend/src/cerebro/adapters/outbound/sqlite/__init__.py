@@ -3,8 +3,8 @@
 ``index.sqlite`` is a **disposable** derived index: search (FTS5) and graph. If it is missing, corrupt or written by
 another schema version it is recreated empty, and ``RebuildIndex`` fills it again. It is never migrated.
 
-``state.sqlite`` is **not** disposable: tokens, durable attempt windows and sealed legacy proposal rows. An unknown
-schema version or a damaged file raises a clear error and the file is never deleted or repaired.
+``state.sqlite`` is **not** disposable: tokens and durable attempt windows. An unknown schema version or a damaged
+file raises a clear error and the file is never deleted, upgraded or repaired.
 """
 
 from cerebro.adapters.outbound.sqlite._db import IndexUnavailableError

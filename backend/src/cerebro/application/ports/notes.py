@@ -4,7 +4,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Protocol
 
-from cerebro.domain.commit_message import AgentWriteCommit, CommitMessage
+from cerebro.domain.commit_message import AgentWriteCommit, OwnerCommit
 from cerebro.domain.errors import InvalidValueError
 from cerebro.domain.note import Note, NoteId
 from cerebro.domain.note_ref import NoteRef
@@ -71,7 +71,7 @@ class NoteRepository(Protocol):
         """Locate the committed create on the current history, independently of derived index state."""
         ...
 
-    def apply(self, changes: Sequence[NoteChange], message: CommitMessage | AgentWriteCommit) -> str:
+    def apply(self, changes: Sequence[NoteChange], message: OwnerCommit | AgentWriteCommit) -> str:
         """Write all ``changes`` and record them as **one** commit with ``message``; return the revision id.
 
         All-or-nothing: if any change fails its check, nothing is written and nothing is committed.

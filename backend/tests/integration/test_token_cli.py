@@ -58,7 +58,6 @@ def test_issue_list_and_revoke(tmp_path: Path) -> None:
     [
         ("issue", "owner"),
         ("issue", "a", "--scope", "owner"),
-        ("issue", "a", "--scope", "propose"),
         ("issue", "a", "--scope", "core"),
         ("issue", "a", "--scope", "read", "--scope", "core"),
         ("issue", "a", "--expires-at", "2030-01-01"),

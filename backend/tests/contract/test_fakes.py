@@ -81,7 +81,7 @@ def test_fixed_clock_moves_only_when_told() -> None:
 
 def test_sequential_ids_are_deterministic() -> None:
     first, second = SequentialIdGenerator(), SequentialIdGenerator()
-    assert first.new_edit_id() == second.new_edit_id() == "edit-0001"
+    assert first.new_token_id() == second.new_token_id() == "token-0001"
     assert first.new_token_secret() == second.new_token_secret()
 
 

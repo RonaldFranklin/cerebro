@@ -1,4 +1,4 @@
-"""Contracts for ``ProposalStore``, ``TokenStore``, ``Curator``, ``Cipher``, ``Clock`` and ``IdGenerator``."""
+"""Contracts for ``TokenStore``, ``Cipher``, ``Clock`` and ``IdGenerator``."""
 
 import hashlib
 import re
@@ -126,11 +126,9 @@ class IdGeneratorContract:
 
     def test_ids_are_unique_and_valid(self, ids: IdGenerator) -> None:
         pattern = re.compile(r"[A-Za-z0-9_-]{1,64}")
-        edits = [ids.new_edit_id() for _ in range(5)]
         tokens = [ids.new_token_id() for _ in range(5)]
-        assert len(set(edits)) == 5
         assert len(set(tokens)) == 5
-        assert all(pattern.fullmatch(i) for i in (*edits, *tokens))
+        assert all(pattern.fullmatch(i) for i in tokens)
 
     def test_secrets_are_unique_and_long_enough(self, ids: IdGenerator) -> None:
         secrets = {ids.new_token_secret() for _ in range(5)}

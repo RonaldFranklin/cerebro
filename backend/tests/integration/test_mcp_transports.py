@@ -10,7 +10,6 @@ import sys
 import time
 from collections.abc import Iterator
 from contextlib import contextmanager
-from dataclasses import replace
 from pathlib import Path
 
 import httpx2
@@ -125,11 +124,6 @@ def test_real_listener_credentials_limits_and_logs(tmp_path: Path) -> None:
 
     tid, privileged = issue(Sensitivity.RESTRICTED)
     _, internal = issue(Sensitivity.INTERNAL)
-    legacy_id, legacy = issue(Sensitivity.RESTRICTED)
-    persisted = container.tokens.get(legacy_id)
-    assert persisted is not None
-    # Reproduce an already-issued credential from the Phase 4 store after upgrading.
-    container.tokens.save(replace(persisted, scopes=frozenset({Scope.PROPOSE})))
     private, public = free_port(), free_port()
     read = call("cerebro_read", {"id": VAULT_ID.value})
     with serving(config, private, public):
@@ -139,17 +133,14 @@ def test_real_listener_credentials_limits_and_logs(tmp_path: Path) -> None:
             assert status == 200
             assert b"Not found." in body
             assert body == post(port, secret, call("cerebro_read", {"id": "missing"}))[1]
-        assert post(private, legacy, read)[0] == 403
-        for secret in (internal, legacy):
-            assert post(private, secret, call("cerebro_write_guide", {}))[0] == 403
-            args: dict[str, object] = {
-                "operation": "create",
-                "request_id": "denied",
-                "frontmatter": {},
-                "body": "Synthetic note.",
-            }
-            assert post(private, secret, call("cerebro_write", args))[0] == 403
-        assert post(private, legacy, call("cerebro_propose", {}))[0] == 400
+        assert post(private, internal, call("cerebro_write_guide", {}))[0] == 403
+        args: dict[str, object] = {
+            "operation": "create",
+            "request_id": "denied",
+            "frontmatter": {},
+            "body": "Synthetic note.",
+        }
+        assert post(private, internal, call("cerebro_write", args))[0] == 403
         assert post(private, "invalid", read)[0] == 401
         assert post(private, privileged, read, path="/mcp?access_token=fixture-marker")[0] == 400
         assert post(private, "invalid", b"x" * 65537)[0] == 413
@@ -167,17 +158,12 @@ def test_real_listener_credentials_limits_and_logs(tmp_path: Path) -> None:
                 Client(streamable_http_client(f"http://127.0.0.1:{private}/mcp", http_client=http)) as client,
             ):
                 await assert_read_contract(client)
-            async with (
-                httpx2.AsyncClient(headers={"Authorization": "Bearer " + legacy}, trust_env=False) as http,
-                Client(streamable_http_client(f"http://127.0.0.1:{private}/mcp", http_client=http)) as client,
-            ):
-                assert (await client.list_tools()).tools == []
 
         asyncio.run(run_http())
         container.use_cases.revoke_agent_token.execute(RevokeAgentTokenRequest(token_id=tid), owner)
         assert post(private, privileged, read)[0] == 401
     logs = config.with_suffix(".log").read_bytes()
-    for value in (privileged, internal, legacy, RESTRICTED_MARKER, "fixture-marker"):
+    for value in (privileged, internal, RESTRICTED_MARKER, "fixture-marker"):
         assert value.encode() not in logs
 
 

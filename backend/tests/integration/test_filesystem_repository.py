@@ -34,6 +34,12 @@ from tests.contract.notes_contract import MESSAGE, NoteRepositoryContract
 from tests.integration.test_git import make_repo, raw_git
 from tests.unit.domain.builders import make_note
 
+
+def messages(git: GitRepo, count: int = 10) -> list[str]:
+    """The newest ``count`` first-parent commit messages."""
+    return [git.describe_commit(revision)[1] for revision in git.recent_revisions(count)]
+
+
 pytestmark = pytest.mark.skipif(shutil.which("git") is None, reason="the git executable is not installed")
 
 Make = Callable[..., FilesystemNoteRepository]
@@ -191,10 +197,10 @@ def test_one_commit_per_apply_with_the_trailers_verbatim(repo: FilesystemNoteRep
         [NoteChange(note=plain(id=NoteId("note-a"))), NoteChange(note=plain(id=NoteId("note-b")))], MESSAGE
     )
     assert git.head() == revision == repo.head()
-    assert git.log() == [MESSAGE.render()]
+    assert messages(git) == [MESSAGE.render()]
     assert git.is_clean()
     repo.apply([NoteChange(note=plain(id=NoteId("note-c")))], MESSAGE)
-    assert len(git.log()) == 2
+    assert len(messages(git)) == 2
 
 
 def test_the_lock_file_is_outside_the_tracked_tree(repo: FilesystemNoteRepository, git: GitRepo, root: Path) -> None:
@@ -298,7 +304,7 @@ def test_changing_sensitivity_rewrites_the_same_file_in_one_commit(
     repo.apply([NoteChange(note=restricted, expected_hash=content_hash(note))], MESSAGE)
     assert b"Visible-title-marker" not in b"".join(tree_files(root).values())
     assert sorted(tree_files(root)) == ["notes/server-ssh-access.md"]
-    assert len(git.log()) == 2
+    assert len(messages(git)) == 2
     repo.apply([NoteChange(note=note, expected_hash=content_hash(restricted))], MESSAGE)
     assert b"Visible-title-marker" in (root / "notes/server-ssh-access.md").read_bytes()
     assert sorted(tree_files(root)) == ["notes/server-ssh-access.md"]
@@ -460,7 +466,7 @@ def test_concurrent_creates_of_the_same_note_serialise(git: GitRepo, root: Path,
         t.join()
     assert sum(isinstance(r, str) for r in results) == 1
     assert sum(isinstance(r, ContentConflict) for r in results) == 5
-    assert len(git.log()) == 1
+    assert len(messages(git)) == 1
     assert git.is_clean()
 
 
@@ -482,7 +488,7 @@ def test_concurrent_applies_of_different_notes_each_make_one_commit(git: GitRepo
     for t in threads:
         t.join()
     assert errors == []
-    assert len(git.log(20)) == 5
+    assert len(messages(git, 20)) == 5
     assert git.is_clean()
     assert len(FilesystemNoteRepository(root, git=git, cipher=cipher).list_notes()) == 5
 
@@ -812,7 +818,7 @@ def test_a_foreign_commit_during_a_failed_stage_is_never_returned_as_ours(
     with pytest.raises(NoteWriteError, match="moved by someone else"):
         repo.apply([NoteChange(note=plain(id=NoteId("mine-note")))], MESSAGE)
     monkeypatch.undo()
-    assert git.log(1) == ["outside commit"]
+    assert messages(git, 1) == ["outside commit"]
 
 
 def test_a_foreign_commit_while_commit_fails_is_never_returned_as_ours(

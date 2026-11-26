@@ -180,7 +180,6 @@ def test_sdk_create_update_and_audit_across_transports(tmp_path: Path) -> None:
         assert initial == raw_git(settings.content_repo, "rev-parse", "HEAD").strip()
         asyncio.run(run())
     with closing(sqlite3.connect(settings.state_dir / "state.sqlite")) as db:
-        assert db.execute("SELECT count(*) FROM proposals").fetchone() == (0,)
         assert db.execute("SELECT count(*) FROM write_attempts").fetchone() == (9,)
     log = config.with_suffix(".log").read_text()
     for sensitive in (marker, author, editor, create["body"]):

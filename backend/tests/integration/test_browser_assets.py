@@ -50,7 +50,6 @@ def test_known_navigation_gets_nonce_and_no_cache(dist: Path, route: str) -> Non
         "/api/unknown",
         "/mcp",
         "/unknown",
-        "/inbox",
         "/assets/plain.js",
         "/assets/a-12345678.map",
         "/assets/a-12345678.html",

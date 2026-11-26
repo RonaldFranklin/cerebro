@@ -99,7 +99,7 @@ def test_hidden_and_missing_link_feedback(body: str) -> None:
     assert outputs[0][0].code == "broken_link"
 
 
-def test_invalid_calls_consume_quota_and_legacy_tokens_cannot_write() -> None:
+def test_invalid_calls_consume_quota_and_read_tokens_cannot_write() -> None:
     kit = Kit()
     write = writer(kit, 1)
     ctx = replace(agent_ctx(), token_id="token-one")

@@ -21,13 +21,9 @@ from cerebro.domain.errors import InvalidValueError
 
 _AGENT_NAME: Final = re.compile(r"[a-z0-9][a-z0-9._-]*(?:@[a-z0-9][a-z0-9._-]*)?")
 AGENT_NAME_MAX_LENGTH: Final = 64
-# The owner is recorded as ``owner`` in commit trailers (``Approved-by: owner``); an agent must never be able to
+# The owner is recorded as ``owner`` in commit trailers (``Written-by: owner``); an agent must never be able to
 # appear under that name in the audit trail, with or without a host part.
 _RESERVED_AGENT_NAMES: Final = frozenset({"owner"})
-CURATOR_PREFIX: Final = "curator/"
-_CURATOR_NAME: Final = re.compile(r"curator/[a-z0-9][a-z0-9._-]*")
-"""Every ``Curated-by`` identity starts with this prefix. Agent names cannot contain ``/``, so an agent can never
-appear in the audit trail as a curator (and ``owner`` is reserved), whatever name its token carries."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -86,7 +82,6 @@ class Scope(StrEnum):
     """What an agent token may do. Owner-only actions are not scopes: they require the ``Owner`` principal."""
 
     READ = "read"
-    PROPOSE = "propose"
     WRITE = "write"
     CORE = "core"
     """Extends ``write`` to core (P0) notes, the global rules every agent receives. Meaningless without ``write``."""
@@ -127,18 +122,6 @@ def validate_agent_name(name: object) -> str:
         )
     if name.partition("@")[0] in _RESERVED_AGENT_NAMES:
         raise InvalidValueError("agent", "this name is reserved for the owner")
-    return name
-
-
-def validate_curator_name(name: object) -> str:
-    """Return ``name`` if it is a valid curator identity (``curator/null``), else raise."""
-    if not isinstance(name, str):
-        raise InvalidValueError("curated_by", f"expected a string, got {type(name).__name__}")
-    if len(name) > AGENT_NAME_MAX_LENGTH or _CURATOR_NAME.fullmatch(name) is None:
-        raise InvalidValueError(
-            "curated_by",
-            f"must be '{CURATOR_PREFIX}' then lowercase letters, digits, '.', '_', '-' (max {AGENT_NAME_MAX_LENGTH})",
-        )
     return name
 
 

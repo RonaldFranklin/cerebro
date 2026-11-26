@@ -197,13 +197,13 @@ class TestNoLeaks:
 
 class TestContextFromToken:
     def test_effective_ceiling_is_min_of_listener_and_token(self) -> None:
-        token = make_token(ceiling=AccessCeiling(Sensitivity.RESTRICTED), scopes=frozenset({Scope.READ, Scope.PROPOSE}))
+        token = make_token(ceiling=AccessCeiling(Sensitivity.RESTRICTED), scopes=frozenset({Scope.READ, Scope.WRITE}))
         ctx = token.to_context(AccessCeiling(Sensitivity.INTERNAL), T0)
         assert ctx.ceiling == AccessCeiling(Sensitivity.INTERNAL)
         assert ctx.principal == Agent("claude-code@workstation")
         assert ctx.token_id == token.id
-        assert ctx.scopes == frozenset({Scope.READ, Scope.PROPOSE})
-        assert ctx.can(Scope.PROPOSE)
+        assert ctx.scopes == frozenset({Scope.READ, Scope.WRITE})
+        assert ctx.can(Scope.WRITE)
 
     @pytest.mark.parametrize(
         ("listener", "token", "expected"),
@@ -226,7 +226,7 @@ class TestContextFromToken:
 
         token = make_token(scopes=Liar({Scope.READ}))
         assert type(token.scopes) is frozenset
-        assert token.to_context(AccessCeiling(Sensitivity.RESTRICTED), T0).can(Scope.PROPOSE) is False
+        assert token.to_context(AccessCeiling(Sensitivity.RESTRICTED), T0).can(Scope.WRITE) is False
 
     def test_token_lowers_a_permissive_listener(self) -> None:
         token = make_token(ceiling=AccessCeiling(Sensitivity.PUBLIC))

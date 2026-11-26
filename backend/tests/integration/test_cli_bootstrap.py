@@ -137,7 +137,9 @@ def test_large_toml_hex_quota_reports_configuration_error(tmp_path: Path) -> Non
         load_settings(file, {})
 
 
-def test_legacy_quota_keys_allow_an_existing_configuration_to_start(tmp_path: Path) -> None:
-    config = tmp_path / "legacy.toml"
-    config.write_text(SAMPLE + "proposals_per_hour = 1\nproposals_pending = 2\n")
-    assert load_settings(config, {}).writes_per_hour == 60
+@pytest.mark.parametrize("key", ["proposals_per_hour", "proposals_pending"])
+def test_retired_quota_keys_are_unknown(tmp_path: Path, key: str) -> None:
+    config = tmp_path / "retired.toml"
+    config.write_text(SAMPLE + f"{key} = 1\n")
+    with pytest.raises(ConfigurationError, match="unknown key"):
+        load_settings(config, {})

@@ -1,7 +1,9 @@
 # ADR-0020: Validated direct agent writes and owner change history
 
 - **Status:** accepted; ID generation and the default quota are superseded by [ADR-0021](0021-readable-note-ids.md);
-  authority over core and P0 notes is amended by [ADR-0022](0022-core-scope.md)
+  authority over core and P0 notes is amended by [ADR-0022](0022-core-scope.md); its preservation of legacy
+  tokens, proposal rows, state upgrades and Inbox-era attribution is superseded by
+  [ADR-0023](0023-no-legacy-compatibility.md)
 - **Date:** 2026-11-26
 
 ## Context

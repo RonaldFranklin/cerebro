@@ -23,7 +23,7 @@ PUBLIC = Sensitivity.PUBLIC
 INTERNAL = Sensitivity.INTERNAL
 RESTRICTED = Sensitivity.RESTRICTED
 NO_SCOPE = frozenset[Scope]()
-PROPOSE_ONLY = frozenset({Scope.PROPOSE})
+WRITE_ONLY = frozenset({Scope.WRITE})
 
 
 @pytest.fixture
@@ -45,7 +45,7 @@ def all_executions(w: World) -> dict[str, object]:
 
 
 class TestScopes:
-    @pytest.mark.parametrize("scopes", [NO_SCOPE, PROPOSE_ONLY])
+    @pytest.mark.parametrize("scopes", [NO_SCOPE, WRITE_ONLY])
     @pytest.mark.parametrize("name", ["overview", "search", "read", "neighbors", "graph"])
     def test_read_scope_is_required(self, world: World, name: str, scopes: frozenset[Scope]) -> None:
         run = all_executions(world)[name]

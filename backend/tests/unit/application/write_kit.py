@@ -14,12 +14,11 @@ from tests.unit.application.world import NID, World, ctx, standard_world
 from tests.unit.domain.builders import VOCABULARY
 
 SECRET = "ghp_aB3dE6gH9jK2mN5pQ8sT1vW4yZ7bC0eF3hJ6"
-NEW_ID = NID("docker-conventions")
 SSH = NID("server-ssh-access")
-PROPOSE = frozenset({Scope.READ, Scope.PROPOSE})
+READ_ONLY = frozenset({Scope.READ})
 
 
-def agent_ctx(level: Sensitivity = Sensitivity.INTERNAL, scopes: frozenset[Scope] = PROPOSE) -> AccessContext:
+def agent_ctx(level: Sensitivity = Sensitivity.INTERNAL, scopes: frozenset[Scope] = READ_ONLY) -> AccessContext:
     return ctx(level, scopes)
 
 
@@ -34,7 +33,7 @@ class Kit:
     ids: SequentialIdGenerator = field(default_factory=SequentialIdGenerator)
 
     def edit_uc(self) -> OwnerEditNote:
-        return OwnerEditNote(self.world.notes, self.world.search, self.world.graph, self.clock, self.ids, VOCABULARY)
+        return OwnerEditNote(self.world.notes, self.world.search, self.world.graph, self.clock, VOCABULARY)
 
     @property
     def commits(self) -> int:

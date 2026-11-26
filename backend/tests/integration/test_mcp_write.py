@@ -36,12 +36,11 @@ def container(tmp_path: Path) -> Container:
     return app
 
 
-@pytest.mark.parametrize("scope", [Scope.READ, Scope.PROPOSE, Scope.WRITE])
+@pytest.mark.parametrize("scope", [Scope.READ, Scope.WRITE])
 def test_discovery_and_invocation_use_the_same_grant(scope: Scope, container: Container) -> None:
     tools = tools_for(container)
     ctx = replace(WRITER, scopes=frozenset({scope}))
     listed = {tool.name for tool in tools.list_tools(ctx).tools}
-    assert "cerebro_propose" not in listed
     for name, args in (("cerebro_write", CREATE), ("cerebro_write_guide", {})):
         assert (name in listed) == (scope is Scope.WRITE)
         assert tools.call(name, args, lambda: ctx).is_error == (scope is not Scope.WRITE)
@@ -92,7 +91,6 @@ def test_base_hash_requires_complete_unredacted_read_and_write_authority(contain
         ({"id": SSH_ID.value, "section": "SSH"}, WRITER),
         ({"id": BROKEN_ID.value}, WRITER),
         ({"id": SSH_ID.value}, AGENT),
-        ({"id": SSH_ID.value}, replace(WRITER, scopes=frozenset({Scope.READ, Scope.PROPOSE}))),
     ],
 )
 def test_partial_or_read_only_result_has_no_update_hash(

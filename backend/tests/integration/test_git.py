@@ -11,7 +11,7 @@ import pytest
 
 from cerebro.adapters.outbound.git import GitError, GitIdentity, GitRepo, GitVersionControl, scrub
 from cerebro.application.ports import VersionControl
-from cerebro.domain.commit_message import CommitMessage
+from cerebro.domain.commit_message import OwnerCommit
 
 pytestmark = pytest.mark.skipif(shutil.which("git") is None, reason="the git executable is not installed")
 
@@ -32,14 +32,8 @@ def write(repo_root: Path, rel: str, text: str = "x\n") -> None:
     target.write_text(text)
 
 
-def message(subject: str = "Add note alpha") -> CommitMessage:
-    return CommitMessage(
-        subject=subject,
-        proposal_id="proposal-1",
-        proposed_by="claude-code",
-        curated_by="curator/default",
-        approved_by="owner",
-    )
+def message(subject: str = "Add note alpha") -> OwnerCommit:
+    return OwnerCommit(subject=subject)
 
 
 def raw_git(root: Path, *args: str) -> str:
@@ -53,7 +47,7 @@ def test_init_commit_head_round_trip(tmp_path: Path) -> None:
     root = tmp_path / "repo"
     assert repo.head() is None
     assert repo.is_clean()
-    assert repo.log() == []
+    assert repo.recent_revisions(1) == ()
     write(root, "notes/a.md")
     assert not repo.is_clean()
     repo.stage(["notes/a.md"])
@@ -62,10 +56,10 @@ def test_init_commit_head_round_trip(tmp_path: Path) -> None:
     assert len(first) == 40
     assert repo.is_clean()
     write(root, "notes/a.md", "changed\n")
-    repo.add(["notes/a.md"])
+    repo.stage(["notes/a.md"])
     second = repo.commit("second")
     assert repo.head() == second != first
-    assert repo.log(1) == ["second"]
+    assert repo.describe_commit(second) == ((first,), "second")
     assert raw_git(root, "symbolic-ref", "--short", "HEAD").strip() == "main"
 
 
@@ -73,9 +67,9 @@ def test_commit_message_with_trailers_is_read_back_verbatim(tmp_path: Path) -> N
     repo = make_repo(tmp_path)
     write(tmp_path / "repo", "a.md")
     repo.stage(["a.md"])
-    repo.commit(message().render())
-    assert repo.log(1) == [message().render()]
-    trailers = raw_git(tmp_path / "repo", "log", "-1", "--format=%(trailers:key=Approved-by,valueonly)").strip()
+    revision = repo.commit(message().render())
+    assert repo.describe_commit(revision) == ((), message().render())
+    trailers = raw_git(tmp_path / "repo", "log", "-1", "--format=%(trailers:key=Written-by,valueonly)").strip()
     assert trailers == "owner"
 
 

@@ -3,7 +3,7 @@
 from collections.abc import Sequence
 
 from cerebro.application.ports.notes import CreateReceipt, NoteChange, check_agent_commit
-from cerebro.domain.commit_message import AgentWriteCommit, CommitMessage
+from cerebro.domain.commit_message import AgentWriteCommit, OwnerCommit
 from cerebro.domain.content_hash import content_hash, is_content_hash
 from cerebro.domain.errors import ContentConflict, InvalidValueError
 from cerebro.domain.note import Note, NoteId
@@ -13,7 +13,7 @@ from cerebro.domain.note_ref import NoteRef
 class InMemoryNoteRepository:
     def __init__(self) -> None:
         self._notes: dict[NoteId, Note] = {}
-        self.commits: list[tuple[str, CommitMessage | AgentWriteCommit, tuple[NoteId, ...]]] = []
+        self.commits: list[tuple[str, OwnerCommit | AgentWriteCommit, tuple[NoteId, ...]]] = []
 
     def get(self, note_id: NoteId) -> Note | None:
         return self._notes.get(note_id)
@@ -36,7 +36,7 @@ class InMemoryNoteRepository:
                 return CreateReceipt(note_id=message.note_id, revision=revision, fingerprint=message.fingerprint)
         return None
 
-    def apply(self, changes: Sequence[NoteChange], message: CommitMessage | AgentWriteCommit) -> str:
+    def apply(self, changes: Sequence[NoteChange], message: OwnerCommit | AgentWriteCommit) -> str:
         if isinstance(message, AgentWriteCommit):
             check_agent_commit(changes, message)
         if not changes:

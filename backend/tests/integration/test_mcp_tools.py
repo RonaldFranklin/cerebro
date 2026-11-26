@@ -112,7 +112,7 @@ def test_arguments_normalize_before_authentication(container: Container) -> None
         ("cerebro_neighbors", {"id": "note", "depth": 3}),
         ("cerebro_neighbors", {"id": "note", "depth": True}),
         ("cerebro_neighbors", {"id": "note", "depth": 1.5}),
-        ("cerebro_propose", {}),
+        ("cerebro_unknown", {}),
         ("cerebro_search", {"query": None}),
     ]:
         assert adapter.call(name, args, forbidden).is_error
@@ -120,7 +120,7 @@ def test_arguments_normalize_before_authentication(container: Container) -> None
 
 def test_all_calls_require_agent_read_scope(container: Container) -> None:
     ctx = AccessContext(
-        principal=Agent("writer"), ceiling=AccessCeiling(Sensitivity.INTERNAL), scopes=frozenset({Scope.PROPOSE})
+        principal=Agent("writer"), ceiling=AccessCeiling(Sensitivity.INTERNAL), scopes=frozenset({Scope.WRITE})
     )
     adapter = tools_for(container)
     for name, args in [
