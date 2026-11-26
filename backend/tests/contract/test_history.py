@@ -34,7 +34,9 @@ def test_attributed_update_reads_the_exact_versions(real: bool, tmp_path: Path) 
     change = store.change(revision)
     assert change is not None
     assert change.parent is not None
-    assert store.recent(change.parent)[0] == change.parent
+    assert store.recent(change.parent, verify_head=(change.parent, revision))[0] == change.parent
+    with pytest.raises(ChangeUnavailable):
+        store.recent(change.parent, verify_head=(revision, change.parent))
     assert change.actor == "codex"
     assert change.operation == "update"
     assert store.note_at(revision, after.id) == after

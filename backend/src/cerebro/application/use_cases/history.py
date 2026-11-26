@@ -74,7 +74,7 @@ class OwnerHistory:
         ancestry = None if cursor.head in recent else (cursor.head, observed)
         revisions = self._history.recent(cursor.start, verify_head=ancestry)
         with self._guard():
-            if self._notes.head() != observed:
+            if self._notes.head() != observed and observed not in self._history.recent():
                 raise ChangeUnavailable()
             yield cursor.head, revisions
 

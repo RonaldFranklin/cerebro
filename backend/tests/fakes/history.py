@@ -16,6 +16,8 @@ class FakeHistory:
         if verify_head is not None:
             for revision in verify_head:
                 self._require_known(revision)
+            if verify_head == (self.revision, self.parent):
+                raise ChangeUnavailable()
         if cursor is not None:
             self._require_known(cursor)
         return (self.parent,) if cursor == self.parent else (self.revision, self.parent)
