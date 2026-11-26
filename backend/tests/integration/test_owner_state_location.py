@@ -183,3 +183,18 @@ def test_backend_symlink_does_not_mark_its_parent_as_a_checkout(tmp_path: Path) 
     state = home / ".local/state"
     owner_credentials(_settings(tmp_path / "content", state))
     assert state.is_dir()
+
+
+def test_external_source_directory_does_not_mark_backend_as_a_checkout(tmp_path: Path) -> None:
+    external = tmp_path / "application/backend/src"
+    module = external / "cerebro/bootstrap/browser.py"
+    module.parent.mkdir(parents=True)
+    module.touch()
+    unrelated = tmp_path / "other-project"
+    backend = unrelated / "backend"
+    backend.mkdir(parents=True)
+    (backend / "pyproject.toml").touch()
+    (backend / "src").symlink_to(external, target_is_directory=True)
+    state = unrelated / "state"
+    owner_credentials(_settings(tmp_path / "content", state))
+    assert state.is_dir()

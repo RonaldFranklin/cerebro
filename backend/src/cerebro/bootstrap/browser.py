@@ -14,7 +14,9 @@ def _repository_directory(path: Path, installed_module: Path) -> bool:
     # checkout and the standard application source layout when running an installed wheel.
     source = path / _SOURCE_MODULE
     if source == installed_module or (
-        (path / "backend/pyproject.toml").is_file() and source.is_file() and not (path / "backend").is_symlink()
+        (path / "backend/pyproject.toml").is_file()
+        and source.is_file()
+        and source.parent.resolve().is_relative_to(path / "backend")
     ):
         return True
     # Ordinary and linked worktrees have a .git directory or gitfile. Inspect the destination's
