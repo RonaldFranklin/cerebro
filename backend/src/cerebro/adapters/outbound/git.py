@@ -502,7 +502,7 @@ class GitRepo:
                 "-z",
                 "--no-renames",
                 "--untracked-files=all",
-                "--ignored=matching",
+                "--ignored=traditional",
                 "--",
                 *pathspecs,
             ]

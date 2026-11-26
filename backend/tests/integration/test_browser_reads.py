@@ -225,3 +225,15 @@ def test_note_file_problems_are_listed_in_health_and_logged_without_content(
         stray.unlink()
     assert service.private.get("/api/search", params={"q": "ssh"}).status_code == 200
     assert RESTRICTED_MARKER not in capsys.readouterr().err
+
+
+def test_health_can_display_a_filename_with_non_utf8_bytes(service: Service) -> None:
+    filename = b"draft-\xff.md".decode("utf-8", "surrogateescape")
+    stray = service.container.settings.content_repo / "notes" / filename
+    stray.write_text("draft")
+    try:
+        response = service.private.get("/api/health")
+        assert response.status_code == 200
+        assert any(issue["subject"] == r"notes/draft-\xff.md" for issue in response.json()["issues"])
+    finally:
+        stray.unlink()
