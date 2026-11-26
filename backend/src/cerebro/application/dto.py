@@ -668,6 +668,8 @@ class IssueAgentTokenRequest:
             or not all(isinstance(s, Scope) for s in self.scopes)
         ):
             raise InvalidValueError("scopes", "expected a non-empty frozenset of Scope")
+        if Scope.PROPOSE in self.scopes:
+            raise InvalidValueError("scopes", "new credentials support read and write")
         expires = self.expires_at
         if expires is not None and (not isinstance(expires, datetime) or expires.tzinfo is None):
             raise InvalidValueError("expires_at", "expected a timezone-aware datetime")

@@ -123,7 +123,7 @@ def serve() -> int:
                 search_notes=cases.search_notes,
                 read_note=cases.read_note,
                 get_neighbors=cases.get_neighbors,
-                submit_proposal=cases.submit_proposal,
+                agent_write=cases.agent_write,
             )
             auth = container.browser_auth
             reads = BrowserReads(

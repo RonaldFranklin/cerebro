@@ -33,7 +33,7 @@ create/update operations with authenticated attribution in Git.
 - **Phase 3 checkpoint:** only the owner's manual Claude Code and Codex tests remain.
 - **Phase 4 is delivered.** The fifth MCP tool submits agent proposals for quota-controlled validation, curation
   and local owner review. The [delivery record and security checkpoint](docs/plans/phase-4.md#5-final-report)
-  and [manual proposal checks](docs/agent-integration.md#3-propose-in-both-clients-and-approve-locally)
+  and [manual proposal checks](https://github.com/RonaldFranklin/cerebro/blob/e7264b869085e156140239e692b2c1a310650674/docs/agent-integration.md#3-propose-in-both-clients-and-approve-locally)
   are ready for the owner.
 - **Phase 5 is delivered.** The owner browser API and web UI include the overview, search, reader,
   global/local graph, Inbox review, editor and private health panel. See the

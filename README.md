@@ -8,7 +8,7 @@ and every agent you use — Claude Code, Codex, ChatGPT or anything that speaks
 [MCP](https://modelcontextprotocol.io) — reads the same curated context instead of you pasting the same
 Markdown file into every new chat.
 
-> **Status:** design complete, implementation not started. See [`docs/roadmap.md`](docs/roadmap.md).
+> **Status:** MCP reads and validated agent writes are available. Phase 7 is in progress. See [`docs/roadmap.md`](docs/roadmap.md).
 
 ## Why
 
@@ -25,12 +25,13 @@ Cérebro makes that context a single, structured, versioned source that agents c
 - **Priority levels (P0–P3).** What every agent must always know vs. what it reads only on demand.
 - **Sensitivity levels.** `public`, `internal`, `restricted`. Each agent token and each network entry point
   has a ceiling; restricted notes are encrypted at rest in the content repository.
-- **Agents propose, they don't write.** External agents submit proposals to an Inbox. Deterministic checks
-  and an internal curator agent keep the knowledge base clean; the owner approves.
+- **Authorized agents write through MCP.** Before writing, consult `cerebro_write_guide` and search for an
+  existing note. `cerebro_write` validates each create or update and records the authenticated agent in Git.
+  Updates use the `base_hash` from a complete read. The owner explicitly issues `read` and `write` grants.
 - **Plain files, real history.** Notes are Markdown with YAML frontmatter in a git repository. The search
   index is derived and can be rebuilt at any time.
 - **See your knowledge.** A web UI to browse and read notes and explore the knowledge graph.
-- **Hexagonal core.** The domain has zero third-party dependencies; storage, LLM providers and transports
+- **Hexagonal core.** The domain has zero third-party dependencies; storage and transports
   are swappable adapters.
 
 ## How it fits together
@@ -39,7 +40,7 @@ Cérebro makes that context a single, structured, versioned source that agents c
  Your machine                                   Your server
  ┌──────────────────────┐                      ┌──────────────────────────────────┐
  │ Claude Code / Codex  │── MCP (HTTPS) ──────▶│  Cérebro                         │
- │ Browser              │── Web UI ──────────▶│   API · MCP · Inbox · Curator     │
+ │ Browser              │── Web UI ──────────▶│   API · MCP · Validated writes    │
  └──────────────────────┘                      │   Index (SQLite FTS5)            │
                                                │   Content repo (git, private)    │
                                                └──────────────────────────────────┘

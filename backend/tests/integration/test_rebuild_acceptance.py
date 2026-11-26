@@ -4,6 +4,7 @@ container, queried per ceiling, and written through the full proposal pipeline. 
 import shutil
 import stat
 from collections.abc import Callable
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -60,7 +61,6 @@ PUBLIC = AccessCeiling(Sensitivity.PUBLIC)
 INTERNAL = AccessCeiling(Sensitivity.INTERNAL)
 RESTRICTED = AccessCeiling(Sensitivity.RESTRICTED)
 OWNER = AccessContext.for_owner(RESTRICTED)
-READ_PROPOSE = frozenset({Scope.READ, Scope.PROPOSE})
 PEM_BEGIN = "-----BEGIN " + "RSA PRIVATE KEY-----"
 PEM_END = "-----END " + "RSA PRIVATE KEY-----"
 
@@ -86,7 +86,7 @@ def login(container: Container) -> Login:
 
     def run(token_ceiling: AccessCeiling, listener: AccessCeiling) -> AccessContext:
         issued = container.use_cases.issue_agent_token.execute(
-            IssueAgentTokenRequest(agent="claude-code", ceiling=token_ceiling, scopes=READ_PROPOSE), OWNER
+            IssueAgentTokenRequest(agent="claude-code", ceiling=token_ceiling, scopes=frozenset({Scope.READ})), OWNER
         )
         return container.use_cases.authenticate_token.execute(
             AuthenticateTokenRequest(secret=issued.secret, listener=listener)
@@ -266,8 +266,9 @@ class TestAuthentication:
             container.use_cases.authenticate_token.execute(AuthenticateTokenRequest(secret="x" * 43, listener=INTERNAL))
 
 
-def agent(container: Container, login: Login) -> AccessContext:
-    return login(INTERNAL, INTERNAL)
+def legacy_proposer(login: Login) -> AccessContext:
+    """Reproduce the historical authenticated proposal context for the Phase 2 pipeline tests."""
+    return replace(login(INTERNAL, INTERNAL), scopes=frozenset({Scope.READ, Scope.PROPOSE}))
 
 
 def create_content(**overrides: object) -> ProposedContent:
@@ -290,7 +291,7 @@ class TestWritePath:
         self, container: Container, sample: SampleRepo, login: Login
     ) -> None:
         cases = container.use_cases
-        proposer = login(INTERNAL, INTERNAL)
+        proposer = legacy_proposer(login)
         before = container.notes.head()
         submitted = cases.submit_proposal.execute(
             SubmitProposalRequest(kind=ProposalKind.CREATE, content=create_content()), proposer
@@ -346,7 +347,7 @@ class TestWritePath:
         self, container: Container, sample: SampleRepo, login: Login
     ) -> None:
         cases = container.use_cases
-        proposer = login(INTERNAL, INTERNAL)
+        proposer = legacy_proposer(login)
         material = "TWFya2VyRm9yVGhlUHJpdmF0ZUtleUJvZHlOb3RSZWFsMTIzNDU2"
         body = f"# Deploy key\n\n{PEM_BEGIN}\n{material}\n{PEM_END}\n"
         before = container.notes.head()

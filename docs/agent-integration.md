@@ -1,9 +1,17 @@
 # Connecting agents
 
-Cérebro exposes four read tools to tokens with the `read` scope and `cerebro_propose` to tokens with
-the `propose` scope. Start with `cerebro_overview` once per session, search summaries, then read
+Cérebro exposes four tools to tokens with `read`. Tokens with `write` can call `cerebro_write` and
+`cerebro_write_guide`. Issue both scopes for an agent that searches and maintains notes. Start with `cerebro_overview` once per session, search summaries, then read
 a selected section or follow a link. Each agent has its own bearer token. For access from another host use
 the private HTTPS URL supplied by Tailscale Serve. Loopback HTTP below is for a development instance on this host.
+
+## Project AGENTS.md snippet
+
+```markdown
+Use Cérebro for durable project context. Start a session with `cerebro_overview`.
+Search before creating a note and prefer updating an existing one.
+When you have something worth recording, read `cerebro_write_guide` and follow it.
+```
 
 ## Automated acceptance
 
@@ -13,13 +21,14 @@ From the application repository in WSL, run:
 cd backend
 uv sync --locked
 uv run --locked pytest -q tests/integration/test_phase3_acceptance.py tests/integration/test_mcp_transports.py \
-  tests/integration/test_phase4_acceptance.py
+  tests/integration/test_phase7_acceptance.py tests/integration/test_write_guide_distribution.py
 ```
 
 The official SDK exercises the installed HTTP server and local stdio bridge with synthetic public, internal and
 restricted notes. The tests cover discovery, visible results, identical hidden/missing responses, restart and
-credential revocation. The Inbox test submits a valid proposal and a synthetic private-key marker, verifies
-quota refusals and reads the owner-approved commit and its audit trailers from git. The following manual checks use the same fixture.
+credential revocation. The direct-write test creates through HTTP and updates through stdio, checks replay, stale hashes,
+secret and quota rejections and inspects the two attributed Git commits. The distribution test loads the guide
+from an installed wheel. The following manual checks use the same fixture.
 
 ## Manual check in Claude Code and Codex
 
@@ -113,61 +122,44 @@ In each client, confirm four distinct read tools were called. Expect `core-rules
 `docker-conventions` at depth two. Both final reads return `Not found.` The fixture includes an encrypted
 `vault-layout` note and both tokens have the `internal` ceiling.
 
-### 3. Propose in both clients and approve locally
+### 3. Create in Claude Code and update in Codex
 
-Keep the private dev server running. Use fresh propose-only tokens in a subshell so the read checks retain
-their original credentials. Each client submits a distinct synthetic note and reports its proposal id.
-The token identifies the proposer. The default limits are 20 admissions per rolling hour and 10 pending
-proposals per token. Either limit returns `Proposal limit reached.`.
+The read tokens from step 1 authorize four tools. Issue a fresh `read` + `write` token to each client in
+the subshell below. Both should discover two additional tools, `cerebro_write_guide` and `cerebro_write`.
+Each prompt asks the client to consult the guide before writing. The working fixture is disposable.
 
 ```bash
 (
   cli=("$bin/cerebro" --config "$config")
-  claude_secret="$("${cli[@]}" token issue claude-inbox --scope propose --ceiling internal)"
-  codex_secret="$("${cli[@]}" token issue codex-inbox --scope propose --ceiling internal)"
-  for client in claude codex; do
-    "run_$client" "Call cerebro_propose exactly once using these JSON arguments:
-{\"kind\":\"create\",\"title\":\"$client inbox sample\",\"body\":\"Synthetic $client proposal for owner review.\",
- \"suggested\":{\"type\":\"guide\",\"area\":\"infrastructure\",\"priority\":\"P2\",\"sensitivity\":\"internal\",
- \"hub\":\"infrastructure\",\"summary\":\"A synthetic guide used to check the local Inbox approval workflow.\"}}
-Report the returned proposal_id and valid flag. Use no other tools."
-  done
+  repo="$session/instance/content"
+  claude_secret="$("${cli[@]}" token issue claude-writer --scope read --scope write --ceiling internal)"
+  codex_secret="$("${cli[@]}" token issue codex-writer --scope read --scope write --ceiling internal)"
+  before="$(git -C "$repo" rev-parse HEAD)"
+  run_claude 'Use only Cérebro MCP tools. Read cerebro_write_guide and search for "fixture handover".
+If the fixture handover note already exists, stop. Otherwise call cerebro_write with these arguments:
+{"operation":"create","request_id":"manual-handover-1","body":"Record the active revision before handover.",
+ "frontmatter":{"title":"Fixture handover","type":"guide","area":"infrastructure","priority":"P2",
+ "sensitivity":"internal","hub":"infrastructure","summary":"How to record the active revision during a synthetic handover."}}
+Read back the returned note_id. Report the id, revision and body.'
+  create_rev="$(git -C "$repo" rev-parse HEAD)"
+  test "$(git -C "$repo" rev-list --count "$before..$create_rev")" = 1
+  test "$(git -C "$repo" log -1 '--format=%(trailers:key=Written-by,valueonly,separator=%x2C)')" = claude-writer
+  run_codex 'Use only Cérebro MCP tools. Read cerebro_write_guide, search for "fixture handover" and read the
+full Fixture handover note. Call cerebro_write to update it using its id as target and the returned base_hash.
+Preserve its writable frontmatter. Change the body to "Record and verify the active revision before handover."
+Report the update revision. Repeat that exact update once with the same old hash to exercise stale_base.
+Report its error code, then read the current note and report the body. Stop after that read.'
+  update_rev="$(git -C "$repo" rev-parse HEAD)"
+  test "$(git -C "$repo" rev-list --count "$create_rev..$update_rev")" = 1
+  test "$(git -C "$repo" log -1 '--format=%(trailers:key=Written-by,valueonly,separator=%x2C)')" = codex-writer
+  git -C "$repo" log --format='%h %cI %s%n%(trailers:key=Written-by)' "$before..$update_rev"
+  git -C "$repo" diff "$create_rev" "$update_rev" -- '*.md'
 )
 ```
 
-Both results should have `valid: true`. The owner reviews each candidate from the same Bash session. Copy
-the corresponding proposal id from each client result when prompted. Check the source agent, candidate body
-and suggested target in the displayed preview before confirming each revision.
-
-```bash
-cli=("$bin/cerebro" --config "$config")
-repo="$session/instance/content"
-"${cli[@]}" inbox list
-for agent in claude-inbox codex-inbox; do
-  read -rp "Proposal id returned for $agent: " pid
-  preview="$("${cli[@]}" inbox list --id "$pid")"
-  printf '%s\n' "$preview"
-  revision="$("$bin/python" -c '
-import json, sys
-p = json.load(sys.stdin)
-if p["source_agent"] != sys.argv[1] or p["status"] != "needs_owner":
-    raise SystemExit("Unexpected source agent or proposal status")
-print(p["revision"])' "$agent" <<<"$preview")"
-  read -rp "Approve the displayed revision $revision for $agent? [y/N] " answer
-  if [[ "$answer" != y ]]; then continue; fi
-  if approval="$("${cli[@]}" inbox approve "$pid" --revision "$revision")"; then
-    printf '%s\n' "$approval"
-    commit="$("$bin/python" -c 'import json, sys; print(json.load(sys.stdin)["commit"])' <<<"$approval")"
-    git -C "$repo" log -1 --format=%B "$commit" --
-  else
-    printf 'Approval failed for %s. Inspect the latest preview before retrying.\n' "$pid" >&2
-  fi
-done
-```
-
-Each approval returns `applied` and creates one commit with `Proposed-by: claude-inbox` or
-`Proposed-by: codex-inbox`, `Curated-by: curator/null`, `Approved-by: owner` and the displayed proposal
-id in `Proposal-Id`. The new note ids are `claude-inbox-sample` and `codex-inbox-sample`.
+Compare each reported revision with Git. Confirm that both commits name the same note, the diff adds
+“and verify” to the body, and the repeated update yields `stale_base` with no third commit. Errors carry
+a field and correction hint. On a rate limit, wait for a slot in the token’s rolling hour.
 
 ### 4. Stop and restart, then clean up
 

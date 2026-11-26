@@ -174,10 +174,10 @@ class TestIssueAgentToken:
         assert a.token_id != b.token_id
 
     def test_the_issued_token_authenticates(self, tk: TokenKit) -> None:
-        issued = tk.issue(scopes=frozenset(Scope))
+        issued = tk.issue(scopes=frozenset({Scope.READ, Scope.WRITE}))
         context = tk.authenticate(issued.secret)
         assert context.principal.name == "claude-code@workstation"
-        assert context.scopes == frozenset(Scope)
+        assert context.scopes == frozenset({Scope.READ, Scope.WRITE})
 
     @pytest.mark.parametrize("name", ["owner", "owner@workstation", "Not Valid", ""])
     def test_agent_name_is_validated(self, tk: TokenKit, name: str) -> None:
@@ -185,7 +185,9 @@ class TestIssueAgentToken:
             tk.issue(agent=name)
         assert tk.store.all() == ()
 
-    @pytest.mark.parametrize("scopes", [frozenset[Scope](), {Scope.READ}, frozenset({"read"})])
+    @pytest.mark.parametrize(
+        "scopes", [frozenset[Scope](), {Scope.READ}, frozenset({"read"}), frozenset({Scope.READ, Scope.PROPOSE})]
+    )
     def test_scopes_are_validated(self, tk: TokenKit, scopes: Any) -> None:
         with pytest.raises(InvalidValueError):
             tk.issue(scopes=scopes)

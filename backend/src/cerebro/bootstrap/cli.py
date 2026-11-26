@@ -4,16 +4,12 @@ import os
 import sys
 
 from cerebro.adapters.inbound.cli import parse_arguments, run_read_command
-from cerebro.adapters.inbound.cli_inbox import run_inbox_command
 from cerebro.adapters.inbound.cli_owner import set_owner_password
 from cerebro.adapters.inbound.cli_tokens import run_token_command
 from cerebro.application.browser import ProvisionOwnerPassword
 from cerebro.application.dto import ReadNoteRequest, SearchNotesRequest
 from cerebro.application.errors import (
     NoteNotFound,
-    ProposalConflict,
-    ProposalNotApplicable,
-    ProposalNotFound,
     SectionNotFound,
 )
 from cerebro.bootstrap.browser import owner_credentials
@@ -37,15 +33,6 @@ def main() -> int:
             return set_owner_password(ProvisionOwnerPassword(owner_credentials(settings)).execute)
         container = build_container(settings)
         ctx = AccessContext.for_owner(AccessCeiling(Sensitivity.RESTRICTED))
-        if options.command == "inbox":
-            return run_inbox_command(
-                options.request,
-                ctx,
-                amend=container.use_cases.amend_proposal,
-                listing=container.use_cases.list_proposals,
-                review=container.use_cases.review_proposal,
-                apply=container.use_cases.apply_proposal,
-            )
         if options.command == "token":
             return run_token_command(
                 options.request,
@@ -67,7 +54,7 @@ def main() -> int:
     except (ConfigurationError, InitializationError) as error:
         print(f"cerebro: {error}", file=sys.stderr)
         return 2
-    except (NoteNotFound, SectionNotFound, ProposalConflict, ProposalNotFound, ProposalNotApplicable) as error:
+    except (NoteNotFound, SectionNotFound) as error:
         print(f"cerebro: {error}", file=sys.stderr)
         return 1
     except Exception:

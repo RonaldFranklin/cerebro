@@ -120,7 +120,7 @@ submissions without writing. Exercise the installed service with an SDK client a
 approved its inspected revision and produced a single commit with all four trailers. A synthetic private key
 produced a scrubbed rejection. The acceptance test observed no state database or content changes on either
 quota refusal. The [phase report](plans/phase-4.md#5-final-report) records verification and the security
-checkpoint. [Manual real-client checks](agent-integration.md#3-propose-in-both-clients-and-approve-locally).
+checkpoint. [Manual real-client checks](https://github.com/RonaldFranklin/cerebro/blob/e7264b869085e156140239e692b2c1a310650674/docs/agent-integration.md#3-propose-in-both-clients-and-approve-locally).
 
 The next delivery sequence is Phase 5 (API and web UI), Phase 7 (direct agent writes), then Phase 6 (deployment).
 Phase 8 remains the later backlog.

@@ -2,7 +2,6 @@
 
 import argparse
 import json
-import sys
 from collections.abc import Sequence
 from datetime import datetime
 from pathlib import Path
@@ -12,19 +11,14 @@ from cerebro.adapters.inbound.cli_views import note_view
 from cerebro.adapters.inbound.input_limits import MAX_FIELD_BYTES, MAX_INPUT_BYTES, MAX_QUERY_BYTES, bounded_text
 from cerebro.adapters.inbound.read_views import health_view, search_view
 from cerebro.application.dto import (
-    AmendProposalRequest,
     HealthReportRequest,
     HealthReportResult,
     IssueAgentTokenRequest,
     ListAgentTokensRequest,
-    ListProposalsRequest,
     NoteView,
-    ProposalIdRequest,
     ReadNoteRequest,
     RebuildIndexRequest,
     RebuildIndexResult,
-    ReviewAction,
-    ReviewProposalRequest,
     RevokeAgentTokenRequest,
     SearchNotesRequest,
     SearchResults,
@@ -32,11 +26,9 @@ from cerebro.application.dto import (
 from cerebro.application.use_case import ContextUseCase
 from cerebro.domain.access import AccessCeiling, AccessContext, Scope
 from cerebro.domain.agent_token import validate_token_id
-from cerebro.domain.decision import Decision
 from cerebro.domain.enums import Priority, Sensitivity, Status
 from cerebro.domain.errors import DomainError
 from cerebro.domain.note import NoteId
-from cerebro.domain.proposal import validate_proposal_id
 from cerebro.domain.vocabulary import Area, NoteType
 
 
@@ -77,31 +69,11 @@ def parse_arguments(args: Sequence[str]) -> argparse.Namespace:
     issue = actions.add_parser("issue", help="issue a token and print its secret once")
     issue.add_argument("agent", type=short_field)
     issue.add_argument("--ceiling", type=short_field, default="public", help="public (default), internal or restricted")
-    issue.add_argument("--scope", type=short_field, action="append", help="read (default) or propose; repeatable")
+    issue.add_argument("--scope", type=short_field, action="append", help="read (default) or write; repeat for both")
     issue.add_argument("--expires-at", type=short_field, help="ISO 8601 timestamp with timezone")
     actions.add_parser("list", help="list credential metadata")
     revoke = actions.add_parser("revoke", help="revoke a token by its id")
     revoke.add_argument("token_id", type=short_field)
-
-    inbox = commands.add_parser("inbox", help="review queued proposals")
-    verbs = inbox.add_subparsers(dest="inbox_action", required=True)
-    listing = verbs.add_parser("list", help="list metadata or preview a reviewable proposal")
-    listing.add_argument("--id", type=short_field)
-    amend = verbs.add_parser("amend", help="replace the candidate body with UTF-8 text from stdin")
-    amend.add_argument("id", type=short_field)
-    amend.add_argument("--revision", required=True, type=int)
-    approve = verbs.add_parser("approve", help="approve the previewed revision and apply it")
-    approve.add_argument("id", type=short_field)
-    mode = approve.add_mutually_exclusive_group(required=True)
-    mode.add_argument("--revision", type=int, help="proposal revision from the preview")
-    mode.add_argument("--resume", action="store_true", help="retry application of an already approved proposal")
-    decision = approve.add_mutually_exclusive_group()
-    decision.add_argument("--create", type=short_field, metavar="NOTE_ID", help="override the create target")
-    decision.add_argument("--merge-into", type=short_field, metavar="NOTE_ID", help="override the merge decision")
-    reject = verbs.add_parser("reject", help="reject the previewed revision")
-    reject.add_argument("id", type=short_field)
-    reject.add_argument("--revision", required=True, type=int)
-    reject.add_argument("--reason", required=True, type=lambda text: bounded_text(text, 4096))
 
     size = 0
     for arg in args:
@@ -116,41 +88,6 @@ def parse_arguments(args: Sequence[str]) -> argparse.Namespace:
         parser.error("missing command")
     try:
         match options.command:
-            case "inbox":
-                pid = validate_proposal_id(options.id) if options.id is not None else None
-                if options.inbox_action == "list":
-                    options.request = ListProposalsRequest(proposal_id=pid)
-                elif options.inbox_action == "amend":
-                    raw_body = sys.stdin.buffer.read(MAX_INPUT_BYTES + 1)
-                    if len(raw_body) > MAX_INPUT_BYTES:
-                        parser.error("body is too large")
-                    options.request = AmendProposalRequest(
-                        proposal_id=options.id, expected_revision=options.revision, body=raw_body.decode("utf-8")
-                    )
-                elif options.inbox_action == "reject":
-                    reason = Decision.reject(options.reason).reason
-                    options.request = ReviewProposalRequest(
-                        proposal_id=options.id,
-                        action=ReviewAction.REJECT,
-                        reason=reason,
-                        expected_revision=options.revision,
-                    )
-                elif options.resume:
-                    if options.create is not None or options.merge_into is not None:
-                        parser.error("cannot change a decision during a retry")
-                    options.request = ProposalIdRequest(proposal_id=options.id)
-                else:
-                    override = None
-                    if options.create is not None:
-                        override = Decision.create(NoteId(options.create))
-                    elif options.merge_into is not None:
-                        override = Decision.merge_into(NoteId(options.merge_into))
-                    options.request = ReviewProposalRequest(
-                        proposal_id=options.id,
-                        action=ReviewAction.APPROVE,
-                        override=override,
-                        expected_revision=options.revision,
-                    )
             case "token":
                 match options.token_action:
                     case "issue":

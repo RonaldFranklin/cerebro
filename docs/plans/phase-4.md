@@ -106,7 +106,7 @@ the proposed body and its proposer, curator, approver and proposal-id trailers. 
 synthetic private-key marker produced a scrubbed rejection. A test-only SQLite trigger preserved the first
 insert so the test could inspect its status and decrypted payload. Refusals at the pending and hourly limits
 returned the same error and left the content HEAD and an independent SQLite connection's data_version
-unchanged. [Acceptance test](../../backend/tests/integration/test_phase4_acceptance.py)
+unchanged. [Phase 4 acceptance test](https://github.com/RonaldFranklin/cerebro/blob/e7264b8/backend/tests/integration/test_phase4_acceptance.py)
 
 ### Decisions for review
 
@@ -128,5 +128,5 @@ unchanged. [Acceptance test](../../backend/tests/integration/test_phase4_accepta
   backups may still contain sealed payloads from earlier releases. Previously valid proposals can already be
   present in sealed backups when the owner later rejects them.
 - The Phase 3 checkpoint awaits only the owner's real-client tests. The Phase 4 SDK acceptance is complete.
-  The owner runs the [manual proposal checks](../agent-integration.md#3-propose-in-both-clients-and-approve-locally)
+  The owner runs the [manual proposal checks](https://github.com/RonaldFranklin/cerebro/blob/e7264b869085e156140239e692b2c1a310650674/docs/agent-integration.md#3-propose-in-both-clients-and-approve-locally)
   in Claude Code and Codex and reviews the Phase 4 security checkpoint.
