@@ -454,6 +454,18 @@ class TestHealthReport:
         assert "starts with" not in text
         assert {i.field for i in leaks} >= {"body", "title"}
 
+    def test_ids_of_stored_notes_are_not_reported_as_secrets(self) -> None:
+        kit = HealthKit()
+        first = NID("configuring-postgresql-16-backups-with-pgbackrest-on-ubuntu-24-04-k7q2")
+        kit.world.add(id=first, hub=NID("infrastructure"))
+        kit.world.add(
+            id=NID("quarterly-review-2026-q4-of-zigbee2mqtt-and-mosquitto-upgrade-x9m3"),
+            hub=NID("infrastructure"),
+            related=(first,),
+            body=f"Backups: {first.value}.\n",
+        )
+        assert ViolationCode.SECRET_DETECTED not in codes(kit.run())
+
     def test_the_report_ignores_the_message_text_of_secret_findings(self, monkeypatch: pytest.MonkeyPatch) -> None:
         junk = Finding(
             code=ViolationCode.SECRET_DETECTED,
@@ -462,7 +474,7 @@ class TestHealthReport:
             detector="bearer token",
             line=3,
         )
-        monkeypatch.setattr("cerebro.domain.validation.scan_note", lambda note: (junk,))
+        monkeypatch.setattr("cerebro.domain.validation.scan_note", lambda note, **_: (junk,))
         kit = HealthKit()
         kit.world.add(id=NID("any"), hub=NID("infrastructure"))
         leaks = [i for i in kit.run().issues if i.code is ViolationCode.SECRET_DETECTED]

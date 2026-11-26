@@ -129,7 +129,7 @@ class AgentWrite:
         if base and replace(candidate, updated=base.updated) == base:
             raise WriteRejected(WriteFinding("unchanged", "request", "The stored note already contains these changes."))
         report = validate_candidate(
-            candidate, notes=self._notes, vocabulary=self._vocabulary, policy=AGENT_WRITE_POLICY, base=base
+            candidate, ctx=ctx, notes=self._notes, vocabulary=self._vocabulary, policy=AGENT_WRITE_POLICY, base=base
         )
         errors = projected(report, Severity.ERROR)
         if errors:

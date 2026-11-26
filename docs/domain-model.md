@@ -256,7 +256,10 @@ one summary finding; every pattern runs in linear time on long lines.
   regardless;
 - high-entropy strings: a token of at least 32 characters from `[A-Za-z0-9+/_=-]` with letters and digits and
   Shannon entropy of at least 4.3 bits per character. Hex-only strings (commit hashes, digests), UUIDs and
-  wikilinks are never flagged.
+  wikilinks are never flagged. Neither are note ids (ids from long titles with digits look random): the note's own
+  id and, in any field or the body, a token that is exactly the id of a note the writer may read (the health report
+  reads every note). The other detectors still apply to ids, and an id of a note above the writer's ceiling is
+  scanned like any token, so the result does not reveal that the note exists.
 
 **Reports never contain the secret.** A finding carries the detector kind, the field, the line number and safe detector metadata. Thresholds are constants in the module. `parse_note`
 reports a rejected frontmatter value (or unknown key) that the scanner flags as `secret_detected` instead of
@@ -289,7 +292,11 @@ token formats shorter than 32 characters, **hex-only keys** (many API keys are 3
 caught only inside a `key=`-style assignment) and a large share of random tokens drawn only from lowercase letters
 and digits (about half of such 32-character tokens, about one in seven at 40 characters, fall below the entropy
 threshold). It flags long random-looking identifiers that are not secrets, such as base64 digests (`sha256-...`
-integrity hashes) and SSH public keys; the owner then rewords the note. An agent must omit secret values before submitting a note.
+integrity hashes) and SSH public keys; the owner then rewords the note. The note-id exemption covers only a token
+that is exactly an id: an id glued to `/`, `=`, `+` or `_` (for example `notes/<id>` or `id=<id>`) forms a longer
+token and can still be flagged. Because the note's own id is exempt, a secret split across title words (each too
+short to flag) reappears hyphenated in a generated id without being flagged there; the title scan has the same blind
+spot. An agent must omit secret values before submitting a note.
 
 ## 7. Agent writes
 

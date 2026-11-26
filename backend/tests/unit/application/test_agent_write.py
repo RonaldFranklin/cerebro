@@ -156,6 +156,46 @@ def test_create_uses_a_readable_ascii_id(title: str, stem: str) -> None:
     assert writer(kit).execute(request(title=title), ctx).note_id == NoteId(f"{stem}-0001")
 
 
+LONG_TITLES = (
+    ("Configuring PostgreSQL 16 backups with pgBackRest on Ubuntu 24.04", "k7q2"),
+    ("Quarterly review 2026 Q4 of Zigbee2MQTT and Mosquitto upgrade", "x9m3"),
+)
+
+
+@pytest.mark.parametrize(("title", "suffix"), LONG_TITLES)
+def test_ids_from_long_titles_with_digits_are_not_secrets(
+    title: str, suffix: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    kit = Kit()
+    write = writer(kit)
+    ctx = replace(agent_ctx(scopes=frozenset({Scope.WRITE, Scope.READ})), token_id="token")
+    monkeypatch.setattr(kit.ids, "new_note_suffix", lambda: suffix)
+    first = write.execute(request(title=title), ctx).note_id
+    assert first.value.endswith(f"-{suffix}")
+    assert len(first.value) > 60
+    monkeypatch.setattr(kit.ids, "new_note_suffix", lambda: "a0a0")
+    linking = request(title="Backup overview", related=[first.value])
+    body = f"See [[{first.value}]], or read `{first.value}` when {first.value} changes.\n"
+    second = write.execute(replace(linking, request_id="request-2", body=body), ctx).note_id
+    assert write.execute(update_of(first.value, kit), ctx).note_id == first
+    assert write.execute(update_of(second.value, kit), ctx).note_id == second
+
+
+def test_plain_ids_of_hidden_notes_are_scanned_like_unknown_tokens() -> None:
+    kit = Kit()
+    hidden = NoteId("configuring-postgresql-16-backups-with-pgbackrest-on-ubuntu-24-04-k7q2")
+    kit.world.add(id=hidden, hub=NoteId("infrastructure"), sensitivity=Sensitivity.RESTRICTED)
+    write = writer(kit)
+    ctx = replace(agent_ctx(scopes=frozenset({Scope.WRITE})), token_id="token")
+    outputs = []
+    for ref in (hidden.value, hidden.value.replace("k7q2", "z5w8")):
+        with pytest.raises(WriteRejected) as err:
+            write.execute(replace(request(), body=f"Mentions {ref} in passing.\n"), ctx)
+        outputs.append(err.value.findings)
+    assert outputs[0] == outputs[1]
+    assert [f.code for f in outputs[0]] == ["secret_detected"]
+
+
 def test_create_can_retry_after_repeated_suffix_collisions(monkeypatch: pytest.MonkeyPatch) -> None:
     kit = Kit()
     kit.world.add(id=NoteId("direct-write-k3f9"))

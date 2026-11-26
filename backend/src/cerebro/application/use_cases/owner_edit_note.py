@@ -56,6 +56,7 @@ class OwnerEditNote:
             raise PermissionDenied("write above the access ceiling")
         report = validate_candidate(
             candidate,
+            ctx=ctx,
             notes=self._notes,
             vocabulary=self._vocabulary,
             policy=OWNER_EDIT_POLICY,

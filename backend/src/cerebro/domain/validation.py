@@ -1,8 +1,10 @@
 """Rules a single note must satisfy on its own. Rules that need other notes live in ``cross_note``."""
 
+from collections.abc import Callable
+
 from cerebro.domain.budgets import body_budget_findings
 from cerebro.domain.enums import Priority, Sensitivity, Status
-from cerebro.domain.note import Note
+from cerebro.domain.note import Note, NoteId
 from cerebro.domain.report import Finding, SeverityPolicy, ValidationReport, ViolationCode
 from cerebro.domain.secrets import scan_note
 from cerebro.domain.vocabulary import CORE, HUB, NoteType, Vocabulary
@@ -23,9 +25,19 @@ def allowed_priorities(note_type: NoteType) -> frozenset[Priority]:
     return _PRIORITIES_BY_TYPE.get(note_type, _REGULAR_PRIORITIES)
 
 
-def validate_note(note: Note, vocabulary: Vocabulary, policy: SeverityPolicy) -> ValidationReport:
-    """Every per-note rule violation (fields, body budget, secret scan), with severities from ``policy``."""
-    return policy.report(note_findings(note, vocabulary) + body_budget_findings(note) + scan_note(note))
+def validate_note(
+    note: Note,
+    vocabulary: Vocabulary,
+    policy: SeverityPolicy,
+    *,
+    known_id: Callable[[NoteId], bool] = lambda _: False,
+) -> ValidationReport:
+    """Every per-note rule violation (fields, body budget, secret scan), with severities from ``policy``.
+
+    ``known_id`` names the note ids the secret scan may treat as ids rather than high-entropy strings (see
+    ``scan_note``); it must accept only notes the writer may read."""
+    findings = note_findings(note, vocabulary) + body_budget_findings(note) + scan_note(note, known_id=known_id)
+    return policy.report(findings)
 
 
 def note_findings(note: Note, vocabulary: Vocabulary) -> tuple[Finding, ...]:
