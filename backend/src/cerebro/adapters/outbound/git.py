@@ -502,6 +502,7 @@ class GitRepo:
                 "-z",
                 "--no-renames",
                 "--untracked-files=all",
+                # Enumerate ignored note files even when the folder itself matches. _run caps output.
                 "--ignored=traditional",
                 "--",
                 *pathspecs,
