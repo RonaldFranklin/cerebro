@@ -48,3 +48,31 @@ jobs:
 
       - name: Tests with coverage gate (domain + application >= 90%)
         run: uv run pytest --cov
+
+  web:
+    name: Web checks
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install verified Node and pnpm
+        run: |
+          version=$(cat .nvmrc)
+          archive="node-v${version}-linux-x64.tar.xz"
+          cd "$RUNNER_TEMP"
+          curl -fsSLO --retry 3 "https://nodejs.org/dist/v${version}/$archive"
+          echo "5c063e46bab0fbc1c17cc445d7ff129cbdcd0471be6ed83b6ab864f8143bc864  $archive" | sha256sum -c -
+          tar -xJf "$archive"
+          node_bin="$RUNNER_TEMP/node-v${version}-linux-x64/bin"
+          export PATH="$node_bin:$PATH"
+          npm install --prefix "$RUNNER_TEMP/pnpm" --before=2026-11-19T00:00:00Z --no-audit --no-fund pnpm@12.22.0
+          echo "$node_bin" >> "$GITHUB_PATH"
+          echo "$RUNNER_TEMP/pnpm/node_modules/.bin" >> "$GITHUB_PATH"
+      - name: Build and launch the browser fixture
+        working-directory: web
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm exec playwright install chromium
+          pnpm run test:toolchain

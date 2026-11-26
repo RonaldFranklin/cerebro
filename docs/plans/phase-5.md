@@ -4,7 +4,7 @@
 
 ## 1. Delivery sequence
 
-PR 1 records the decision in [ADR-0019](../adr/0019-owner-browser-api.md). PRs 2–11 are planned. Start each branch from current main after the preceding PR merges. The owner authorizes merges for all eleven PRs, including security and dependency changes, with independent review, findings resolved, completed green CI and scripts/merge-pr.sh. The dependency, ADR and privileged setup boundaries are recorded in §6.
+PR 1 records the decision in [ADR-0019](../adr/0019-owner-browser-api.md). PR 2 pins the approved inventory. PRs 3–11 are planned. Start each branch from current main after the preceding PR merges. The owner authorizes merges for all eleven PRs, including security and dependency changes, with independent review, findings resolved, completed green CI and scripts/merge-pr.sh. The dependency, ADR and privileged setup boundaries are recorded in §6.
 
 | PR and branch | Deliverable | Verification before merge |
 |---|---|---|
@@ -98,7 +98,7 @@ a per-response style nonce through `EditorView.cspNonce`. Browser tests must run
 <details>
 <summary>Additional npm artifact pins in the planning resolution</summary>
 
-The trial lock contains 121 distinct package versions across both pnpm lockfile documents, including
+The committed lock contains 121 distinct package versions across both pnpm lockfile documents, including
 optional native binaries for other platforms. The table above gives the direct choices. The remaining
 families below are grouped where their pinned version and publication date match. PR owners will attach
 the actual resolved lock diff and report any change from this snapshot. The browser revision packaged by
@@ -219,3 +219,13 @@ The owner approved PR #55, all dependencies in §4, user-space Node 26.13.1 and 
 | Each of PRs 7–11 | Capture the screens delivered by that PR with Playwright against synthetic fixtures and commit the images in `docs/screenshots/phase-5/`. Link directly to those images in that PR's description. The owner's visual review follows delivery and is independent of the CI and merge gates. |
 
 At close, document the exact WSL command to open the UI through `devtools.web_demo`, alongside the usual delivery, tests, decisions and security report.
+
+### PR 2 delivery record
+
+The owner completed the single privileged WSL hand-off. The pinned Playwright CLI reported that
+the Chromium system packages were installed. Node and pnpm were installed under the user account.
+The Linux x64 browser downloads matched the three URLs and dates in §4. The committed web lock
+matches the approved inventory, and the Python lock adds only FastAPI and annotated-doc.
+TypeScript 7 checks Vite, Playwright and CodeMirror types in strict mode. The native Vite build
+bundles a Markdown editor and Playwright opens it in Chromium. Run this compatibility check with
+`cd web && pnpm install --frozen-lockfile && pnpm exec playwright install chromium && pnpm run test:toolchain`.

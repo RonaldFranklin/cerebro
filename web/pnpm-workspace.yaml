@@ -1,0 +1,4 @@
+minimumReleaseAge: 10080
+strictPeerDependencies: true
+ignoredOptionalDependencies:
+  - '@rolldown/binding-wasm32-wasi'
