@@ -120,3 +120,30 @@ def test_parent_sync_failure_prevents_first_provision(tmp_path: Path, monkeypatc
     verifier = owner_credentials(settings)
     verifier.provision(b"fixture")
     assert verifier.verify(b"fixture") is not None
+
+
+@pytest.mark.parametrize("installation", ["source", "wheel"])
+def test_refuses_explicit_application_worktree_without_gitfile(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, installation: str
+) -> None:
+    from cerebro.bootstrap import browser
+
+    checkout = tmp_path / "application"
+    checkout.mkdir()
+    git_dir = tmp_path / "metadata"
+    _git(tmp_path, "init", "--bare", str(git_dir))
+    module = checkout / "backend/src/cerebro/bootstrap/browser.py"
+    module.parent.mkdir(parents=True)
+    module.write_text("# Fixture application source\n")
+    if installation == "wheel":
+        (checkout / "backend/pyproject.toml").write_text('[project]\nname="cerebro"\n')
+    explicit = ["--git-dir", str(git_dir), "--work-tree", str(checkout)]
+    _git(tmp_path, *explicit, "add", "--", str(checkout / "backend"))
+    _git(tmp_path, *explicit, "-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "-m", "Test")
+    assert not (checkout / ".git").exists()
+    installed = module if installation == "source" else tmp_path / "venv/site-packages/cerebro/bootstrap/browser.py"
+    monkeypatch.setattr(browser, "__file__", str(installed))
+    state = checkout / "new" / "state"
+    with pytest.raises(ConfigurationError, match="outside repositories"):
+        owner_credentials(_settings(tmp_path / "content", state))
+    assert not state.parent.exists()

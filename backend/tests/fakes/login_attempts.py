@@ -17,8 +17,10 @@ class FakeLoginAttempts:
         with self._lock:
             now = clock.now().astimezone(UTC)
             self._reservations = [at for at in self._reservations if at > now - window]
+            available_at = max(self._reservations, default=now)
             if len(self._reservations) >= 5:
-                remaining = min(self._reservations) + window - now
-                return min(900, ceil(remaining.total_seconds()))
+                available_at = max(available_at, min(self._reservations) + window)
+            if now < available_at:
+                return min(900, ceil((available_at - now).total_seconds()))
             self._reservations.append(now)
             return 0

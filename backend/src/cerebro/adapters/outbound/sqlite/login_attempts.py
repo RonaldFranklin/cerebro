@@ -20,10 +20,15 @@ class SqliteLoginAttempts:
         with self._db.write() as conn:
             current = (clock.now() - _EPOCH) // _MICROSECOND
             conn.execute("DELETE FROM login_attempts WHERE reserved_us <= ?", (current - _WINDOW_US,))
-            count, oldest = conn.execute("SELECT count(*), min(reserved_us) FROM login_attempts").fetchone()
+            count, oldest, newest = conn.execute(
+                "SELECT count(*), min(reserved_us), max(reserved_us) FROM login_attempts"
+            ).fetchone()
+            # A forward jump may have pruned history. Do not admit an earlier timestamp on rollback.
+            available_at = int(newest) if count else current
             if count >= 5:
-                # A backwards clock step must neither reopen slots nor return more than one window.
-                remaining_us = min(_WINDOW_US, int(oldest) + _WINDOW_US - current)
+                available_at = max(available_at, int(oldest) + _WINDOW_US)
+            if available_at > current:
+                remaining_us = min(_WINDOW_US, available_at - current)
                 return (remaining_us + _SECOND_US - 1) // _SECOND_US
             conn.execute("INSERT INTO login_attempts (reserved_us) VALUES (?)", (current,))
         return 0

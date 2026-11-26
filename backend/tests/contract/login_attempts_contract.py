@@ -33,3 +33,21 @@ class LoginAttemptsContract:
             assert attempts.reserve(clock) == 0
         clock.advance(-timedelta(days=2))
         assert attempts.reserve(clock) == 900
+
+    def test_rewind_after_a_forward_jump_keeps_the_window_closed(self, attempts: LoginAttempts) -> None:
+        clock = FixedClock(NOW)
+        for _ in range(5):
+            assert attempts.reserve(clock) == 0
+        clock.advance(timedelta(minutes=16))
+        assert attempts.reserve(clock) == 0
+
+        clock.set(NOW - timedelta(days=2))
+        assert attempts.reserve(clock) == 900
+        clock.set(NOW + timedelta(minutes=1))
+        assert attempts.reserve(clock) == 900
+        clock.set(NOW + timedelta(minutes=16, microseconds=-1))
+        assert attempts.reserve(clock) == 1
+        clock.advance(timedelta(microseconds=1))
+        for _ in range(4):
+            assert attempts.reserve(clock) == 0
+        assert attempts.reserve(clock) == 900

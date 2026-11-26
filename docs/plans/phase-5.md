@@ -253,7 +253,10 @@ bundles a Markdown editor. Playwright opens it over fixture HTTPS and verifies e
 
 Run `cerebro --config /path/to/instance.toml owner-password` in a local terminal to provision or rotate
 the browser password. Its UTF-8 encoding must fit in 1–1024 bytes. Keep the configured state directory
-outside both repositories. The CLI atomically replaces its protected verifier and uses a persistent
+outside both repositories. The CLI checks the configured content path, Git worktree markers and metadata,
+the executing source checkout and the standard application source layout. With a separately installed wheel,
+a sparse explicit worktree can omit both its Git marker and the recognizable source files. For that layout the
+operator must select an external state path. The CLI atomically replaces its protected verifier and uses a persistent
 sibling lock to limit the instance to one simultaneous scrypt operation. On WSL2 a real login took
 0.203 seconds, with 155 MiB peak process RSS. Every attempted login reserves a slot before verification.
 The five-attempt window survives restart and expires individual attempts after fifteen minutes.
