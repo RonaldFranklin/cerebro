@@ -61,6 +61,11 @@ class NoteScan:
     problems: tuple[FileProblem, ...] = ()
 
     @property
+    def excluded_stems(self) -> frozenset[str]:
+        """File stems unavailable as ids, including each copy of a duplicate."""
+        return frozenset(p.path.rpartition("/")[2][:-3] for p in self.problems if p.path.endswith(".md"))
+
+    @property
     def stable(self) -> bool:
         """``notes`` is a function of ``head()``: every problem is stable."""
         return all(problem.stable for problem in self.problems)

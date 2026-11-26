@@ -12,3 +12,7 @@ class WriteAttemptStore(Protocol):
         if the clock moves backwards. Refusals leave the window unchanged.
         """
         ...
+
+    def release(self, token_id: str, now: datetime) -> None:
+        """Return one reservation for this token and timestamp after a server failure."""
+        ...

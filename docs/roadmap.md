@@ -70,7 +70,8 @@ attributed Git commits, optimistic concurrency and per-token limits; the write g
 private **Recent changes** view shows actor, time, note and diff ([ADR-0020](adr/0020-direct-agent-writes.md)).
 Follow-ups: readable ids ([ADR-0021](adr/0021-readable-note-ids.md)), the `core` scope
 ([ADR-0022](adr/0022-core-scope.md)), legacy removal (ADR-0023) and create replay from Git
-([ADR-0024](adr/0024-create-replay-from-git.md)). [Record](plans/archive/phase-7.md).
+([ADR-0024](adr/0024-create-replay-from-git.md)). An invalid committed note blocks edits and links to that note.
+Other notes remain writable, and server errors release the write quota reservation. [Record](plans/archive/phase-7.md).
 
 ## ⬜ Phase 6 — Deploy (hml, prod)
 

@@ -28,3 +28,12 @@ class WriteAttemptsContract:
         assert not attempts.reserve("a", NOW + timedelta(minutes=5), 3)
         assert not attempts.reserve("a", NOW + timedelta(minutes=65), 2)
         assert attempts.reserve("a", NOW + timedelta(minutes=70), 2)
+
+    def test_release_returns_only_one_matching_slot(self, attempts: WriteAttemptStore) -> None:
+        assert attempts.reserve("a", NOW, 2)
+        assert attempts.reserve("a", NOW, 2)
+        assert attempts.reserve("b", NOW, 1)
+        attempts.release("a", NOW)
+        assert attempts.reserve("a", NOW, 2)
+        assert not attempts.reserve("a", NOW, 2)
+        assert not attempts.reserve("b", NOW, 1)

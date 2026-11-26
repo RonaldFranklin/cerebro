@@ -300,7 +300,7 @@ def test_plain_ids_of_hidden_notes_are_scanned_like_unknown_tokens() -> None:
 def test_create_can_retry_after_repeated_suffix_collisions(monkeypatch: pytest.MonkeyPatch) -> None:
     kit = Kit()
     kit.world.add(id=NoteId("direct-write-k3f9"))
-    write = writer(kit)
+    write = writer(kit, 1)
     ctx = replace(agent_ctx(scopes=frozenset({Scope.WRITE})), token_id="token")
     commits = kit.commits
     with monkeypatch.context() as patch:
@@ -471,15 +471,37 @@ def _query(ctx: AccessContext) -> SearchQuery:
     return SearchQuery(ceiling=ctx.ceiling, text="Direct write")
 
 
-def test_a_note_file_problem_fails_the_write_and_still_counts_against_the_quota() -> None:
+def test_calls_on_invalid_committed_notes_leave_quota_for_unrelated_writes() -> None:
     kit = Kit()
     write = writer(kit, 1)
     ctx = replace(agent_ctx(scopes=frozenset({Scope.WRITE})), token_id="token-one")
     kit.world.notes.problems.append(FileProblem("notes/broken.md", "invalid frontmatter", stable=True))
-    commits = kit.commits
-    with pytest.raises(NoteReadError):  # writes validate against every note: an incomplete set is refused
+    before = kit.commits
+    update = replace(request(), operation="update", target="broken", base_hash="a" * 64, request_id=None)
+    for candidate, code in (
+        (update, "target_unavailable"),
+        (request(related=["broken"]), "broken_link"),
+        (request(related=["vault-layout"]), "broken_link"),
+        (request(related=["not-here"]), "broken_link"),
+        (replace(update_of("server-ssh-access", kit), body="See [[broken]]."), "broken_link"),
+    ):
+        with pytest.raises(WriteRejected, match=code):
+            write.execute(candidate, ctx)
+    assert kit.commits == before
+    assert write.execute(request(), ctx).revision
+    with pytest.raises(WriteRejected, match="rate_limited"):
         write.execute(request(), ctx)
-    assert kit.commits == commits
+
+
+def test_storage_failures_leave_quota_for_a_retry() -> None:
+    kit = Kit()
+    write = writer(kit, 1)
+    ctx = replace(agent_ctx(scopes=frozenset({Scope.WRITE})), token_id="token-one")
+    kit.world.notes.problems.append(FileProblem("notes", "cannot be listed", stable=False))
+    with pytest.raises(NoteReadError):
+        write.execute(request(), ctx)
     kit.world.notes.problems.clear()
-    with pytest.raises(WriteRejected, match="rate_limited"):  # the rate limit holds whatever the failure
+    kit.world.notes.apply_error = NoteWriteError("commit failed")
+    with pytest.raises(NoteWriteError):
         write.execute(request(), ctx)
+    assert write.execute(request(), ctx).revision

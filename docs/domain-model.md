@@ -343,7 +343,9 @@ commit message. Git records the authenticated agent on each successful write.
 Validation applies the controlled vocabulary, schema, hard word and overview budgets, link and sensitivity
 rules and secret scan to the entire candidate. Each token allows 60 admitted write attempts per rolling hour by default. Configure the limit
 with `writes_per_hour` in TOML or the `CEREBRO_WRITES_PER_HOUR` environment override. The count spans sessions,
-processes and restarts to stop repeated invalid requests as well as runaway successful writes.
+processes and restarts to stop repeated invalid requests as well as runaway successful writes. Server failures
+return the reserved slot. While committed files are excluded, unavailable targets and references have the same
+quota behavior for invalid, missing and hidden notes.
 Failures return bounded field names, safe codes and correction hints. An unavailable reference names its field
 and position in the submitted note (related entry or text line), identically for hidden and missing targets;
 every `[[note-id]]` counts, code included. The service never echoes a submitted secret or identifies an
