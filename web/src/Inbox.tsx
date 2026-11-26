@@ -1,7 +1,8 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ApiError, type ApiClient, type ValidationReport, type WriteWarning } from "./api";
 import { Markdown, TechnicalText } from "./Markdown";
+import { useVisibleGraph } from "./visibleGraph";
 import "./inbox.css";
 
 interface Item {
@@ -9,6 +10,7 @@ interface Item {
 }
 interface Preview extends Item {
   base_label: string; stale_base: boolean;
+  base: {body: string} | null;
   candidate: {id: string; title: string; body: string; lang: string} | null;
   validation: ValidationReport | null; historical_validation: ValidationReport | null;
   decision: {kind: string; target: string | null; reason: string | null} | null;
@@ -34,7 +36,9 @@ function valueText(value: unknown) {
   return Array.isArray(value) ? value.join(", ") || "[]" : String(value);
 }
 
-function Changes({detail}: {detail: Preview}) {
+function Changes({api, detail}: {api: ApiClient; detail: Preview}) {
+  const graph = useVisibleGraph(api, false);
+  const visibleIds = useMemo(() => new Set(graph.data?.nodes.map(node => node.id)), [graph.data]);
   const {candidate, diff} = detail;
   const baseLabel = detail.base_label === "current" ? "Current note" : detail.base_label === "empty" ? "Empty base" : "Base note";
   return <div className="inbox-changes">
@@ -47,10 +51,14 @@ function Changes({detail}: {detail: Preview}) {
     </section>
     <section><h3>Markdown changes</h3>
       {diff.body ? <pre className="inbox-diff" translate="no" aria-label="Markdown diff"><code>{diff.body.replace(/\n$/, "").split("\n").map((line, i) =>
-        <span key={i} className={line.startsWith("+") ? "diff-add" : line.startsWith("-") ? "diff-remove" : undefined}>{line}{"\n"}</span>)}</code></pre> : <p>No Markdown changes.</p>}
-      {diff.truncated && <p>Only part of this diff is shown.</p>}
+        <span key={i} className={line.startsWith("+") ? "diff-add" : line.startsWith("-") ? "diff-remove" : undefined}>{line}{"\n"}</span>)}</code></pre> : !diff.truncated && <p>No Markdown changes.</p>}
+      {diff.truncated && <><p>Only part of this diff is shown.</p>
+        <details><summary>Full Markdown comparison</summary>
+          <h4>{baseLabel}</h4><pre className="inbox-diff" translate="no">{detail.base?.body ?? ""}</pre>
+          <h4>Candidate</h4><pre className="inbox-diff" translate="no">{candidate?.body ?? ""}</pre>
+        </details></>}
     </section>
-    {candidate && <details><summary>Candidate preview</summary><Markdown body={candidate.body} lang={candidate.lang}/></details>}
+    {candidate && <details><summary>Candidate preview</summary><Markdown body={candidate.body} lang={candidate.lang} visibleIds={visibleIds}/></details>}
     <section><h3>Validation</h3><Validation report={detail.validation}/>
       {detail.historical_validation && <details><summary>Submission validation</summary><Validation report={detail.historical_validation}/></details>}
     </section>
@@ -69,18 +77,27 @@ function Review({api, item}: {api: ApiClient; item: Item}) {
   const [commit, setCommit] = useState("");
   const [warnings, setWarnings] = useState<WriteWarning[]>([]);
   const [validation, setValidation] = useState<ValidationReport>();
-  const [locked, setLocked] = useState(false);
+  const [needsReload, setLocked] = useState(false);
   const [busy, setBusy] = useState(false);
   const [finished, setFinished] = useState(false);
-  const request = useRef<AbortController | null>(null);
-  const formRevision = useRef(item.revision);
+  const request = useRef(false);
+  const [inspected, setInspected] = useState<Preview>();
   const canReview = reviewable(item.status);
   const preview = useQuery({
     queryKey:["inbox-detail", item.id], enabled:canReview && !finished,
     queryFn:({signal}) => api.read<Preview>(path(item.id), signal),
   });
-  const detail = canReview && !finished ? preview.data : undefined;
-  useEffect(() => () => request.current?.abort(), []);
+  const detail = canReview && !finished ? inspected : undefined;
+  const changed = Boolean(detail && (item.revision > detail.revision || (preview.data && preview.data.revision !== detail.revision)));
+  const locked = needsReload || changed;
+  useEffect(() => {
+    if (canReview && !finished) {
+      if (preview.data) setInspected(current => current ?? preview.data);
+    } else {
+      setInspected(undefined);
+      setMode(null); setDraft(""); setReason("");
+    }
+  }, [canReview, finished, preview.data]);
   async function refresh() {
     await client.invalidateQueries({queryKey:["inbox-list"]});
     await client.invalidateQueries({queryKey:["inbox-detail",item.id]});
@@ -91,28 +108,29 @@ function Review({api, item}: {api: ApiClient; item: Item}) {
     setBusy(true);
     try {
       await client.refetchQueries({queryKey:["inbox-list"]}, {throwOnError:true});
-      await client.refetchQueries({queryKey:["inbox-detail",item.id]}, {throwOnError:true});
+      const latest = client.getQueryData<{items: Item[]}>(["inbox-list"])?.items.find(row => row.id === item.id);
+      if (latest && reviewable(latest.status)) {
+        const current = await preview.refetch({throwOnError:true});
+        setInspected(current.data);
+      }
       setLocked(false);
     } catch { setFeedback("Reload failed. Try again."); }
     finally { setBusy(false); }
   }
   async function act(action: Action) {
     if (locked || finished || busy || request.current) return;
-    const controller = new AbortController();
-    request.current = controller;
+    request.current = true;
     setBusy(true); setFeedback(""); setValidation(undefined);
-    const revision = mode ? formRevision.current : detail?.revision ?? item.revision;
+    const revision = action === "resume" ? item.revision : detail!.revision;
     const body = action === "amend" ? {revision, body:draft} : action === "reject" ? {revision, reason} : {revision};
     try {
-      const outcome = await api.write<Outcome>(path(item.id) + "/" + action, "POST", body, controller.signal);
+      const outcome = await api.write<Outcome>(path(item.id) + "/" + action, "POST", body);
       setMode(null); setDraft(""); setReason("");
       setWarnings(outcome.warnings ?? []); setCommit(outcome.commit ?? "");
       if (action === "amend") {
         setFeedback("Amendment saved.");
         setLocked(true);
         await refresh();
-        const fresh = client.getQueryState<Preview>(["inbox-detail",item.id]);
-        setLocked(fresh?.status !== "success" || fresh.data?.revision !== outcome.revision);
       } else {
         setFinished(true);
         await client.cancelQueries({queryKey:["inbox-detail",item.id]});
@@ -121,7 +139,7 @@ function Review({api, item}: {api: ApiClient; item: Item}) {
         await client.invalidateQueries();
       }
     } catch (error) {
-      if (controller.signal.aborted) return;
+      if (error instanceof DOMException && error.name === "AbortError") return;
       if (error instanceof ApiError && error.status === 409) {
         setLocked(true); setFeedback("This revision can no longer be used. Reload before reviewing again.");
       } else if (error instanceof ApiError && error.status === 422) {
@@ -129,10 +147,11 @@ function Review({api, item}: {api: ApiClient; item: Item}) {
         if (action !== "amend" && action !== "reject") setLocked(true);
       } else {
         setLocked(true); setFeedback("The result could not be confirmed. Reload before retrying.");
+        await client.invalidateQueries();
       }
     } finally {
-      if (!controller.signal.aborted) setBusy(false);
-      request.current = null;
+      setBusy(false);
+      request.current = false;
     }
   }
   return <section className="inbox-review" aria-labelledby="review-heading">
@@ -143,16 +162,17 @@ function Review({api, item}: {api: ApiClient; item: Item}) {
     {commit && <p>Commit <code>{commit}</code></p>}
     {warnings.map(warning => <p key={warning.code} role="status">{warning.message}</p>)}
     {validation && <div role="alert"><Validation report={validation}/></div>}
+    {changed && <p role="alert">A newer revision is available.</p>}
     {locked && <button disabled={busy} onClick={() => void reload()}>Reload proposal</button>}
     {canReview && !finished && (preview.isError ? <p role="alert">Preview is unavailable. <button onClick={() => void refresh()}>Refresh preview</button></p> :
       !detail ? <p role="status">Loading preview…</p> : <>
-        <Changes detail={detail}/>
+        <Changes api={api} detail={detail}/>
         {!mode && <div className="inbox-actions">
           <button className="primary-btn" disabled={busy || locked || detail.stale_base || detail.conflict || !detail.validation?.ok || !detail.candidate}
             onClick={() => void act("approve")}>Approve and apply</button>
           {["create","update"].includes(detail.kind) && <button disabled={busy || locked || detail.stale_base || detail.conflict}
-            onClick={() => {formRevision.current = detail.revision; setDraft(detail.candidate?.body ?? ""); setMode("amend");}}>Amend Markdown</button>}
-          <button disabled={busy || locked} onClick={() => {formRevision.current = detail.revision; setMode("reject");}}>Reject proposal</button>
+            onClick={() => {setDraft(detail.candidate?.body ?? ""); setMode("amend");}}>Amend Markdown</button>}
+          <button disabled={busy || locked} onClick={() => {setMode("reject");}}>Reject proposal</button>
         </div>}
         {mode === "amend" && <form onSubmit={e => {e.preventDefault(); void act("amend");}}>
           <label>Replacement Markdown<textarea translate="no" value={draft} onChange={e=>setDraft(e.target.value)} rows={8}/></label>
@@ -181,7 +201,7 @@ export function InboxScreen({api}: {api: ApiClient}) {
     {list.isPending ? <p role="status">Loading proposals…</p> : list.isError ? <p role="alert">Inbox is unavailable. <button onClick={()=>void list.refetch()}>Retry</button></p> : <>
       <div className="inbox-toolbar"><label>Status <select value={status} onChange={e=>{setStatus(e.target.value); setSelected(null);}}>
         <option value="">All statuses</option>{[...new Set([...items.map(row=>row.status), ...(status ? [status] : [])])].sort().map(s=><option key={s} value={s}>{label(s)}</option>)}
-      </select></label><span role="status">{visible.length} {visible.length === 1 ? "proposal" : "proposals"}</span></div>
+      </select></label><button type="button" disabled={list.isFetching} onClick={()=>void list.refetch()}>Refresh inbox</button><span role="status">{visible.length} {visible.length === 1 ? "proposal" : "proposals"}</span></div>
       <div className={item ? "inbox-layout has-selection" : "inbox-layout"}><section className="inbox-list" aria-label="Proposals">
         {visible.length ? <ul>{visible.map(row=><li key={row.id}><button type="button" className={selected === row.id ? "current" : ""}
           aria-label={`Review ${row.id}`} aria-pressed={selected === row.id} onClick={()=>setSelected(row.id)}>

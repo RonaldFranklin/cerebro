@@ -138,3 +138,34 @@ test("the lower-ceiling listener denies both owner workspaces", async ({page, de
   await expect(page.getByText("This view requires the private listener.")).toBeVisible();
   expect(privateRequests).toEqual([]);
 });
+
+test("signing out and back in from another tab discards the private editor draft", async ({page, context, demo}) => {
+  const writes: string[] = [];
+  context.on("request", request => {
+    if (request.method() === "PUT") writes.push(new URL(request.url()).pathname);
+  });
+  const before = execFileSync("git",["-C",demo.content_repo,"rev-parse","HEAD"],{encoding:"utf8"});
+  await page.goto(demo.private_origin + "/editor/server-ssh-access");
+  const password = page.getByLabel("Password",{exact:true});
+  await password.fill(demo.password);
+  await password.press("Enter");
+  const editor = page.getByRole("textbox",{name:"Markdown body"});
+  const draft = "Unsaved text from the former session.";
+  await editor.fill(draft);
+  await expect(page.getByRole("button",{name:"Save changes",exact:true})).toBeEnabled();
+
+  const other = await context.newPage();
+  await other.goto(demo.private_origin);
+  await other.getByRole("button",{name:"Sign out",exact:true}).click();
+  await expect(password).toBeVisible();
+  await expect(editor).toHaveCount(0);
+  const newLogin = other.getByLabel("Password",{exact:true});
+  await newLogin.fill(demo.password);
+  await newLogin.press("Enter");
+  await expect(other.getByRole("heading",{name:"Overview",exact:true})).toBeVisible();
+  await expect(editor).toContainText("Check the client");
+  await expect(editor).not.toContainText(draft);
+  await expect(page.getByRole("button",{name:"Save changes",exact:true})).toBeDisabled();
+  expect(writes).toEqual([]);
+  expect(execFileSync("git",["-C",demo.content_repo,"rev-parse","HEAD"],{encoding:"utf8"})).toBe(before);
+});

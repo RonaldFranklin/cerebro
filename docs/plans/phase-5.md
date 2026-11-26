@@ -400,14 +400,15 @@ A changed base is labelled as current. The owner can amend the body, reject with
 approve and apply, or resume an approved proposal. Conflicts require another inspection.
 
 Open the editor from a complete private note. CodeMirror loads its styles with the response
-nonce and suggests wikilinks from the visible graph. The preview uses the reader's Markdown
+nonce and suggests wikilinks from the visible graph for the selected history mode. The preview uses the reader's Markdown
 renderer. Saving sends the inspected content hash. After a conflict, compare the stored note
 with the draft, choose which changes to retain, then save explicitly. Drafts live in component
 memory. Leaving the editor or ending the session discards them.
 
 The Chromium acceptance test reads a synthetic note, explores its neighborhood, approves a
 proposal, edits a note, and checks the parent and all three attribution trailers for both commits
-in the disposable content repository. A two-tab test covers conflict recovery. The lower-ceiling
+in the disposable content repository. Two-tab tests cover conflict recovery and disposal of an
+unsaved draft when another tab replaces the owner session. The lower-ceiling
 listener displays a denial for the owner workspaces.
 
 [Inbox](../screenshots/phase-5/10-inbox.png) · [Proposal review](../screenshots/phase-5/10-review.png) ·

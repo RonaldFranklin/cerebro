@@ -1,7 +1,7 @@
 .inbox-view { max-width: 76rem; margin: 0 auto; }
 .inbox-toolbar,.inbox-actions,.proposal-meta { display:flex; align-items:center; gap:.65rem; flex-wrap:wrap; }
 .inbox-toolbar { justify-content:space-between; padding-block:1.25rem; color:var(--muted); font-size:.9rem; }
-.inbox-view select,.inbox-review button:not(.primary-btn) { padding:.5rem .75rem; border:1px solid var(--line); border-radius:.4rem; background:var(--surface); color:var(--accent); }
+.inbox-view select,.inbox-toolbar button,.inbox-review button:not(.primary-btn) { padding:.5rem .75rem; border:1px solid var(--line); border-radius:.4rem; background:var(--surface); color:var(--accent); }
 .inbox-layout { display:grid; gap:1rem; align-items:start; }
 .inbox-layout.has-selection { grid-template-columns:minmax(13rem,.72fr) minmax(0,2fr); }
 .inbox-list,.inbox-review { min-width:0; border:1px solid var(--line); border-radius:.65rem; background:var(--surface); }

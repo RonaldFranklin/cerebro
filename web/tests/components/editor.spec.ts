@@ -9,7 +9,7 @@ const seed = {
 
 async function session(page: Page) {
   await page.route("**/api/session", route => route.fulfill({json:{ceiling:"restricted",csrf_token:"fixture",absolute_remaining_seconds:28800}}));
-  await page.route("**/api/graph?*", route => route.fulfill({json:{center:null,edges:[],nodes:[{id:"visible-example"}]}}));
+  await page.route("**/api/graph?*", route => route.fulfill({json:{center:null,edges:[],nodes:[{id:"visible-example",type:"guide",area:"research",priority:"P2",status:"current"}]}}));
 }
 
 test("stale saves keep the draft and require review of the reloaded note", async ({page}) => {
@@ -80,4 +80,73 @@ test("wikilink completion uses only visible note IDs", async ({page}) => {
   await body.press("End");
   await body.press("Control+Space");
   await expect(page.getByRole("listbox")).toHaveCount(0);
+});
+
+for (const history of [false, true]) {
+  test(`editor completion, preview and reader links honor history=${history}`, async ({page}) => {
+    await session(page);
+    const graphQueries: string[] = [];
+    await page.route("**/api/graph?*", route => {
+      const mode = new URL(route.request().url()).searchParams.get("history") ?? "";
+      graphQueries.push(mode);
+      const ids = mode === "true" ? ["visible-example", "visible-archived"] : ["visible-example"];
+      return route.fulfill({json:{center:null,edges:[],nodes:ids.map(id => ({id}))}});
+    });
+    await page.route("**/api/notes/example*", route => route.fulfill({json:seed}));
+    const query = history ? "?history=true" : "";
+    await page.goto("/editor/example" + query);
+    await expect(page.getByRole("link",{name:"example",exact:true})).toHaveAttribute("href","/notes/example" + query);
+    await expect.poll(() => graphQueries).toEqual([String(history)]);
+    const body = page.getByRole("textbox",{name:"Markdown body"});
+    await body.fill("[[visible-");
+    await body.press("End");
+    await body.press("Control+Space");
+    await expect(page.getByRole("option",{name:"visible-example"})).toBeVisible();
+    await expect(page.getByRole("option",{name:"visible-archived"})).toHaveCount(history ? 1 : 0);
+    await body.press("Escape");
+    await body.fill("[[visible-example]] and [[visible-archived]]");
+    await page.getByRole("button",{name:"Preview",exact:true}).click();
+    await expect(page.getByRole("link",{name:"[[visible-example]]"})).toHaveAttribute("href","/notes/visible-example" + query);
+    const archived = page.getByRole("link",{name:"[[visible-archived]]"});
+    if (history) await expect(archived).toHaveAttribute("href","/notes/visible-archived" + query);
+    else await expect(archived).toHaveCount(0);
+  });
+}
+
+test("reopening the editor waits for this visit's read and retry", async ({page}) => {
+  await session(page);
+  await page.route("**/api/search?*", route => route.fulfill({json:{results:[]}}));
+  let reads = 0;
+  let release!: () => void;
+  const pending = new Promise<void>(resolve => { release = resolve; });
+  await page.route("**/api/notes/example*", async route => {
+    reads++;
+    if (reads === 1) return route.fulfill({json:seed});
+    if (reads === 2) {
+      await pending;
+      return route.fulfill({status:503,json:{error:"Unavailable."}});
+    }
+    return route.fulfill({json:{...seed,title:"Updated in another tab",content_hash:currentHash}});
+  });
+  await page.goto("/editor/example");
+  const title = page.getByLabel("Title",{exact:true});
+  await expect(title).toHaveValue(seed.title);
+  await page.getByRole("link",{name:"Search",exact:true}).click();
+  await expect(page).toHaveURL(/\/search$/);
+  await page.goBack();
+  await expect.poll(() => reads).toBe(2);
+  await expect(title).toHaveCount(0);
+  release();
+  await expect(page.getByRole("alert")).toContainText("complete");
+  await expect(title).toHaveCount(0);
+  await page.getByRole("button",{name:"Retry"}).click();
+  await expect(title).toHaveValue("Updated in another tab");
+  await title.fill("Unsaved local draft");
+  const refreshed = page.waitForResponse(response => new URL(response.url()).pathname === "/api/notes/example");
+  await page.evaluate(() => {
+    window.dispatchEvent(new Event("offline"));
+    window.dispatchEvent(new Event("online"));
+  });
+  await refreshed;
+  await expect(title).toHaveValue("Unsaved local draft");
 });

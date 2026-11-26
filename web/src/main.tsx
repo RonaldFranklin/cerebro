@@ -84,7 +84,7 @@ function App() {
             <a href="/">Back to overview</a></section> : home ? <Home api={state.api}/> :
             path === "/inbox" ? <Suspense fallback={<p role="status">Loading Inbox…</p>}><InboxScreen api={state.api}/></Suspense> :
             path.startsWith("/editor/") ? <Suspense fallback={<p role="status">Loading editor…</p>}><EditorScreen
-              key={path} api={state.api} id={path.slice("/editor/".length)}/></Suspense> :
+              key={path} api={state.api} id={path.slice("/editor/".length)} history={url.searchParams.get("history") === "true"}/></Suspense> :
             path === "/graph" ? <Suspense fallback={<p role="status">Loading graph…</p>}><GraphScreen api={state.api}/></Suspense> :
             path === "/search" ? <SearchScreen api={state.api}/> :
             path.startsWith("/notes/") ? <ReaderScreen api={state.api} id={path.slice("/notes/".length)}

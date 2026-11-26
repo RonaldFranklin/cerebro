@@ -95,7 +95,7 @@ function friendly(code: string) {
   return words[0]?.toUpperCase() + words.slice(1);
 }
 
-function EditForm({api, initial, reload}: {api:ApiClient;initial:Editable;reload:()=>Promise<Editable>}) {
+function EditForm({api, initial, history, reload}: {api:ApiClient;initial:Editable;history:boolean;reload:()=>Promise<Editable>}) {
   const cache = useQueryClient();
   const [base,setBase] = useState(() => draftFrom(initial));
   const [draft,setDraft] = useState(base);
@@ -107,7 +107,7 @@ function EditForm({api, initial, reload}: {api:ApiClient;initial:Editable;reload
   const [message,setMessage] = useState("");
   const [validation,setValidation] = useState<ValidationReport | null>(null);
   const [warnings,setWarnings] = useState<WriteWarning[]>([]);
-  const graph = useVisibleGraph(api, true);
+  const graph = useVisibleGraph(api, history);
   const ids = useMemo(() => new Set(graph.isSuccess ? graph.data.nodes.map(node => node.id) : []), [graph.data,graph.isSuccess]);
 
   const incoming = latest ? draftFrom(latest) : null;
@@ -176,7 +176,7 @@ function EditForm({api, initial, reload}: {api:ApiClient;initial:Editable;reload
 
   return <article className="owner-editor">
     <header className="editor-head">
-      <div><a href={notePath(initial.id,true)} translate="no">{initial.id}</a><h1>Edit note</h1></div>
+      <div><a href={notePath(initial.id,history)} translate="no">{initial.id}</a><h1>Edit note</h1></div>
       <button className="primary-btn" onClick={() => void save()} disabled={!dirty || busy || conflict}>Save changes</button>
     </header>
     {message && <p className="editor-feedback" role="status">{message}</p>}
@@ -201,7 +201,7 @@ function EditForm({api, initial, reload}: {api:ApiClient;initial:Editable;reload
         {control("title")}{control("summary")}
         <div className="editor-field"><span>Markdown body</span>
           <div hidden={preview}><BodyEditor value={draft.body} onChange={value=>update("body",value)} ids={ids}/></div>
-          {preview && <div className="editor-preview"><Markdown body={draft.body} lang={draft.lang} history visibleIds={ids}/></div>}
+          {preview && <div className="editor-preview"><Markdown body={draft.body} lang={draft.lang} history={history} visibleIds={ids}/></div>}
           {problems("body")}
         </div>
       </section>
@@ -212,7 +212,7 @@ function EditForm({api, initial, reload}: {api:ApiClient;initial:Editable;reload
   </article>;
 }
 
-export function EditorScreen({api,id}: {api:ApiClient;id:string}) {
+export function EditorScreen({api,id,history}: {api:ApiClient;id:string;history:boolean}) {
   const source = useQuery({queryKey:["editor-source",id], refetchOnMount:"always", queryFn:({signal})=>api.read<Note>("/api"+notePath(id,true), signal)});
   // An explicit reload supplies a candidate new base. Background cache refreshes never replace a live draft.
   const [opened, setOpened] = useState<Editable | null>(null);
@@ -220,12 +220,12 @@ export function EditorScreen({api,id}: {api:ApiClient;id:string}) {
     const note = source.data;
     if (source.isSuccess && source.isFetchedAfterMount && complete(note,id)) setOpened(current=>current?.id === id ? current : note);
   }, [source.data,source.isSuccess,source.isFetchedAfterMount,id]);
-  if (opened?.id === id) return <EditForm key={id} api={api} initial={opened} reload={async () => {
+  if (opened?.id === id) return <EditForm key={id} api={api} initial={opened} history={history} reload={async () => {
     const result = await source.refetch({throwOnError:true});
     if (!complete(result.data,id)) throw new Error("Incomplete source");
     return result.data;
   }}/>;
   if (source.isPending || source.isFetching) return <p role="status">Loading note…</p>;
   return <section className="pending-view"><h1>Edit note</h1><p role="alert">A complete private note is required for editing.</p>
-    <button onClick={()=>void source.refetch()}>Retry</button><a href={notePath(id,true)}>Read note</a></section>;
+    <button onClick={()=>void source.refetch()}>Retry</button><a href={notePath(id,history)}>Read note</a></section>;
 }
