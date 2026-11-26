@@ -162,13 +162,18 @@ class SearchIndexContract:
         index.upsert(
             note("ssh-partial", title="Server inventory", summary="List of machines.", body="Access is via SSH.\n")
         )
-        hits = index.find_similar(
-            "SSH access to the home server. Use the workstation key to connect over SSH.", ceiling=RESTRICTED
-        )
+        hits = index.find_similar("SSH access to the home server. Reach the server over SSH.", ceiling=RESTRICTED)
         assert ids(hits)[0] == "ssh-access"
         assert "recipes" not in ids(hits)
         assert all(0 < h.score <= 1 for h in hits)
         assert [h.score for h in hits] == sorted((h.score for h in hits), reverse=True)
+
+    def test_find_similar_compares_title_and_summary_only(self, index: SearchIndex) -> None:
+        body = "".join(f"Detail number{n} about the setup.\n" for n in range(200))
+        index.upsert(note("long-note", title="Backup plan", summary="Nightly copies of the server.", body=body))
+        index.upsert(note("body-only", title="Pasta", summary="Dinner.", body="Backup plan: nightly copies.\n"))
+        (hit,) = index.find_similar("Backup plan Nightly copies of the server.", ceiling=RESTRICTED)
+        assert (hit.id, hit.score) == (NoteId("long-note"), 1.0)
 
     def test_find_similar_respects_ceiling_history_and_limit(self, index: SearchIndex) -> None:
         index.upsert(note("secret-dup", title="Backup plan", sensitivity=Sensitivity.RESTRICTED))

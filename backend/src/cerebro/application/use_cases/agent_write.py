@@ -29,6 +29,7 @@ from cerebro.domain.report import AGENT_WRITE_POLICY, Severity, ValidationReport
 from cerebro.domain.vocabulary import CORE, HUB, Vocabulary
 
 _CREATE_PLACEHOLDER = NoteId("create")
+_DUPLICATE_SIMILARITY = 0.5  # shared fraction of the distinct words of title and summary
 _REQUEST_ID = re.compile(r"[A-Za-z0-9_-]{1,64}")
 _SETTABLE = frozenset(FIELD_ORDER) - {"id", "created", "updated"}
 _UNAVAILABLE = WriteFinding("target_unavailable", "target", "Search for a writable note and read it in full.")
@@ -141,9 +142,7 @@ class AgentWrite:
             raise WriteRejected(*errors)
         warnings = projected(report, Severity.WARNING)
         if base is None:
-            hits = self._search.find_similar(f"{candidate.title} {candidate.summary}", ceiling=ctx.ceiling, limit=3)
-            if any(hit.score >= 0.5 and visible_id(self._notes, hit.id, ctx, include_history=False) for hit in hits):
-                warnings += (WriteFinding("possible_duplicate", "title", "Search for a note covering the same topic."),)
+            warnings += self._possible_duplicate(candidate, ctx)
         message = AgentWriteCommit(note_id=note_id, written_by=ctx.principal.name, request_key=key)
         revision = self._commit(candidate, message, request.base_hash)
         return AgentWriteResult(
@@ -152,6 +151,15 @@ class AgentWrite:
             warnings,
             sensitivity_raise_warnings(base.sensitivity if base else None, candidate.sensitivity),
         )
+
+    def _possible_duplicate(self, note: Note, ctx: AccessContext) -> tuple[WriteFinding, ...]:
+        """A warning naming the most similar current note the caller can read, if one is similar enough."""
+        hits = self._search.find_similar(f"{note.title} {note.summary}", ceiling=ctx.ceiling, limit=3)
+        for hit in hits:
+            if hit.score >= _DUPLICATE_SIMILARITY and visible_id(self._notes, hit.id, ctx, include_history=False):
+                hint = f"Note `{hit.id.value}` has a similar title and summary. Read it and keep one note per topic."
+                return (WriteFinding("possible_duplicate", "title", hint),)
+        return ()
 
     def _new_id(self, title: str) -> NoteId:
         decomposed = unicodedata.normalize("NFKD", title.casefold())

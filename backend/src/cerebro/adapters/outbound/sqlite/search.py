@@ -79,7 +79,7 @@ def _scrub(connection: sqlite3.Connection) -> None:
 def _store(connection: sqlite3.Connection, note: Note) -> bool:
     """Index ``note``; returns whether it replaced an older version."""
     replaced = _delete(connection, note.id.value)
-    terms = " ".join(sorted(_terms(f"{note.title} {note.summary} {note.body}")))
+    terms = " ".join(sorted(_terms(f"{note.title} {note.summary}")))
     cursor = connection.execute(
         "INSERT INTO notes (note_id, title, summary, area, type, priority, sensitivity, sens_rank, status, terms) "
         "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
@@ -213,12 +213,13 @@ class SqliteSearchIndex:
         return tuple(_hit(row, float(row[8])) for row in rows)
 
     def find_similar(self, text: str, *, ceiling: AccessCeiling, limit: int = 5) -> tuple[SearchHit, ...]:
-        """Current notes similar to ``text``, most similar first.
+        """Current notes whose title and summary are similar to ``text``, most similar first.
 
-        Candidates come from FTS (stemmed, any-term over at most 64 distinct words of ``text``, best bm25 first,
-        at most 500 candidates). Notes outside the candidates are never considered, so on a very large index a
-        near-duplicate can in principle be missed. Candidates are then re-scored by the Jaccard similarity of their
-        word sets, so the score is in (0, 1] and means "fraction of shared words" (callers threshold it).
+        Candidates come from FTS over title and summary (stemmed, any-term over at most 64 distinct words of
+        ``text``, best bm25 first, at most 500 candidates). Notes outside the candidates are never considered, so on
+        a very large index a near-duplicate can in principle be missed. Candidates are then re-scored by the Jaccard
+        similarity of the word sets of ``text`` and of their title and summary, so the score is in (0, 1] and means
+        "fraction of shared words" (callers threshold it).
         """
         wanted = frozenset(_terms(text))
         expression = match_expression(text)
@@ -228,8 +229,9 @@ class SqliteSearchIndex:
         union = self._tier_union(ceiling, f"{_HIT_COLUMNS}, n.terms", where)
         tiers = sum(1 for tier in _db.TIERS if tier <= ceiling.level)
         sql = f"SELECT * FROM ({union}) ORDER BY score DESC, priority, note_id LIMIT ?"
+        match = f"{{title summary}} : ({expression})"
         with _db.connect(self._path) as connection:
-            rows = connection.execute(sql, [*([expression, *params] * tiers), _SIMILAR_CANDIDATES]).fetchall()
+            rows = connection.execute(sql, [*([match, *params] * tiers), _SIMILAR_CANDIDATES]).fetchall()
         scored: list[SearchHit] = []
         for row in rows:
             have = frozenset(str(row[8]).split())

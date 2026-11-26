@@ -90,7 +90,8 @@ class SearchIndex(Protocol):
         ...
 
     def find_similar(self, text: str, *, ceiling: AccessCeiling, limit: int = 5) -> tuple[SearchHit, ...]:
-        """Current notes similar to ``text`` (duplicate detection), most similar first.
+        """Current notes whose title and summary are similar to ``text`` (duplicate detection), most similar first.
+        Bodies are not compared; the score is the fraction of shared distinct words.
 
         Only notes within ``ceiling`` and with a ``current`` status are considered; notes with no similarity
         are not returned.
