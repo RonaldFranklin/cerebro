@@ -21,11 +21,14 @@ Use a local password prompt and an owner-only, versioned scrypt verifier with a 
 attempt in SQLite before hashing. Share the five-attempt rolling fifteen-minute window across processes
 and cap concurrent hashes. Issue an opaque random session id and store its digest in bounded process
 memory. Rotate on login, revoke on logout or password reset, and expire at 30 idle minutes or eight hours
-absolute. Bind each session to the verifier generation sampled at login. On each authenticated request read
+absolute. Bind each session to the generation of the exact verifier snapshot used for the successful password check. On each authenticated request read
 the current generation from the protected verifier, fail closed if unavailable, and reject sessions created
-before an external CLI password rotation. Test a reset outside the issuing process. Use separate host-only Secure, HttpOnly, SameSite=Strict cookies for the two listeners. Validate
+before an external CLI password rotation. Test an external reset during login and after session issuance. Use separate host-only Secure, HttpOnly, SameSite=Strict cookies for the two listeners. Validate
 the exact configured Origin and session-bound CSRF token on authenticated mutations. Require same-origin
-JSON and a custom header at login. Keep session and API responses out of caches.
+JSON and a custom header at login. Keep session and API responses out of caches. Browsers send host-only
+cookies to every port on that host. The same-host, two-port coexistence test uses a local fixture and trusted
+loopback endpoints. Before exposing a lower-ceiling listener through a separate proxy trust boundary, configure
+distinct browser hostnames so private credentials never reach the public relay (Phase 8).
 
 Render note text through an HTML-disabled or HTML-escaping Markdown parser followed by allowlist
 sanitization. Serve a restrictive CSP with self-hosted assets, a per-response nonce for editor styles and
