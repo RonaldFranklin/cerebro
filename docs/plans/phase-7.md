@@ -16,7 +16,8 @@ changes. Use one branch per step from updated main, independent diff review, gre
 ## Acceptance
 
 - A freshly authorized agent searches, consults the guide when writing, creates a synthetic note and
-  immediately reads the committed result. A second agent reads and updates it with its base hash.
+  immediately reads the committed result. Simulate a lost response after commit: replay identical
+  input for the original receipt and changed input for a conflict, with no additional commit. A second agent reads and updates it with its base hash.
   Inspect Git for one commit per change and authenticated authorship. A stale update preserves the winner.
 - Invalid schema, missing links, oversize text and synthetic secrets yield bounded actionable feedback.
   Confirm rejected payloads are absent from Git, state and logs. Exercise cross-ceiling targets,

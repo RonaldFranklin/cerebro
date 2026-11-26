@@ -34,7 +34,9 @@ and review through Git history.
   attempts including invalid candidates and conflicts, so a failing loop also stops. Atomically reserve
   before application validation and keep only quota metadata. A refusal at capacity records nothing.
   A crash may consume a slot. Create requests carry a client-generated request id scoped to the token.
-  Bind it durably to the committed create so replay after a lost response cannot create a duplicate.
+  Bind it durably to the committed create and a canonical fingerprint of the validated request.
+  Identical replay after a lost response returns the existing receipt. Reuse with different input
+  returns a bounded conflict without writing.
   A replay must pass current authorization and cannot reveal a now-hidden note.
   A committed write remains authoritative if a derived index update fails; recover using the recorded
   index revision and Git HEAD.
