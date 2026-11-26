@@ -1,5 +1,6 @@
 """Capture dirty checkout entries, save them under state and restore HEAD without replacing later editor saves."""
 
+import contextlib
 import ctypes
 import errno
 import os
@@ -52,18 +53,50 @@ def _sync(directory: Path) -> None:
         os.fsync(fd)
 
 
-def _archive(archive: tarfile.TarFile, captured: Path, name: str) -> None:
-    """Tar skips some special files silently. Refuse them so no captured entry can disappear."""
-    path = captured / name
-    info = path.lstat()
-    if path.name == ".git" or not any(check(info.st_mode) for check in (stat.S_ISDIR, stat.S_ISREG, stat.S_ISLNK)):
-        raise NoteWriteError("cannot quarantine a special file or nested content repository")
-    archive.add(path, name, recursive=False)
+def _visit(parent: int, leaf: str, relative: str, archive: tarfile.TarFile | None) -> None:
+    """Preflight entries, or archive them from checked descriptors. Never dereference a captured symlink."""
+    info = os.stat(leaf, dir_fd=parent, follow_symlinks=False)
+    if leaf == ".git":
+        raise NoteWriteError("cannot quarantine a nested content repository")
+    entry = tarfile.TarInfo(relative)
+    entry.mode = stat.S_IMODE(info.st_mode)
+    entry.mtime = info.st_mtime
+    entry.uid, entry.gid = info.st_uid, info.st_gid
+    flags = os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK
     if stat.S_ISDIR(info.st_mode):
-        for child in sorted(path.iterdir()):
-            _archive(archive, captured, f"{name}/{child.name}")
-    if path.lstat().st_ctime_ns != info.st_ctime_ns:
-        raise NoteWriteError("a captured entry changed while saving the quarantine")
+        directory = os.open(leaf, flags | os.O_DIRECTORY, dir_fd=parent)
+        try:
+            if not os.path.samestat(os.fstat(directory), info):
+                raise NoteWriteError("a directory changed during quarantine")
+            if archive is not None:
+                entry.type = tarfile.DIRTYPE
+                archive.addfile(entry)
+            for child in sorted(os.listdir(directory)):
+                _visit(directory, child, f"{relative}/{child}", archive)
+        finally:
+            os.close(directory)
+    elif stat.S_ISLNK(info.st_mode):
+        if archive is not None:
+            entry.type = tarfile.SYMTYPE
+            entry.linkname = os.readlink(leaf, dir_fd=parent)
+            archive.addfile(entry)
+    elif stat.S_ISREG(info.st_mode):
+        if archive is not None:
+            with os.fdopen(os.open(leaf, flags, dir_fd=parent), "rb") as handle:
+                if not os.path.samestat(os.fstat(handle.fileno()), info):
+                    raise NoteWriteError("a file changed during quarantine")
+                entry.size = info.st_size
+                archive.addfile(entry, handle)
+    else:
+        raise NoteWriteError("cannot quarantine a special file")
+    if os.stat(leaf, dir_fd=parent, follow_symlinks=False).st_ctime_ns != info.st_ctime_ns:
+        raise NoteWriteError("an entry changed during quarantine")
+
+
+def _visit_root(root: Path, name: str, archive: tarfile.TarFile | None) -> None:
+    path = Path(name)
+    with open_directory(root, path.parts[:-1]) as parent:
+        _visit(parent, path.name, name, archive)
 
 
 def _restore_entries(source: Path, root: Path, names: list[str], pending: Path) -> bool:
@@ -103,6 +136,11 @@ def _recover(root: Path, state: Path, git: GitRepo, head: str, status: str) -> N
         raise NoteWriteError("cannot quarantine an unsupported content path")
     # If a file replaced a directory (or the reverse), capture the entire replacement exactly once.
     roots = sorted(name for name in names if not any(str(parent) in names for parent in Path(name).parents))
+    for name in roots:
+        with contextlib.suppress(
+            FileNotFoundError
+        ):  # A deleted path has only a status entry and possibly staged bytes.
+            _visit_root(root, name, None)
     indexed = sorted({e[3:] for e in entries if e[:2] not in ("??", "!!")})
     stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%S.%fZ")
     pending = Path(tempfile.mkdtemp(prefix=f"quarantine-{stamp}-", suffix=".partial", dir=state))
@@ -126,7 +164,7 @@ def _recover(root: Path, state: Path, git: GitRepo, head: str, status: str) -> N
         # Archive the entries actually removed, including a version saved between status and the atomic move.
         with tarfile.open(pending / "worktree.tar", "w") as archive:
             for name in moved:
-                _archive(archive, captured, name)
+                _visit_root(captured, name, archive)
         for path in pending.iterdir():
             with path.open("rb") as handle:
                 os.fsync(handle.fileno())

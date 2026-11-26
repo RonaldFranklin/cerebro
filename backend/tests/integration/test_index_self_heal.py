@@ -6,6 +6,7 @@ rebuilds before it answers, or fails; it never returns the note's title or summa
 
 import contextlib
 import errno
+import os
 import tarfile
 from collections.abc import Callable, Sequence
 from dataclasses import replace
@@ -485,3 +486,30 @@ def test_quarantine_restores_literal_git_pathspec_characters(service: Service) -
     assert path.read_text() == "committed"
     [snapshot] = service.sample.state_dir.glob("quarantine-*")
     assert (snapshot / "originals" / name).read_text() == "uncommitted"
+
+
+def test_archive_streams_verified_files_without_tar_reopening_paths(
+    service: Service, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    (service.sample.root / "draft").write_text("draft content")
+    monkeypatch.setattr(tarfile.TarFile, "add", boom)
+    service.container.start()
+    [snapshot] = service.sample.state_dir.glob("quarantine-*")
+    with tarfile.open(snapshot / "worktree.tar") as archive:
+        entry = archive.extractfile("draft")
+        assert entry is not None
+        assert entry.read() == b"draft content"
+
+
+def test_unsupported_replacement_is_refused_before_creating_a_snapshot(service: Service) -> None:
+    path = service.sample.root / "schema/types.yaml"
+    path.unlink()
+    path.mkdir()
+    (path / "draft").write_bytes(b"draft bytes")
+    os.mkfifo(path / "pipe")
+    for _ in range(2):
+        with pytest.raises(NoteWriteError):
+            service.container.start()
+        assert not list(service.sample.state_dir.glob("quarantine-*"))
+        assert (path / "draft").read_bytes() == b"draft bytes"
+        assert (path / "pipe").is_fifo()
