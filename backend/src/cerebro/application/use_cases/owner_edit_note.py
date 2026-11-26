@@ -5,7 +5,7 @@ from dataclasses import replace
 from cerebro.application.access import require_owner, visible_note
 from cerebro.application.dto import OwnerEditNoteRequest, OwnerEditNoteResult, sensitivity_raise_warnings
 from cerebro.application.errors import PermissionDenied
-from cerebro.application.index_state import advance_revision
+from cerebro.application.index_state import index_commit
 from cerebro.application.note_validation import validate_candidate
 from cerebro.application.ports.graph import GraphIndex
 from cerebro.application.ports.notes import NoteChange, NoteRepository
@@ -14,7 +14,6 @@ from cerebro.application.ports.system import Clock
 from cerebro.domain.access import AccessContext
 from cerebro.domain.commit_message import OwnerCommit
 from cerebro.domain.content_hash import content_hash, ensure_unchanged
-from cerebro.domain.note_ref import NoteRef
 from cerebro.domain.report import OWNER_EDIT_POLICY
 from cerebro.domain.vocabulary import Vocabulary
 
@@ -68,9 +67,7 @@ class OwnerEditNote:
         message = OwnerCommit.for_update(note.id)
         previous = self._notes.head()
         revision = self._notes.apply([NoteChange(note=candidate, expected_hash=request.expected_hash)], message)
-        self._search.upsert(candidate)
-        self._graph.upsert(NoteRef.from_note(candidate))
-        advance_revision(self._search, self._graph, previous=previous, current=revision)
+        index_commit(self._search, self._graph, candidate, previous=previous, revision=revision)
         return OwnerEditNoteResult(
             note_id=note.id,
             validation=report,

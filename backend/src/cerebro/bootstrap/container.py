@@ -11,12 +11,16 @@ otherwise a concurrent commit between them could make an index look fresh and hi
 ``OwnerEditNote``, ``RebuildIndex``) runs under ``WriterLock``: one ``threading.Lock`` for the threads of this
 process and one ``flock`` file in the state directory for other processes. The filesystem adapter keeps its own
 lock inside ``.git/`` for the commit itself; the two never share a file, so they cannot deadlock.
+
+**Self-healing indexes.** Every use case that reads an index, and every writer once it holds the lock, first
+rebuilds both indexes when either is behind ``head()`` (``Refreshed``). A failed index update after a commit or an
+external commit is therefore repaired by the next request, and a failed rebuild fails that request.
 """
 
 import os
 import stat
 import threading
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
 from functools import cached_property
@@ -155,6 +159,18 @@ class Serialized[Request, Result]:
             return self._inner.execute(request, ctx)
 
 
+class Refreshed[Request, Result]:
+    """Brings both indexes up to ``head()`` before running the wrapped use case; same ``execute`` signature."""
+
+    def __init__(self, inner: ContextUseCase[Request, Result], refresh: Callable[[], object]) -> None:
+        self._inner = inner
+        self._refresh = refresh
+
+    def execute(self, request: Request, ctx: AccessContext) -> Result:
+        self._refresh()
+        return self._inner.execute(request, ctx)
+
+
 @dataclass(frozen=True, slots=True, kw_only=True)
 class UseCases:
     """What inbound adapters may call. Use cases that commit or rewrite the indexes are serialised."""
@@ -215,16 +231,19 @@ class Container:
             vocabulary,
             settings.writes_per_hour,
         )
+        fresh, fresh_locked = self.refresh, self._refresh_locked
         self.use_cases = UseCases(
-            agent_write=Serialized(write, lock),
-            get_overview=GetOverview(notes, search),
-            search_notes=SearchNotes(search),
-            read_note=ReadNote(notes, graph),
-            get_neighbors=GetNeighbors(notes, graph),
-            get_graph=GetGraph(graph),
+            agent_write=Serialized(Refreshed(write, fresh_locked), lock),
+            get_overview=Refreshed(GetOverview(notes, search), fresh),
+            search_notes=Refreshed(SearchNotes(search), fresh),
+            read_note=Refreshed(ReadNote(notes, graph), fresh),
+            get_neighbors=Refreshed(GetNeighbors(notes, graph), fresh),
+            get_graph=Refreshed(GetGraph(graph), fresh),
             get_vocabulary=GetVocabulary(vocabulary),
             history=OwnerHistory(notes, GitChangeHistory(git, self.cipher), lock.held),
-            owner_edit_note=Serialized(OwnerEditNote(notes, search, graph, clock, vocabulary), lock),
+            owner_edit_note=Serialized(
+                Refreshed(OwnerEditNote(notes, search, graph, clock, vocabulary), fresh_locked), lock
+            ),
             rebuild_index=Serialized(self._rebuild, lock),
             health_report=HealthReport(notes, search, graph, clock, vocabulary),
             issue_agent_token=IssueAgentToken(self.tokens, clock, ids),
@@ -249,12 +268,23 @@ class Container:
         out-of-band commit, or an index file that was recreated after corruption). Returns whether it did.
         Nothing about the notes is logged or returned."""
         with self.writer_lock.held():
-            if not index_is_stale(self.notes, self.search, self.graph):
-                return False
-            owner = AccessContext.for_owner(AccessCeiling(Sensitivity.RESTRICTED))
-            # Already under the (non-reentrant) writer lock: call the unwrapped use case.
-            self._rebuild.execute(RebuildIndexRequest(), owner)
-            return True
+            return self._refresh_locked()
+
+    def refresh(self) -> None:
+        """Runs before every index read. Unlocked, it only compares the recorded revisions with ``head()`` (one
+        ``git rev-parse``); when an index is behind (a failed index update after a commit, an external commit), it
+        rebuilds under the writer lock. A failed rebuild raises, so a read fails rather than serve stale rows."""
+        if index_is_stale(self.notes, self.search, self.graph):
+            with self.writer_lock.held():
+                self._refresh_locked()
+
+    def _refresh_locked(self) -> bool:
+        if not index_is_stale(self.notes, self.search, self.graph):
+            return False
+        owner = AccessContext.for_owner(AccessCeiling(Sensitivity.RESTRICTED))
+        # Already under the (non-reentrant) writer lock: call the unwrapped use case.
+        self._rebuild.execute(RebuildIndexRequest(), owner)
+        return True
 
 
 def build_container(settings: Settings) -> Container:

@@ -308,17 +308,20 @@ class TestIndexRevisionOnWrites:
         assert result.revision == kit.world.notes.head()
         assert kit.world.search.built_from() == kit.world.graph.built_from() == result.revision
 
-    def test_a_failed_index_update_after_owner_edit_is_flagged(self, kit: Kit) -> None:
+    @pytest.mark.parametrize("method", ["search.upsert", "graph.upsert", "search.set_revision", "graph.set_revision"])
+    def test_a_failed_index_update_after_owner_edit_is_flagged_not_raised(self, kit: Kit, method: str) -> None:
+        """The commit is durable, so the edit succeeds; the index stays behind ``head()`` for the next read."""
         current = kit.world.notes.get(SSH)
         assert current is not None
 
-        def boom(note: Any) -> None:
-            raise RuntimeError("search store down")
+        def boom(*args: Any) -> None:
+            raise RuntimeError("index store down")
 
-        kit.world.search.upsert = boom  # type: ignore[method-assign]
-        with pytest.raises(RuntimeError):
-            kit.edit_uc().execute(
-                OwnerEditNoteRequest(note=replace(current, body="# SSH\n\nEdited.\n"), expected_hash=note_hash(kit)),
-                owner_ctx(),
-            )
+        index, name = method.split(".")
+        setattr(getattr(kit.world, index), name, boom)
+        result = kit.edit_uc().execute(
+            OwnerEditNoteRequest(note=replace(current, body="# SSH\n\nEdited.\n"), expected_hash=note_hash(kit)),
+            owner_ctx(),
+        )
+        assert result.revision == kit.world.notes.head()
         assert self.stale(kit)

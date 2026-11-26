@@ -10,6 +10,7 @@ from cerebro.application.access import require_scope, visible_id
 from cerebro.application.agent_write import AgentWriteRequest, AgentWriteResult, WriteFinding, WriteRejected, projected
 from cerebro.application.dto import sensitivity_raise_warnings
 from cerebro.application.errors import PermissionDenied
+from cerebro.application.index_state import index_commit
 from cerebro.application.note_validation import validate_candidate
 from cerebro.application.ports.graph import GraphIndex
 from cerebro.application.ports.notes import NoteChange, NoteRepository
@@ -24,7 +25,6 @@ from cerebro.domain.errors import ContentConflict, InvalidValueError
 from cerebro.domain.frontmatter import FIELD_ORDER, parse_note
 from cerebro.domain.links import loose_link_targets
 from cerebro.domain.note import Note, NoteId
-from cerebro.domain.note_ref import NoteRef
 from cerebro.domain.report import AGENT_WRITE_POLICY, Severity, ValidationReport
 from cerebro.domain.vocabulary import CORE, HUB, Vocabulary
 
@@ -145,7 +145,7 @@ class AgentWrite:
             if any(hit.score >= 0.5 and visible_id(self._notes, hit.id, ctx, include_history=False) for hit in hits):
                 warnings += (WriteFinding("possible_duplicate", "title", "Search for a note covering the same topic."),)
         message = AgentWriteCommit(note_id=note_id, written_by=ctx.principal.name, request_key=key)
-        revision = self._commit(candidate, base, message, request.base_hash)
+        revision = self._commit(candidate, message, request.base_hash)
         return AgentWriteResult(
             note_id,
             revision,
@@ -186,32 +186,13 @@ class AgentWrite:
     def _stale() -> WriteRejected:
         return WriteRejected(WriteFinding("stale_base", "base_hash", "Read the full note again and reconcile changes."))
 
-    def _commit(self, candidate: Note, base: Note | None, message: AgentWriteCommit, expected: str | None) -> str:
+    def _commit(self, candidate: Note, message: AgentWriteCommit, expected: str | None) -> str:
         previous = self._notes.head()
-        search_fresh = self._search.built_from() == previous
-        graph_fresh = self._graph.built_from() == previous
-        # Evict the wider projection before committing a narrower one. A crash at any subsequent
-        # boundary leaves only missing results, and a stale revision that startup repairs.
-        if base and (base.sensitivity < candidate.sensitivity or (base.is_current and not candidate.is_current)):
-            self._search.set_revision(None)
-            self._graph.set_revision(None)
-            self._search.remove(base.id)
-            self._graph.remove(base.id)
         try:
             revision = self._notes.apply([NoteChange(note=candidate, expected_hash=expected)], message)
         except ContentConflict:
             raise self._stale() from None
-        try:
-            self._search.upsert(candidate)
-            self._graph.upsert(NoteRef.from_note(candidate))
-            if search_fresh:
-                self._search.set_revision(revision)
-            if graph_fresh:
-                self._graph.set_revision(revision)
-        except Exception:
-            # The authoritative commit and its receipt are durable. Startup checks both index
-            # revisions against HEAD and rebuilds them under this same writer lock.
-            pass
+        index_commit(self._search, self._graph, candidate, previous=previous, revision=revision)
         return revision
 
 
