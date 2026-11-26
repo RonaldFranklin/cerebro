@@ -1,3 +1,4 @@
+import subprocess
 from dataclasses import replace
 from pathlib import Path
 
@@ -38,7 +39,7 @@ def test_only_a_private_owner_can_list_and_read_an_encrypted_diff(tmp_path: Path
     app = browser_api(container.browser_auth, binding, AccessCeiling(Sensitivity.RESTRICTED))
     install_browser_history(app, container.use_cases.history)
     with TestClient(app, base_url=origin) as client:
-        endpoints = ("/api/changes", f"/api/changes/{revision}")
+        endpoints = ("/api/changes", f"/api/changes/{revision}", f"/api/changes?cursor={revision}")
         for endpoint in endpoints:
             assert client.get(endpoint).status_code == 401
         assert (
@@ -51,6 +52,9 @@ def test_only_a_private_owner_can_list_and_read_an_encrypted_diff(tmp_path: Path
             for endpoint in endpoints:
                 assert client.get(endpoint, headers={"X-Forwarded-Host": "private"}).status_code == 403
             return
+        assert client.get(endpoints[2]).status_code == 404
+        assert client.get("/api/changes", params={"cursor": "é"}).status_code == 404
+        assert client.get("/api/changes?cursor=x&cursor=y").status_code == 422
         rows = client.get(endpoints[0]).json()["changes"]
         assert [row["revision"] for row in rows] == [revision]
         assert rows[0]["actor"] == "owner"
@@ -65,6 +69,7 @@ def test_only_a_private_owner_can_list_and_read_an_encrypted_diff(tmp_path: Path
         assert len(payload["diff"]) <= MAX_DIFF_CHARS
         assert payload["operation"] == "update"
         for invalid in ("HEAD", "HEAD~1", "--all", "f" * 40, revision[:12]):
+            assert client.get("/api/changes", params={"cursor": invalid}).status_code == 404
             assert client.get(f"/api/changes/{invalid}").status_code == 404
         clean = container.notes.get(DOCKER_ID)
         assert clean
@@ -107,7 +112,7 @@ def test_unattributed_commits_are_not_listed_and_corrupt_history_fails_closed(tm
         "Proposal-Id: retired-0001",
         [path],
     )
-    listed = {row.revision for row in history.list(owner)}
+    listed = {row.revision for row in history.list(owner).changes}
     assert added not in listed
     assert retired not in listed
     # A malformed historical parent is never treated as a newly created note, even when the latest file is readable.
@@ -115,6 +120,76 @@ def test_unattributed_commits_are_not_listed_and_corrupt_history_fails_closed(tm
     git.commit("Manual repair in progress", [path])
     (sample.root / path).write_bytes(stored)
     repaired = git.commit(OwnerCommit.for_update(created.id).render(), [path])
-    assert repaired not in {row.revision for row in history.list(owner)}
+    assert repaired not in {row.revision for row in history.list(owner).changes}
     with pytest.raises(ChangeUnavailable):
         history.detail(HistoryRequest(repaired), owner)
+
+
+def test_history_pages_cross_both_limits_and_open_older_details(tmp_path: Path) -> None:
+    sample = make_sample_repo(tmp_path)
+    container = build_container(sample.settings)
+    note = container.notes.get(DOCKER_ID)
+    assert note
+    revisions = []
+    for i in range(22):
+        changed = replace(note, body=f"Revision {i}")
+        revisions.append(
+            container.notes.apply(
+                [NoteChange(note=changed, expected_hash=content_hash(note))], OwnerCommit.for_update(DOCKER_ID)
+            )
+        )
+        note = changed
+    for i in range(32):
+        (sample.root / "manual").write_text(str(i))
+        sample.git().stage(["manual"])
+        sample.git().commit("Unattributed", ["manual"])
+    history = container.use_cases.history
+    owner = AccessContext.for_owner(AccessCeiling(Sensitivity.RESTRICTED))
+    first = history.list(owner)
+    assert not first.changes
+    assert first.next_cursor
+    second = history.list(owner, first.next_cursor)
+    assert [row.revision for row in second.changes] == revisions[:-21:-1]
+    assert second.next_cursor
+    last = history.list(owner, second.next_cursor)
+    assert [row.revision for row in last.changes] == revisions[1::-1]
+    assert last.next_cursor is None
+    assert history.detail(HistoryRequest(revisions[0], second.next_cursor), owner).change.revision == revisions[0]
+
+
+def test_private_api_follows_an_opaque_cursor_after_an_empty_window(tmp_path: Path) -> None:
+    sample = make_sample_repo(tmp_path)
+    container = build_container(sample.settings)
+    base = container.notes.get(DOCKER_ID)
+    assert base
+    revision = container.notes.apply(
+        [NoteChange(note=replace(base, body="Earlier entry"), expected_hash=content_hash(base))],
+        OwnerCommit.for_update(DOCKER_ID),
+    )
+    git = sample.git()
+    history = container.use_cases.history
+    owner = AccessContext.for_owner(AccessCeiling(Sensitivity.RESTRICTED))
+    initial = history.list(owner).page_cursor
+    for i in range(34):
+        (sample.root / "manual").write_text(str(i))
+        git.stage(["manual"])
+        git.commit("Unattributed", ["manual"])
+    assert history.detail(HistoryRequest(revision, initial), owner).change.revision == revision
+    origin = "https://private.example.invalid"
+    owner_credentials(sample.settings).provision(b"history-fixture")
+    app = browser_api(container.browser_auth, BrowserBinding("private", origin), AccessCeiling(Sensitivity.RESTRICTED))
+    install_browser_history(app, container.use_cases.history)
+    with TestClient(app, base_url=origin) as client:
+        client.post(
+            "/api/login", headers={"Origin": origin, "X-Cerebro-Request": "1"}, json={"password": "history-fixture"}
+        )
+        first = client.get("/api/changes").json()
+        assert first["changes"] == []
+        assert revision not in first["next_cursor"]
+        last = client.get("/api/changes", params={"cursor": first["next_cursor"]}).json()
+        assert [row["revision"] for row in last["changes"]] == [revision]
+        assert last["next_cursor"] is None
+        assert client.get(f"/api/changes/{revision}").status_code == 404
+        assert client.get(f"/api/changes/{revision}", params={"cursor": first["next_cursor"]}).status_code == 200
+        subprocess.run(["git", "-C", str(sample.root), "reset", "--hard", revision], check=True, capture_output=True)
+        assert client.get("/api/changes", params={"cursor": first["next_cursor"]}).status_code == 404

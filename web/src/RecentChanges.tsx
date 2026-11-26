@@ -1,6 +1,6 @@
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
-import type { ApiClient } from "./api";
+import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
+import { ApiError, type ApiClient } from "./api";
 import { notePath } from "./Reader";
 import "./recentChanges.css";
 
@@ -23,10 +23,10 @@ const dateFormat = new Intl.DateTimeFormat(undefined, {
   hour: "2-digit", minute: "2-digit", timeZoneName: "short",
 });
 
-function ChangeDetails({api, revision}: {api: ApiClient; revision: string}) {
+function ChangeDetails({api, revision, cursor}: {api: ApiClient; revision: string; cursor: string | null}) {
   const result = useQuery({
-    queryKey: ["changes", "detail", revision],
-    queryFn: ({signal}) => api.read<ChangeDetail>(`/api/changes/${encodeURIComponent(revision)}`, signal),
+    queryKey: ["changes", "detail", revision, cursor],
+    queryFn: ({signal}) => api.read<ChangeDetail>(`/api/changes/${encodeURIComponent(revision)}${cursor ? `?cursor=${encodeURIComponent(cursor)}` : ""}`, signal),
     gcTime: 0,
   });
   if (result.isPending) return <p role="status">Loading change details…</p>;
@@ -47,18 +47,26 @@ function ChangeDetails({api, revision}: {api: ApiClient; revision: string}) {
 }
 
 export function RecentChangesScreen({api}: {api: ApiClient}) {
+  const cache = useQueryClient();
   const [selected, setSelected] = useState<string | null>(null);
-  const history = useQuery({
+  const history = useInfiniteQuery({
     queryKey: ["changes", "list"],
-    queryFn: ({signal}) => api.read<{changes: Change[]}>("/api/changes", signal),
+    initialPageParam: null as string | null,
+    queryFn: ({signal, pageParam}) => api.read<{changes: Change[]; next_cursor: string | null; page_cursor: string | null}>(
+      pageParam ? `/api/changes?cursor=${encodeURIComponent(pageParam)}` : "/api/changes", signal),
+    getNextPageParam: page => page.next_cursor,
   });
+  const changes = history.data?.pages.flatMap(page =>
+    page.changes.map(change => ({change, cursor: page.page_cursor}))) ?? [];
+  const denied = history.error instanceof ApiError && [401, 403].includes(history.error.status);
+  const expired = history.isFetchNextPageError && history.error instanceof ApiError && history.error.status === 404;
   return <article className="changes-view">
     <header className="page-heading"><h1>Recent changes</h1><p>Inspect committed note edits and the differences between revisions.</p></header>
     {history.isPending ? <p role="status">Loading recent changes…</p>
-      : history.isError ? <div><p role="alert">Recent changes are unavailable.</p>
-        <button type="button" onClick={() => void history.refetch()}>Retry</button></div>
-      : history.data.changes.length === 0 ? <p className="empty-state">No note changes to show.</p>
-      : <ol className="change-list">{history.data.changes.map(change => {
+      : history.isError && (!history.isFetchNextPageError || denied || expired) ? <div><p role="alert">Recent changes are unavailable.</p>
+        <button type="button" onClick={() => void cache.resetQueries({queryKey:["changes", "list"], exact:true})}>Retry</button></div>
+      : changes.length === 0 && !history.hasNextPage ? <p className="empty-state">No note changes to show.</p>
+      : <ol className="change-list">{changes.map(({change, cursor}) => {
         const expanded = selected === change.revision;
         return <li key={change.revision}>
           <button type="button" className="change-row" aria-expanded={expanded}
@@ -69,8 +77,11 @@ export function RecentChangesScreen({api}: {api: ApiClient}) {
             <time dateTime={change.timestamp}>{dateFormat.format(new Date(change.timestamp))}</time>
             <i aria-hidden="true" className="change-chevron"/>
           </button>
-          {expanded && <div className="change-expanded"><ChangeDetails api={api} revision={change.revision}/></div>}
+          {expanded && <div className="change-expanded"><ChangeDetails api={api} revision={change.revision} cursor={cursor}/></div>}
         </li>;
       })}</ol>}
+    {history.isFetchNextPageError && !denied && !expired && <p role="alert">Older changes are unavailable.</p>}
+    {history.hasNextPage && !denied && !expired && <button type="button" disabled={history.isFetching}
+      onClick={() => void history.fetchNextPage()}>Load more</button>}
   </article>;
 }

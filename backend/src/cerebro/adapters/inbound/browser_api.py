@@ -138,7 +138,9 @@ def browser_api(auth: BrowserAuth, binding: BrowserBinding, ceiling: AccessCeili
             if note_write or history:
                 if binding.listener != "private" or ceiling.level is not Sensitivity.RESTRICTED:
                     return _error(403, "Access denied.")
-                if request.scope["query_string"]:
+                if request.scope["query_string"] and (
+                    not history or len(request.query_params.getlist("cursor")) != 1 or len(request.query_params) != 1
+                ):
                     return _error(422, "Invalid request.")
                 if request.method not in {"GET", "HEAD"}:
                     media = _header(request, "content-type")

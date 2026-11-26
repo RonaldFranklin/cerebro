@@ -4,7 +4,7 @@ import difflib
 import json
 import re
 from collections.abc import Callable, Iterator
-from contextlib import AbstractContextManager, nullcontext
+from contextlib import AbstractContextManager, contextmanager, nullcontext
 from dataclasses import dataclass
 from functools import lru_cache
 
@@ -15,8 +15,10 @@ from cerebro.application.history import (
     MAX_DIFF_CHARS,
     RECENT_WINDOW,
     ChangeDetail,
+    ChangePage,
     ChangeSummary,
     ChangeUnavailable,
+    HistoryCursor,
     HistoryRequest,
     HistoryVersion,
     is_revision,
@@ -52,32 +54,53 @@ class OwnerHistory:
         self._notes = notes
         self._history = history
 
-    def list(self, ctx: AccessContext) -> tuple[ChangeSummary, ...]:
+    def list(self, ctx: AccessContext, cursor: HistoryCursor | None = None) -> ChangePage:
         require_owner(ctx, "inspect change history")
-        with self._guard():
-            return self._list(ctx)
+        with self._window(cursor) as (head, revisions):
+            return self._list(ctx, head, revisions)
 
-    def _list(self, ctx: AccessContext) -> tuple[ChangeSummary, ...]:
-        rows = []
-        for revision in self._history.recent()[:RECENT_WINDOW]:
+    @contextmanager
+    def _window(self, cursor: HistoryCursor | None) -> Iterator[tuple[str | None, tuple[str, ...]]]:
+        if cursor is None:
+            with self._guard():
+                recent = self._history.recent()
+                yield next(iter(recent), None), recent
+            return
+        # Check old ancestry outside the writer lock, against the exact commit we will recheck under it.
+        recent = self._history.recent()
+        if not recent or not is_revision(cursor.start):
+            raise ChangeUnavailable()
+        observed = recent[0]
+        ancestry = None if cursor.head in recent else (cursor.head, observed)
+        revisions = self._history.recent(cursor.start, verify_head=ancestry)
+        with self._guard():
+            if self._notes.head() != observed and observed not in self._history.recent():
+                raise ChangeUnavailable()
+            yield cursor.head, revisions
+
+    def _list(self, ctx: AccessContext, head: str | None, revisions: tuple[str, ...]) -> ChangePage:
+        rows: list[ChangeSummary] = []
+        page_cursor = HistoryCursor(head, revisions[0]) if head and revisions else None
+        for index, revision in enumerate(revisions):
+            if index == RECENT_WINDOW or len(rows) == MAX_CHANGES:
+                assert head is not None
+                return ChangePage(page_cursor, tuple(rows), HistoryCursor(head, revision))
             try:
                 versions = self._authorized(revision, ctx)
                 if versions:
                     rows.append(self._summary(versions, ctx))
             except ChangeUnavailable:
                 continue
-            if len(rows) == MAX_CHANGES:
-                break
-        return tuple(rows)
+        return ChangePage(page_cursor, tuple(rows), None)
 
     def detail(self, request: HistoryRequest, ctx: AccessContext) -> ChangeDetail:
         require_owner(ctx, "inspect change history")
-        with self._guard():
+        with self._window(request.cursor) as (_, revisions):
+            if not is_revision(request.revision) or request.revision not in revisions[:RECENT_WINDOW]:
+                raise ChangeUnavailable()
             return self._detail(request.revision, ctx)
 
     def _detail(self, revision: str, ctx: AccessContext) -> ChangeDetail:
-        if not is_revision(revision) or revision not in self._history.recent()[:RECENT_WINDOW]:
-            raise ChangeUnavailable()
         versions = self._authorized(revision, ctx)
         if versions is None:
             raise ChangeUnavailable()
