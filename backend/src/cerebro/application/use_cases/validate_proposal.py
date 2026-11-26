@@ -88,6 +88,19 @@ class ValidateProposal:
             base = visible_note(self._notes, proposal.target, ctx, include_history=True)
         candidate_id = candidate_id or proposal.target or provisional_note_id(proposal.content.title)
         candidate, problems = build_candidate(proposal, note_id=candidate_id, base=base)
+        return self.assess_candidate(proposal, ctx, candidate=candidate, base=base, problems=problems)
+
+    def assess_candidate(
+        self,
+        proposal: Proposal,
+        ctx: AccessContext,
+        *,
+        candidate: Note | None,
+        base: Note | None,
+        problems: tuple[Finding, ...],
+    ) -> ValidationReport:
+        """Assess exactly the built candidate, including current duplicate suggestions for the owner."""
+        require_owner(ctx, "validate proposals")
         # Free text that is not part of the note (rationale, session, context) is scanned too.
         report = PROPOSAL_POLICY.report((*problems, *secret_findings(proposal)))
         if candidate is None:

@@ -5,13 +5,12 @@ from cerebro.application.errors import PermissionDenied, ProposalConflict, Propo
 from cerebro.application.use_cases import ListProposals
 from cerebro.domain.enums import Sensitivity
 from tests.unit.application.write_kit import Kit, agent_ctx, owner_ctx
-from tests.unit.domain.builders import VOCABULARY
 
 
 def test_metadata_and_reviewable_detail() -> None:
     kit = Kit()
     pid = kit.submit_update()
-    listing = ListProposals(kit.proposals, kit.world.notes, VOCABULARY)
+    listing = ListProposals(kit.proposals, kit.world.notes, kit.validate_uc())
     for ctx in (agent_ctx(Sensitivity.RESTRICTED), owner_ctx(Sensitivity.INTERNAL)):
         for req in (ListProposalsRequest(), ListProposalsRequest(proposal_id=pid)):
             with pytest.raises(PermissionDenied):
@@ -47,7 +46,7 @@ def test_preview_and_approval_check_the_live_base_again() -> None:
     pid = kit.submit_update()
     kit.validate(pid)
     kit.curate(pid)
-    listing = ListProposals(kit.proposals, kit.world.notes, VOCABULARY)
+    listing = ListProposals(kit.proposals, kit.world.notes, kit.validate_uc())
     request = ListProposalsRequest(proposal_id=pid)
     original = listing.execute(request, owner_ctx()).preview
     assert original
@@ -93,7 +92,7 @@ def test_create_has_empty_base_even_if_the_target_is_taken() -> None:
     kit.validate(pid)
     kit.curate(pid)
     request = ListProposalsRequest(proposal_id=pid)
-    listing = ListProposals(kit.proposals, kit.world.notes, VOCABULARY)
+    listing = ListProposals(kit.proposals, kit.world.notes, kit.validate_uc())
     preview = listing.execute(request, owner_ctx()).preview
     assert preview
     assert preview.base is None
@@ -143,7 +142,7 @@ def test_refresh_approval_and_resume_preserve_the_previewed_dates(create: bool) 
     pid = kit.submit_create() if create else kit.submit_update()
     kit.validate(pid)
     kit.curate(pid)
-    listing = ListProposals(kit.proposals, kit.world.notes, VOCABULARY)
+    listing = ListProposals(kit.proposals, kit.world.notes, kit.validate_uc())
     request = ListProposalsRequest(proposal_id=pid)
     first = listing.execute(request, owner_ctx()).preview
     assert first
@@ -170,7 +169,7 @@ def test_preview_rechecks_validation_when_a_referenced_note_disappears() -> None
     kit.curate(pid)
     del kit.world.notes._notes[NoteId("infrastructure")]
     preview = (
-        ListProposals(kit.proposals, kit.world.notes, VOCABULARY)
+        ListProposals(kit.proposals, kit.world.notes, kit.validate_uc())
         .execute(ListProposalsRequest(proposal_id=pid), owner_ctx())
         .preview
     )
@@ -180,3 +179,32 @@ def test_preview_rechecks_validation_when_a_referenced_note_disappears() -> None
     assert preview.historical_validation.ok
     assert preview.validation
     assert ViolationCode.HUB_NOT_FOUND in preview.validation.codes
+
+
+def test_preview_detects_duplicate_added_after_submission() -> None:
+    from dataclasses import replace
+
+    from cerebro.application.dto import OwnerEditNoteRequest
+    from cerebro.domain.content_hash import content_hash
+    from cerebro.domain.report import ViolationCode
+    from tests.unit.application.write_kit import SSH
+
+    kit = Kit()
+    title = "Gardening calendar"
+    summary = "Track these planting dates for seedlings and flowering bulbs during spring."
+    pid = kit.submit_create(title=title, summary=summary)
+    kit.validate(pid)
+    kit.curate(pid)
+    current = kit.world.notes.get(SSH)
+    assert current
+    kit.edit_uc().execute(
+        OwnerEditNoteRequest(note=replace(current, title=title, summary=summary), expected_hash=content_hash(current)),
+        owner_ctx(),
+    )
+    listing = ListProposals(kit.proposals, kit.world.notes, kit.validate_uc())
+    preview = listing.execute(ListProposalsRequest(proposal_id=pid), owner_ctx()).preview
+    assert preview
+    assert preview.historical_validation
+    assert ViolationCode.POSSIBLE_DUPLICATE not in preview.historical_validation.codes
+    assert preview.validation
+    assert ViolationCode.POSSIBLE_DUPLICATE in preview.validation.codes

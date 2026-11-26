@@ -9,14 +9,12 @@ from cerebro.application.proposal_support import (
     build_candidate,
     provisional_note_id,
     stale_proposal_base,
-    validate_candidate,
 )
+from cerebro.application.use_cases.validate_proposal import ValidateProposal
 from cerebro.domain.access import AccessContext
 from cerebro.domain.enums import Sensitivity
 from cerebro.domain.note import Note
 from cerebro.domain.proposal import Proposal, ProposalKind, ProposalStatus
-from cerebro.domain.report import PROPOSAL_POLICY
-from cerebro.domain.vocabulary import Vocabulary
 
 
 def _metadata(proposal: Proposal) -> InboxItem:
@@ -40,10 +38,10 @@ def _preview_note(note: Note | None) -> NoteView | None:
 
 
 class ListProposals:
-    def __init__(self, proposals: ProposalStore, notes: NoteRepository, vocabulary: Vocabulary) -> None:
+    def __init__(self, proposals: ProposalStore, notes: NoteRepository, validator: ValidateProposal) -> None:
         self._proposals = proposals
         self._notes = notes
-        self._vocabulary = vocabulary
+        self._validator = validator
 
     def execute(self, request: ListProposalsRequest, ctx: AccessContext) -> InboxResult:
         require_owner(ctx, "inspect the inbox")
@@ -67,11 +65,9 @@ class ListProposals:
         stale = stale_proposal_base(proposal, current)
         candidate, findings = build_candidate(proposal, note_id=target, base=base)
         validation = None
-        if candidate is None:
-            validation = PROPOSAL_POLICY.report(findings)
-        elif not stale:
-            validation = validate_candidate(
-                candidate, notes=self._notes, vocabulary=self._vocabulary, policy=PROPOSAL_POLICY, base=base
+        if candidate is None or not stale:
+            validation = self._validator.assess_candidate(
+                proposal, ctx, candidate=candidate, base=base, problems=findings
             )
         preview = InboxPreview(
             decision=proposal.decision,

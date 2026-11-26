@@ -247,7 +247,7 @@ class Container:
             rebuild_index=Serialized(self._rebuild, lock),
             health_report=HealthReport(notes, proposals, search, graph, clock, vocabulary),
             issue_agent_token=IssueAgentToken(self.tokens, clock, ids),
-            list_proposals=ListProposals(proposals, notes, vocabulary),
+            list_proposals=ListProposals(proposals, notes, validator),
             list_agent_tokens=ListAgentTokens(self.tokens),
             revoke_agent_token=RevokeAgentToken(self.tokens, clock),
             authenticate_token=AuthenticateToken(self.tokens, clock),
