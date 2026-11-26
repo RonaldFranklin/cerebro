@@ -10,7 +10,7 @@ from mcp.server import Server, ServerRequestContext
 
 from cerebro.adapters.inbound.input_limits import MAX_FIELD_BYTES, MAX_QUERY_BYTES, bounded_text
 from cerebro.adapters.inbound.mcp_proposal import PROPOSE_TOOL, parse_proposal
-from cerebro.adapters.inbound.read_views import read_view, search_view
+from cerebro.adapters.inbound.read_views import overview_view, read_view, search_view
 from cerebro.application.dto import (
     AdmissionResult,
     GetNeighborsRequest,
@@ -154,15 +154,6 @@ def parse_tool(name: str, arguments: object) -> ToolRequest:
     raise InvalidToolArguments
 
 
-def _overview(result: Overview) -> dict[str, object]:
-    return {
-        "core": [{"id": n.id.value, "title": n.title, "summary": n.summary, "body": n.body} for n in result.core],
-        "core_truncated": result.core_truncated,
-        "areas": [a.value for a in result.areas],
-        "hubs": [{"id": n.id.value, "title": n.title, "summary": n.summary} for n in result.hubs],
-    }
-
-
 def _neighbors(result: GraphView) -> dict[str, object]:
     relations: dict[NoteId, list[dict[str, str]]] = {node.id: [] for node in result.nodes}
     for edge in result.edges:
@@ -210,7 +201,7 @@ class MCPTools:
             if ctx.is_owner or not ctx.can(tool_scope(name)):
                 raise PermissionDenied("call tool")
             if isinstance(request, GetOverviewRequest):
-                output = _overview(self.get_overview.execute(request, ctx))
+                output = overview_view(self.get_overview.execute(request, ctx))
             elif isinstance(request, SearchNotesRequest):
                 output = {"results": search_view(self.search_notes.execute(request, ctx))}
             elif isinstance(request, ReadNoteRequest):

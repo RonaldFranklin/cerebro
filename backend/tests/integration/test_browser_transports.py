@@ -11,7 +11,7 @@ import pytest
 
 from cerebro.bootstrap.browser import owner_credentials
 from tests.integration.browser_tls import certificate, tls_relay
-from tests.integration.content_kit import make_sample_repo
+from tests.integration.content_kit import VAULT_ID, make_sample_repo
 from tests.integration.test_cli_bootstrap import SAMPLE
 from tests.integration.test_mcp_transports import SERVER, free_port, serving
 
@@ -68,6 +68,9 @@ def test_two_https_origins_share_service_but_isolate_sessions(tmp_path: Path) ->
                 status, _, body = request(client, port, "GET", "/api/session", forwarded)
                 assert status == 200
                 assert json.loads(body)["ceiling"] == ceiling
+                status, _, graph = request(client, port, "GET", "/api/graph", forwarded)
+                assert status == 200
+                assert (VAULT_ID.value in {node["id"] for node in json.loads(graph)["nodes"]}) == (port == private)
             replay = cookies[private].replace("cerebro_private=", "cerebro_public=")
             assert request(client, public, "GET", "/api/session", {"Cookie": replay})[0] == 401
             assert request(client, private, "GET", "/", {"Host": "other.invalid"})[0] == 400

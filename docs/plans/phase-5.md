@@ -4,7 +4,7 @@
 
 ## 1. Delivery sequence
 
-PR 1 records the decision in [ADR-0019](../adr/0019-owner-browser-api.md). PR 2 pins the approved inventory. PR 3 implements owner authentication. PR 4 mounts the authenticated browser service. PRs 5–11 are planned. Start each branch from current main after the preceding PR merges. The owner authorizes merges for all eleven PRs, including security and dependency changes, with independent review, findings resolved, completed green CI and scripts/merge-pr.sh. The dependency, ADR and privileged setup boundaries are recorded in §6.
+PR 1 records the decision in [ADR-0019](../adr/0019-owner-browser-api.md). PR 2 pins the approved inventory. PR 3 implements owner authentication. PR 4 mounts the authenticated browser service. PR 5 implements browser reads. PRs 6–11 are planned. Start each branch from current main after the preceding PR merges. The owner authorizes merges for all eleven PRs, including security and dependency changes, with independent review, findings resolved, completed green CI and scripts/merge-pr.sh. The dependency, ADR and privileged setup boundaries are recorded in §6.
 
 | PR and branch | Deliverable | Verification before merge |
 |---|---|---|
@@ -285,3 +285,23 @@ Integration tests use two test-only TLS terminators forwarding to real private a
 sockets. They exercise the same-host cookies, socket-bound authorization, logout, host/origin checks
 and the nonce-bearing shell. Existing installed MCP tests cover both credential scopes, the disabled
 public listener, bounded requests and the SDK lifespan.
+
+### PR 5 delivery record
+
+All six GET endpoints require the browser session. Query fields are optional, single-valued and
+case-sensitive. GET bodies are rejected at the first nonempty frame. Unknown and repeated fields produce 422. The default excludes history. Set
+`history=true` to include it. The 8 KiB encoded query ceiling is checked before parameter parsing.
+
+| Endpoint | Query | Result |
+|---|---|---|
+| `/api/overview` | None | Visible core notes, word count, truncation flag, areas and hubs. |
+| `/api/search` | `q` (up to 1,024 UTF-8 bytes), `area`, `type`, `priority`, `status`, `history`, `limit` (1–100, default 20) | `results` in relevance order. Each summary carries id, title, type, area, priority, status and summary. |
+| `/api/notes/{id}` | `section` (up to 256 UTF-8 bytes), `history` | Authorized Markdown, metadata and visible hub members. A full private read exposes the edit precondition `content_hash` only when the visible content matches the stored note. |
+| `/api/graph` | `area`, `type`, `priority`, `status`, `sensitivity`, `history` | `nodes` with summary, area and sensitivity, `edges` with source, target, kind and section, and a null `center`. |
+| `/api/notes/{id}/neighbors` | Graph filters plus `hops` (1–2, default 1) | The same shape, restricted to connected nodes reachable through matching nodes. Filtering out the center returns an empty graph. |
+| `/api/health` | None | Restricted listener only. Checked counts, index status and issues with subject, code, severity, field and safe message. |
+
+Graph options can be derived from the caller's unfiltered graph. Unknown and invisible notes both
+return the same 404. Health returns 403 on the public listener. The SQLite graph projection advances
+to version 3 and rebuilds from the content repository on startup. The state database and MCP read
+response fields retain their existing formats.

@@ -32,7 +32,7 @@ from cerebro.domain.access import AccessCeiling
 from cerebro.domain.enums import Sensitivity, Status
 from cerebro.domain.errors import InvalidValueError
 
-SCHEMA_VERSION: Final = 2
+SCHEMA_VERSION: Final = 3
 APPLICATION_ID: Final = 0x43524252  # "CRBR": marks an SQLite file as a Cérebro index (``PRAGMA application_id``)
 _SQLITE_MAGIC: Final = b"SQLite format 3\x00"
 _APPLICATION_ID_OFFSET: Final = 68
@@ -69,6 +69,7 @@ _SCHEMA: Final = (
     ),
     """CREATE TABLE graph_nodes (
         note_id TEXT PRIMARY KEY,
+        area TEXT NOT NULL,
         summary TEXT NOT NULL,
         title TEXT NOT NULL,
         type TEXT NOT NULL,

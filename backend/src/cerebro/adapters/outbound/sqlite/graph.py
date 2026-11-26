@@ -14,11 +14,11 @@ from cerebro.domain.errors import InvalidValueError
 from cerebro.domain.links import Link, LinkKind, WikiLink
 from cerebro.domain.note import NoteId
 from cerebro.domain.note_ref import NoteRef
-from cerebro.domain.vocabulary import NoteType
+from cerebro.domain.vocabulary import Area, NoteType
 
 _REVISION_KEY: Final = "graph_revision"
 _NODE_COLUMNS: Final = (
-    "note_id, title, summary, type, priority, sensitivity, status, hub, superseded_by, "
+    "note_id, title, summary, type, area, priority, sensitivity, status, hub, superseded_by, "
     "related, body_links, loose_body_targets"
 )
 _EDGE_ORDER: Final = "ORDER BY e.source, e.target, e.kind, e.section"
@@ -30,6 +30,7 @@ def _ref(row: tuple[object, ...]) -> NoteRef:
         title,
         summary,
         note_type,
+        area,
         priority,
         sensitivity,
         status,
@@ -44,6 +45,7 @@ def _ref(row: tuple[object, ...]) -> NoteRef:
         title=str(title),
         summary=str(summary),
         type=NoteType(str(note_type)),
+        area=Area(str(area)),
         priority=Priority(str(priority)),
         sensitivity=Sensitivity(str(sensitivity)),
         status=Status(str(status)),
@@ -72,12 +74,13 @@ def _delete(connection: sqlite3.Connection, note_id: str) -> None:
 def _store(connection: sqlite3.Connection, ref: NoteRef) -> None:
     _delete(connection, ref.id.value)
     connection.execute(
-        f"INSERT INTO graph_nodes ({_NODE_COLUMNS}, sens_rank) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        f"INSERT INTO graph_nodes ({_NODE_COLUMNS}, sens_rank) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (
             ref.id.value,
             ref.title,
             ref.summary,
             ref.type.value,
+            ref.area.value,
             ref.priority.value,
             ref.sensitivity.value,
             ref.status.value,

@@ -8,6 +8,7 @@ from fastapi.exceptions import RequestValidationError
 from mcp.server.transport_security import RequestBodyLimitMiddleware
 from starlette.middleware.base import RequestResponseEndpoint
 from starlette.responses import JSONResponse, Response
+from starlette.types import ASGIApp, Receive, Scope, Send
 
 from cerebro.adapters.inbound.input_limits import MAX_INPUT_BYTES
 from cerebro.application.browser import AuthenticationFailed, BrowserAuth, BrowserBinding, CsrfRejected
@@ -16,6 +17,19 @@ from cerebro.domain.access import AccessCeiling, AccessContext
 _NO_STORE = {"Cache-Control": "no-store"}
 _SESSION_PATHS = frozenset({"/api/login", "/api/logout", "/api/session"})
 _COOKIE_NAMES = {"private": "__Host-cerebro_private", "public": "__Host-cerebro_public"}
+
+
+class BrowserBodyLimit:
+    """Reject GET/HEAD bodies at the first nonempty frame and bound other requests before routing."""
+
+    def __init__(self, app: ASGIApp) -> None:
+        self._read = RequestBodyLimitMiddleware(app, max_body_size=0)
+        self._write = RequestBodyLimitMiddleware(app, max_body_size=MAX_INPUT_BYTES)
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        read = scope["type"] == "http" and scope["method"] in {"GET", "HEAD"}
+        limiter = self._read if read else self._write
+        await limiter(scope, receive, send)
 
 
 def _error(status: int, message: str) -> JSONResponse:
@@ -65,6 +79,8 @@ def browser_api(auth: BrowserAuth, binding: BrowserBinding, ceiling: AccessCeili
 
     @app.middleware("http")
     async def authenticate(request: Request, call_next: RequestResponseEndpoint) -> Response:
+        if len(request.scope["query_string"]) > 8192:
+            return _error(422, "Invalid request.")
         path = request.scope["path"]
         if path in _SESSION_PATHS and request.scope["query_string"]:
             return _error(422, "Invalid request.")
@@ -86,7 +102,7 @@ def browser_api(auth: BrowserAuth, binding: BrowserBinding, ceiling: AccessCeili
             request.state.session_id = session_id
         return await call_next(request)
 
-    app.add_middleware(RequestBodyLimitMiddleware, max_body_size=MAX_INPUT_BYTES)
+    app.add_middleware(BrowserBodyLimit)
 
     @app.middleware("http")
     async def responses(request: Request, call_next: RequestResponseEndpoint) -> Response:
@@ -104,6 +120,8 @@ def browser_api(auth: BrowserAuth, binding: BrowserBinding, ceiling: AccessCeili
             # No credentials, note fields or proposal contents may reach server error logs.
             return _error(503, "Service unavailable.")
         if response.status_code == 413:
+            if request.method in {"GET", "HEAD"}:
+                return _error(422, "Invalid request.")
             return _error(413, "Request body too large.")
         response.headers["Cache-Control"] = "no-store"
         return response
@@ -128,8 +146,6 @@ def browser_api(auth: BrowserAuth, binding: BrowserBinding, ceiling: AccessCeili
 
     @app.get("/api/session")
     async def session(request: Request) -> Response:
-        if await request.body():
-            return _error(422, "Invalid request.")
         return JSONResponse(session_data(request.state.csrf_token))
 
     @app.post("/api/logout")

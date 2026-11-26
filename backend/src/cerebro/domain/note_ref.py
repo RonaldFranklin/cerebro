@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from cerebro.domain.enums import Priority, Sensitivity, Status
 from cerebro.domain.links import Link, WikiLink, extract_wikilinks, links_from_references, loose_link_targets
 from cerebro.domain.note import Note, NoteId
-from cerebro.domain.vocabulary import HUB, NoteType
+from cerebro.domain.vocabulary import HUB, Area, NoteType
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -19,6 +19,7 @@ class NoteRef:
     title: str
     summary: str
     type: NoteType
+    area: Area
     priority: Priority
     sensitivity: Sensitivity
     status: Status
@@ -36,6 +37,7 @@ class NoteRef:
             title=note.title,
             summary=note.summary,
             type=note.type,
+            area=note.area,
             priority=note.priority,
             sensitivity=note.sensitivity,
             status=note.status,
