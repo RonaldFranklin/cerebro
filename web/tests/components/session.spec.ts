@@ -106,25 +106,29 @@ test("retry signs out the current cookie after a cross-tab session change", asyn
   await expect(page.getByLabel("Password")).toBeVisible();
 });
 
-test("a later focus check supersedes an older in-flight response", async ({ page }) => {
+test("a new focus cancels the older request and verifies the current session", async ({ page }) => {
   let calls = 0;
   let finish!: () => void;
   await page.route("**/api/session", async route => {
-    calls++;
-    if (calls === 2) {
+    if (++calls === 2) {
       await new Promise<void>(resolve => { finish = resolve; });
-      await route.fulfill({ json: session });
-    } else await route.fulfill(calls === 1 ? { json: session } : { status: 401, json: {} });
+      await route.fulfill({ status: 401, json: {} });
+    } else await route.fulfill({ json: session });
   });
   await page.route("**/api/overview", route => route.fulfill({ json: overview }));
   await page.goto("/");
-  await expect(page.getByText("Private fixture", { exact: true })).toBeVisible();
+  const note = page.getByText("Private fixture", { exact: true });
+  await expect(note).toBeVisible();
   await page.evaluate(() => window.dispatchEvent(new Event("focus")));
   await expect.poll(() => calls).toBe(2);
+  const aborted = page.waitForEvent("requestfailed", {
+    predicate: request => request.url().endsWith("/api/session") && request.failure()?.errorText === "net::ERR_ABORTED",
+    timeout: 3000,
+  });
   await page.evaluate(() => window.dispatchEvent(new Event("focus")));
-  await expect(page.getByLabel("Password")).toBeVisible();
+  await aborted;
   finish();
-  await expect(page.getByText("Private fixture", { exact: true })).toHaveCount(0);
+  await expect(note).toBeVisible();
 });
 
 test("a slow resumed-session response cannot outlive its server deadline", async ({ page }) => {

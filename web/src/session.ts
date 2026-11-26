@@ -11,7 +11,7 @@ type State =
 
 export class BrowserSession {
   private generation = 0;
-  private probe = 0;
+  private probe?: AbortController;
   private absoluteDeadline = Infinity;
   private state: State = { kind: "checking" };
   private readonly listeners = new Set<() => void>();
@@ -44,6 +44,8 @@ export class BrowserSession {
   }
 
   private reset(state: State) {
+    this.probe?.abort();
+    this.probe = undefined;
     this.lifetime.abort();
     this.lifetime = new AbortController();
     window.clearTimeout(this.idleTimer);
@@ -111,13 +113,15 @@ export class BrowserSession {
 
   revalidate = async () => {
     if (this.state.kind !== "active") return;
-    const probe = ++this.probe;
+    this.probe?.abort();
+    const probe = new AbortController();
+    this.probe = probe;
     this.set({ ...this.state, checking: true });
-    const signal = this.lifetime.signal;
+    const signal = probe.signal;
     const started = performance.now();
     try {
       const session = await currentSession(signal);
-      if (signal.aborted || probe !== this.probe || this.state.kind !== "active") return;
+      if (signal.aborted || this.state.kind !== "active") return;
       if (session.csrf_token !== this.state.session.csrf_token || session.ceiling !== this.state.session.ceiling) {
         this.activate(session, started);
       } else if (this.scheduleDeadline(session, started)) {
@@ -125,10 +129,12 @@ export class BrowserSession {
         this.set({ ...this.state, checking: false });
       }
     } catch (error) {
-      if (!signal.aborted && probe === this.probe) {
+      if (!signal.aborted) {
         if (error instanceof ApiError && error.status === 401) this.expire();
         else this.reset({ kind: "offline" });
       }
+    } finally {
+      if (this.probe === probe) this.probe = undefined;
     }
   };
 
