@@ -23,7 +23,7 @@ from cerebro.application.index_state import index_is_stale
 from cerebro.application.ports import NoteChange, SearchQuery
 from cerebro.bootstrap.container import Container, Serialized, StateDirectoryError, WriterLock, build_container
 from cerebro.domain.access import AccessCeiling, AccessContext, Agent, Scope
-from cerebro.domain.commit_message import CommitMessage
+from cerebro.domain.commit_message import AgentWriteCommit, CommitMessage
 from cerebro.domain.enums import Priority, Sensitivity
 from cerebro.domain.note import Note, NoteId
 from cerebro.domain.proposal import ProposalKind, ProposedContent
@@ -214,7 +214,7 @@ class TestWriterLock:
         real_apply = container.notes.apply
         failing_id = NoteId("note-that-fails")
 
-        def slow_apply(changes: Sequence[NoteChange], message: CommitMessage) -> str:
+        def slow_apply(changes: Sequence[NoteChange], message: CommitMessage | AgentWriteCommit) -> str:
             # Unserialised, B reads the old head while A is still before its commit, then commits after A.
             time.sleep(0.2 if changes[0].note.id == failing_id else 0.4)
             return real_apply(changes, message)

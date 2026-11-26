@@ -178,6 +178,31 @@ class TestSearchNotes:
 
 
 class TestReadNote:
+    def test_only_authenticated_writer_gets_base_on_full_read(self, world: World) -> None:
+        read = ReadNote(world.notes, world.graph)
+        request = ReadNoteRequest(note_id=NID("infrastructure"))
+        writer = replace(ctx(scopes=frozenset({Scope.READ, Scope.WRITE})), token_id="writer")
+        complete = read.execute(request, writer)
+        assert complete.base_hash == complete.content_hash
+        for other in (ctx(owner=True), replace(writer, token_id=None), replace(ctx(), token_id="reader")):
+            assert read.execute(request, other).base_hash is None
+        section = ReadNoteRequest(note_id=NID("server-ssh-access"), section="SSH")
+        assert read.execute(section, writer).base_hash is None
+
+    @pytest.mark.parametrize("field", ["body", "title", "summary", "related", "hub", "superseded_by"])
+    def test_filtered_field_withholds_base_hash(self, field: str, world: World) -> None:
+        target = NID("old-proxy")
+        value: object = (target,) if field == "related" else target
+        if field in {"title", "summary", "body"}:
+            value = "Legacy text mentioning `[[old-proxy|alias]]`."
+        note = world.add(id=NID("legacy-note"), **{field: value})
+        read = ReadNote(world.notes, world.graph)
+        writer = replace(ctx(scopes=frozenset({Scope.READ, Scope.WRITE})), token_id="writer")
+        request = ReadNoteRequest(note_id=note.id)
+        assert read.execute(request, writer).base_hash is None
+        full = read.execute(replace(request, include_history=True), writer)
+        assert full.base_hash == full.content_hash
+
     def test_reads_a_note(self, world: World) -> None:
         view = ReadNote(world.notes, world.graph).execute(ReadNoteRequest(note_id=NID("server-ssh-access")), ctx())
         assert view.id == NID("server-ssh-access")

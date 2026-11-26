@@ -7,7 +7,7 @@ enforce a clean content working tree; the filesystem adapter refuses writes on a
 
 **Writer lock (ADR-0002).** Reading ``head()``, ``apply`` and advancing the index revision must be serialised,
 otherwise a concurrent commit between them could make an index look fresh and hide a failed index update (see
-``cerebro.application.index_state``). Every use case that commits or rewrites the indexes (``ApplyProposal``,
+``cerebro.application.index_state``). Each use case that commits or rebuilds indexes (``AgentWrite``, ``ApplyProposal``,
 ``OwnerEditNote``, ``RebuildIndex``) runs under ``WriterLock``: one ``threading.Lock`` for the threads of this
 process and one ``flock`` file in the state directory for other processes. The filesystem adapter keeps its own
 lock inside ``.git/`` for the commit itself; the two never share a file, so they cannot deadlock.
@@ -33,8 +33,10 @@ from cerebro.adapters.outbound.sqlite import (
     SqliteTokenStore,
 )
 from cerebro.adapters.outbound.sqlite.login_attempts import SqliteLoginAttempts
+from cerebro.adapters.outbound.sqlite.write_attempts import SqliteWriteAttemptStore
 from cerebro.adapters.outbound.system import SystemIdGenerator, UtcClock
 from cerebro.adapters.outbound.system.sessions import MemorySessions
+from cerebro.application.agent_write import AgentWriteRequest, AgentWriteResult
 from cerebro.application.browser import BrowserAuth
 from cerebro.application.dto import (
     AdmissionResult,
@@ -107,6 +109,7 @@ from cerebro.application.use_cases import (
     SubmitProposal,
     ValidateProposal,
 )
+from cerebro.application.use_cases.agent_write import AgentWrite
 from cerebro.bootstrap.browser import owner_credentials
 from cerebro.bootstrap.settings import Settings
 from cerebro.domain.access import AccessCeiling, AccessContext
@@ -179,6 +182,7 @@ class UseCases:
     read_note: ContextUseCase[ReadNoteRequest, NoteView]
     get_neighbors: ContextUseCase[GetNeighborsRequest, GraphView]
     get_graph: ContextUseCase[GetGraphRequest, GraphView]
+    agent_write: ContextUseCase[AgentWriteRequest, AgentWriteResult]
     submit_proposal: ContextUseCase[SubmitProposalRequest, AdmissionResult]
     amend_proposal: ContextUseCase[AmendProposalRequest, AmendmentResult]
     validate_proposal: ContextUseCase[ProposalIdRequest, ProposalOutcome]
@@ -231,7 +235,18 @@ class Container:
         intake = AdmitProposal(
             SubmitProposal(notes, clock, ids), validator, curate, proposals, clock, settings.proposal_limits
         )
+        write = AgentWrite(
+            notes,
+            search,
+            graph,
+            SqliteWriteAttemptStore(state_dir / STATE_FILE),
+            clock,
+            ids,
+            vocabulary,
+            settings.writes_per_hour,
+        )
         self.use_cases = UseCases(
+            agent_write=Serialized(write, lock),
             get_overview=GetOverview(notes, search),
             search_notes=SearchNotes(search),
             read_note=ReadNote(notes, graph),

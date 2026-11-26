@@ -35,4 +35,13 @@ changes. Use one branch per step from updated main, independent diff review, gre
 
 ## Status
 
-**Planned.** Steps 1–4 above. Implementation and runtime acceptance are pending.
+**Implemented.** Step 1 was approved in PR #68. The step 2 application writer runs under the shared
+writer lock. Creates record an opaque token-scoped request key and an encrypted content fingerprint in the same Git commit
+as the note. The durable receipt consists of its note id and original revision. Feedback from validation
+accompanies a fresh write. An unchanged update returns a bounded finding without a commit. The rolling-hour limit defaults to 20 and uses the state database.
+Before a write narrows visibility, the writer evicts the older search and graph projections. Startup
+compares both index revisions with HEAD and rebuilds after interrupted indexing.
+
+**Tested.** Application tests and shared fake/real storage contracts exercise scope, quota, replay,
+ceilings and Git attribution. Real-container tests cover two writers sharing a base, interrupted indexing
+and recovery on restart. MCP cutover, browser history and manual client acceptance are pending.

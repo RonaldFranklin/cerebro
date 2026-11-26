@@ -41,6 +41,7 @@ tree clean); replacing an encrypted file by a plaintext one declaring ``internal
 note; listing a folder reads its entries by path (an attacker would need write access to the repository directory).
 """
 
+import base64
 import os
 import time
 from collections.abc import Sequence
@@ -62,8 +63,9 @@ from cerebro.adapters.outbound.filesystem.safeio import (
 from cerebro.adapters.outbound.git import GitError, GitRepo
 from cerebro.application.errors import DecryptionError
 from cerebro.application.ports import Cipher, NoteChange
-from cerebro.domain.commit_message import CommitMessage
-from cerebro.domain.content_hash import content_hash
+from cerebro.application.ports.notes import CreateReceipt, check_agent_commit
+from cerebro.domain.commit_message import AgentWriteCommit, CommitMessage
+from cerebro.domain.content_hash import content_hash, is_content_hash
 from cerebro.domain.enums import Sensitivity
 from cerebro.domain.errors import ContentConflict, InvalidValueError
 from cerebro.domain.note import Note, NoteId
@@ -103,6 +105,10 @@ class _Prepared:
     mode: int
 
 
+_RECEIPT_TRAILER = "Write-Receipt: "
+_RECEIPT_DOMAIN = b"cerebro/create-receipt/v1\x00"
+
+
 class FilesystemNoteRepository:
     """See the module docstring. ``git`` must manage the repository rooted at ``root``."""
 
@@ -137,6 +143,46 @@ class FilesystemNoteRepository:
 
     def head(self) -> str | None:
         return self._git.head()
+
+    def find_create(self, request_key: str) -> CreateReceipt | None:
+        if not is_content_hash(request_key):
+            raise InvalidValueError("request_key", "expected a SHA-256 digest")
+        try:
+            found = self._git.find_create_commit(request_key)
+        except GitError:
+            raise NoteWriteError("could not inspect create history") from None
+        if found is None:
+            return None
+        revision, message = found
+        header, _, trailer = message.rpartition("\n")
+        lines = header.splitlines()
+        if len(lines) == 4 and trailer.startswith(_RECEIPT_TRAILER):
+            try:
+                sealed = base64.b64decode(trailer.removeprefix(_RECEIPT_TRAILER), validate=True)
+                plaintext = self._cipher.decrypt(sealed)
+                binding = _RECEIPT_DOMAIN + header.encode("ascii") + b"\x00"
+                if plaintext.startswith(binding):
+                    fingerprint = plaintext[len(binding) :].decode("ascii")
+                    commit = AgentWriteCommit(
+                        note_id=NoteId(lines[0].removeprefix("Add note: ")),
+                        written_by=lines[2].removeprefix("Written-by: "),
+                        request_key=request_key,
+                        fingerprint=fingerprint,
+                    )
+                    if commit.render() == header:
+                        return CreateReceipt(note_id=commit.note_id, revision=revision, fingerprint=fingerprint)
+            except DecryptionError, ValueError:
+                pass
+        raise NoteWriteError("invalid create receipt in content history")
+
+    def _render_commit(self, message: CommitMessage | AgentWriteCommit) -> str:
+        header = message.render()
+        if isinstance(message, AgentWriteCommit) and message.fingerprint is not None:
+            # Bind the encrypted digest to its public note, authenticated actor and token-scoped request key.
+            binding = _RECEIPT_DOMAIN + header.encode("ascii") + b"\x00"
+            sealed = self._cipher.encrypt(binding + message.fingerprint.encode("ascii"))
+            return f"{header}\n{_RECEIPT_TRAILER}{base64.b64encode(sealed).decode('ascii')}"
+        return header
 
     def _existing_paths(self, note_id: NoteId) -> list[str]:
         for folder in FOLDERS:
@@ -240,7 +286,9 @@ class FilesystemNoteRepository:
 
     # -- writing -------------------------------------------------------------------------------------------------
 
-    def apply(self, changes: Sequence[NoteChange], message: CommitMessage) -> str:
+    def apply(self, changes: Sequence[NoteChange], message: CommitMessage | AgentWriteCommit) -> str:
+        if isinstance(message, AgentWriteCommit):
+            check_agent_commit(changes, message)
         if not changes:
             raise InvalidValueError("changes", "at least one change is required")
         ids = [change.note.id for change in changes]
@@ -322,7 +370,9 @@ class FilesystemNoteRepository:
             raise NoteWriteError("could not inspect the content repository; nothing was written") from None
         return before
 
-    def _write(self, prepared: Sequence[_Prepared], message: CommitMessage, before: frozenset[str]) -> str:
+    def _write(
+        self, prepared: Sequence[_Prepared], message: CommitMessage | AgentWriteCommit, before: frozenset[str]
+    ) -> str:
         planned = [item.relative for item in prepared]
         created = [item.relative for item in prepared if item.change.expected_hash is None]
         modified = [item.relative for item in prepared if item.change.expected_hash is not None]
@@ -330,7 +380,7 @@ class FilesystemNoteRepository:
             head_before = self._git.head()
         except GitError:
             raise NoteWriteError("could not inspect the content repository; nothing was written") from None
-        rendered = message.render()
+        rendered = self._render_commit(message)
         try:
             for item in prepared:
                 write_file_atomic(self._root, item.relative, item.data, mode=item.mode)

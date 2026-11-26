@@ -4,7 +4,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Protocol
 
-from cerebro.domain.commit_message import CommitMessage
+from cerebro.domain.commit_message import AgentWriteCommit, CommitMessage
 from cerebro.domain.errors import InvalidValueError
 from cerebro.domain.note import Note, NoteId
 from cerebro.domain.note_ref import NoteRef
@@ -26,6 +26,21 @@ class NoteChange:
             raise InvalidValueError("note", "expected a Note")
         if self.expected_hash is not None and not isinstance(self.expected_hash, str):
             raise InvalidValueError("expected_hash", "expected a string or None")
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class CreateReceipt:
+    note_id: NoteId
+    revision: str
+    fingerprint: str
+
+
+def check_agent_commit(changes: Sequence[NoteChange], message: AgentWriteCommit) -> None:
+    """Keep the receipt and authenticated attribution tied to the single change committed."""
+    if len(changes) != 1 or changes[0].note.id != message.note_id:
+        raise InvalidValueError("changes", "agent writes must identify exactly one changed note")
+    if (changes[0].expected_hash is None) != (message.request_key is not None):
+        raise InvalidValueError("request", "a request key is required only on create")
 
 
 class NoteRepository(Protocol):
@@ -52,7 +67,11 @@ class NoteRepository(Protocol):
         """
         ...
 
-    def apply(self, changes: Sequence[NoteChange], message: CommitMessage) -> str:
+    def find_create(self, request_key: str) -> CreateReceipt | None:
+        """Locate the committed create on the current history, independently of derived index state."""
+        ...
+
+    def apply(self, changes: Sequence[NoteChange], message: CommitMessage | AgentWriteCommit) -> str:
         """Write all ``changes`` and record them as **one** commit with ``message``; return the revision id.
 
         All-or-nothing: if any change fails its check, nothing is written and nothing is committed.

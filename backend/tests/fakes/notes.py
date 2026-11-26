@@ -2,9 +2,9 @@
 
 from collections.abc import Sequence
 
-from cerebro.application.ports.notes import NoteChange
-from cerebro.domain.commit_message import CommitMessage
-from cerebro.domain.content_hash import content_hash
+from cerebro.application.ports.notes import CreateReceipt, NoteChange, check_agent_commit
+from cerebro.domain.commit_message import AgentWriteCommit, CommitMessage
+from cerebro.domain.content_hash import content_hash, is_content_hash
 from cerebro.domain.errors import ContentConflict, InvalidValueError
 from cerebro.domain.note import Note, NoteId
 from cerebro.domain.note_ref import NoteRef
@@ -13,7 +13,7 @@ from cerebro.domain.note_ref import NoteRef
 class InMemoryNoteRepository:
     def __init__(self) -> None:
         self._notes: dict[NoteId, Note] = {}
-        self.commits: list[tuple[str, CommitMessage, tuple[NoteId, ...]]] = []
+        self.commits: list[tuple[str, CommitMessage | AgentWriteCommit, tuple[NoteId, ...]]] = []
 
     def get(self, note_id: NoteId) -> Note | None:
         return self._notes.get(note_id)
@@ -27,7 +27,18 @@ class InMemoryNoteRepository:
     def head(self) -> str | None:
         return self.commits[-1][0] if self.commits else None
 
-    def apply(self, changes: Sequence[NoteChange], message: CommitMessage) -> str:
+    def find_create(self, request_key: str) -> CreateReceipt | None:
+        if not is_content_hash(request_key):
+            raise InvalidValueError("request_key", "expected a SHA-256 digest")
+        for revision, message, _ in self.commits:
+            if isinstance(message, AgentWriteCommit) and message.request_key == request_key:
+                assert message.fingerprint is not None
+                return CreateReceipt(note_id=message.note_id, revision=revision, fingerprint=message.fingerprint)
+        return None
+
+    def apply(self, changes: Sequence[NoteChange], message: CommitMessage | AgentWriteCommit) -> str:
+        if isinstance(message, AgentWriteCommit):
+            check_agent_commit(changes, message)
         if not changes:
             raise InvalidValueError("changes", "at least one change is required")
         ids = [c.note.id for c in changes]

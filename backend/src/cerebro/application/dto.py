@@ -238,6 +238,7 @@ class NoteView:
 
     ``members`` is ``None`` for ordinary notes and, for a hub, the members the caller may see (ADR-0015).
     ``content_hash`` is of the whole stored note, whichever part of the body is returned.
+    ``base_hash`` is available to authenticated writers only on a complete, unredacted read.
     ``hub``, ``related`` and ``superseded_by`` list only references whose target the caller may see; the others are
     dropped, and wikilinks in ``body`` to notes the caller may not see are replaced by the redaction marker.
     """
@@ -262,6 +263,7 @@ class NoteView:
     body: str
     members: tuple[HubMember, ...] | None = None
     visible_content_hash: str | None = None
+    base_hash: str | None = None
 
     @classmethod
     def from_note(
@@ -274,21 +276,34 @@ class NoteView:
         superseded_by: NoteId | None,
         section: str | None = None,
         members: tuple[HubMember, ...] | None = None,
+        visible_title: str | None = None,
+        visible_summary: str | None = None,
+        authenticated_writer: bool = False,
     ) -> NoteView:
         stored_hash = content_hash(note)
+        title = note.title if visible_title is None else visible_title
+        summary = note.summary if visible_summary is None else visible_summary
+        base_hash = None
         visible_hash = None
         if section is None:
-            visible = replace(note, body=body, hub=hub, related=related, superseded_by=superseded_by)
-            visible_hash = stored_hash if visible == note else content_hash(visible)
+            visible = replace(
+                note, title=title, summary=summary, body=body, hub=hub, related=related, superseded_by=superseded_by
+            )
+            if visible == note:
+                visible_hash = stored_hash
+                if authenticated_writer:
+                    base_hash = stored_hash
+            else:
+                visible_hash = content_hash(visible)
         return cls(
             id=note.id,
-            title=note.title,
+            title=title,
             type=note.type,
             area=note.area,
             priority=note.priority,
             sensitivity=note.sensitivity,
             status=note.status,
-            summary=note.summary,
+            summary=summary,
             hub=hub,
             related=related,
             superseded_by=superseded_by,
@@ -298,6 +313,7 @@ class NoteView:
             review_by=note.review_by,
             content_hash=stored_hash,
             visible_content_hash=visible_hash,
+            base_hash=base_hash,
             section=section,
             body=body,
             members=members,

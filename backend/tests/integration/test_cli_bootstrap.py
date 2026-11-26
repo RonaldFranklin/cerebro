@@ -103,6 +103,17 @@ def test_missing_working_directory_is_a_configuration_error(tmp_path: Path, monk
         load_settings(file, environment)
 
 
+def test_write_quota_configuration(tmp_path: Path) -> None:
+    file = tmp_path / "settings.toml"
+    file.write_text(SAMPLE)
+    assert load_settings(file, {}).writes_per_hour == 20
+    file.write_text(SAMPLE + "writes_per_hour = 7\n")
+    assert load_settings(file, {}).writes_per_hour == 7
+    assert load_settings(file, {"CEREBRO_WRITES_PER_HOUR": "4"}).writes_per_hour == 4
+    with pytest.raises(ConfigurationError):
+        load_settings(file, {"CEREBRO_WRITES_PER_HOUR": "0"})
+
+
 def test_quota_configuration(tmp_path: Path) -> None:
     file = tmp_path / "settings.toml"
     file.write_text(SAMPLE)

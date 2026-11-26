@@ -6,7 +6,8 @@ from datetime import date
 import pytest
 
 from cerebro.application.ports import NoteChange, NoteRepository
-from cerebro.domain.commit_message import CommitMessage
+from cerebro.application.ports.notes import CreateReceipt
+from cerebro.domain.commit_message import AgentWriteCommit, CommitMessage, create_request_key
 from cerebro.domain.content_hash import content_hash
 from cerebro.domain.enums import Sensitivity
 from cerebro.domain.errors import ContentConflict, InvalidValueError
@@ -27,6 +28,28 @@ class NoteRepositoryContract:
     @pytest.fixture
     def repo(self) -> NoteRepository:
         raise NotImplementedError
+
+    def test_create_receipt_survives_later_commits(self, repo: NoteRepository) -> None:
+        note = make_note()
+        key = create_request_key("token-one", "draft-one")
+        fingerprint = "7" * 64
+        message = AgentWriteCommit(note_id=note.id, written_by="test-agent", request_key=key, fingerprint=fingerprint)
+        assert repo.find_create(key) is None
+        revision = repo.apply([NoteChange(note=note)], message)
+        newer = replace(note, body="New body.")
+        repo.apply(
+            [NoteChange(note=newer, expected_hash=content_hash(note))],
+            AgentWriteCommit(note_id=note.id, written_by="other-agent"),
+        )
+        assert repo.find_create(key) == CreateReceipt(note_id=note.id, revision=revision, fingerprint=fingerprint)
+        assert repo.find_create(create_request_key("other-token", "draft-one")) is None
+        assert repo.head() != revision
+
+    def test_agent_commit_must_match_change(self, repo: NoteRepository) -> None:
+        note = make_note()
+        with pytest.raises(InvalidValueError):
+            repo.apply([NoteChange(note=note)], AgentWriteCommit(note_id=note.id, written_by="test-agent"))
+        assert repo.head() is None
 
     def test_get_unknown_returns_none(self, repo: NoteRepository) -> None:
         assert repo.get(NoteId("nothing-here")) is None

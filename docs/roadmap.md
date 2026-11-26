@@ -152,6 +152,8 @@ The owner authorized implementation and merges on 2026-11-26. Agents with explic
 Git commits, optimistic concurrency and per-token limits. The MCP write guide is loaded on demand.
 The private owner UI replaces the Inbox with Recent changes, including links to notes and diffs.
 
+The application and persistence step is implemented and tested. MCP cutover and owner history follow.
+
 **Acceptance:** demonstrate create and update through MCP, safe validation and conflict recovery,
 upgrade without privilege escalation, and an owner inspecting the actor, time, note and diff.
 Document the isolated Claude Code and Codex walkthrough and report observed outcomes.

@@ -4,13 +4,17 @@ Every value is validated, never silently altered: anything that could add a line
 characters raises ``InvalidValueError``. Subjects are built from the note id (a slug), never from free text.
 """
 
+import hashlib
+import json
 import re
 import unicodedata
 from dataclasses import dataclass
 from typing import Final
 
 from cerebro.domain.access import validate_agent_name, validate_curator_name
+from cerebro.domain.content_hash import is_content_hash
 from cerebro.domain.errors import InvalidValueError
+from cerebro.domain.note import NoteId
 
 MAX_SUBJECT_LENGTH = 100
 _ATTRIBUTION: Final = re.compile(r"[A-Za-z0-9][A-Za-z0-9._/@+-]{0,99}")
@@ -91,3 +95,37 @@ class CommitMessage:
             f"Approved-by: {self.approved_by}\n"
             f"Proposal-Id: {self.proposal_id}"
         )
+
+
+def create_request_key(token_id: str, request_id: str) -> str:
+    """A stable opaque identifier for this authenticated token's client request."""
+    encoded = json.dumps([token_id, request_id], ensure_ascii=True, separators=(",", ":"))
+    return hashlib.sha256(encoded.encode("ascii")).hexdigest()
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class AgentWriteCommit:
+    note_id: NoteId
+    written_by: str
+    request_key: str | None = None
+    fingerprint: str | None = None
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.note_id, NoteId):
+            raise InvalidValueError("note_id", "expected a note id")
+        validate_agent_name(self.written_by)
+        if self.request_key is None and self.fingerprint is None:
+            return
+        if not is_content_hash(self.request_key) or not is_content_hash(self.fingerprint):
+            raise InvalidValueError("request", "a create requires two SHA-256 digests")
+
+    @property
+    def subject(self) -> str:
+        verb = "Add" if self.request_key is not None else "Update"
+        return f"{verb} note: {self.note_id.value}"
+
+    def render(self) -> str:
+        message = f"{self.subject}\n\nWritten-by: {self.written_by}"
+        if self.request_key is not None:
+            message += f"\nWrite-Request: {self.request_key}"
+        return message

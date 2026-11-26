@@ -220,10 +220,11 @@ class TestAccessContext:
 
 class TestScope:
     def test_minimal_set(self) -> None:
-        assert {s.value for s in Scope} == {"read", "propose"}
+        assert {s.value for s in Scope} == {"read", "propose", "write"}
 
     def test_parse(self) -> None:
         assert Scope.parse("read") is Scope.READ
+        assert Scope.parse("write") is Scope.WRITE
         with pytest.raises(InvalidValueError) as excinfo:
             Scope.parse("admin")
         assert excinfo.value.field == "scope"
