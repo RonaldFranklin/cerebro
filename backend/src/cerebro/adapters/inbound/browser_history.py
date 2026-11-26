@@ -14,6 +14,9 @@ def install_browser_history(app: FastAPI, history: OwnerHistory) -> None:
     # A continuation can point to an unattributed or unreadable revision. Keep its id private.
     cursors = Fernet(Fernet.generate_key())
 
+    def encode(cursor: HistoryCursor | None) -> str | None:
+        return cursors.encrypt(f"{cursor.head}:{cursor.start}".encode()).decode() if cursor else None
+
     def decode(cursor: str | None) -> HistoryCursor | None:
         if cursor is None:
             return None
@@ -26,9 +29,13 @@ def install_browser_history(app: FastAPI, history: OwnerHistory) -> None:
             page = history.list(request.state.ctx, decode(cursor))
         except InvalidToken, ChangeUnavailable:
             return JSONResponse({"error": "Change unavailable."}, status_code=404)
-        following = page.next_cursor
-        next_cursor = cursors.encrypt(f"{following.head}:{following.start}".encode()).decode() if following else None
-        return JSONResponse({"changes": [asdict(row) for row in page.changes], "next_cursor": next_cursor})
+        return JSONResponse(
+            {
+                "changes": [asdict(row) for row in page.changes],
+                "next_cursor": encode(page.next_cursor),
+                "page_cursor": encode(page.page_cursor),
+            }
+        )
 
     @app.get("/api/changes/{revision}")
     def change_detail(revision: str, request: Request, cursor: str | None = None) -> JSONResponse:

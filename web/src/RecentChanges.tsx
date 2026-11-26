@@ -52,14 +52,12 @@ export function RecentChangesScreen({api}: {api: ApiClient}) {
   const history = useInfiniteQuery({
     queryKey: ["changes", "list"],
     initialPageParam: null as string | null,
-    queryFn: ({signal, pageParam}) => api.read<{changes: Change[]; next_cursor: string | null}>(
+    queryFn: ({signal, pageParam}) => api.read<{changes: Change[]; next_cursor: string | null; page_cursor: string | null}>(
       pageParam ? `/api/changes?cursor=${encodeURIComponent(pageParam)}` : "/api/changes", signal),
     getNextPageParam: page => page.next_cursor,
   });
-  const changes = history.data?.pages.flatMap((page, index) => {
-    const cursor = history.data.pageParams[index];
-    return page.changes.map(change => ({change, cursor: typeof cursor === "string" ? cursor : null}));
-  }) ?? [];
+  const changes = history.data?.pages.flatMap(page =>
+    page.changes.map(change => ({change, cursor: page.page_cursor}))) ?? [];
   const denied = history.error instanceof ApiError && [401, 403].includes(history.error.status);
   const expired = history.isFetchNextPageError && history.error instanceof ApiError && history.error.status === 404;
   return <article className="changes-view">

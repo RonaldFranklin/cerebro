@@ -64,24 +64,26 @@ class OwnerHistory:
         if cursor is None:
             return next(iter(recent), None), recent
         # The browser authenticated this continuation. Its original HEAD must still be on the current chain.
-        if cursor.head not in recent or not is_revision(cursor.start):
+        if not recent or not is_revision(cursor.start):
             raise ChangeUnavailable()
-        return recent[0], self._history.recent(cursor.start)
+        verify_head = None if cursor.head in recent else cursor.head
+        return recent[0], self._history.recent(cursor.start, verify_head=verify_head)
 
     def _list(self, ctx: AccessContext, cursor: HistoryCursor | None) -> ChangePage:
         rows: list[ChangeSummary] = []
         head, revisions = self._window(cursor)
+        page_cursor = HistoryCursor(head, revisions[0]) if head and revisions else None
         for index, revision in enumerate(revisions):
             if index == RECENT_WINDOW or len(rows) == MAX_CHANGES:
                 assert head is not None
-                return ChangePage(tuple(rows), HistoryCursor(head, revision))
+                return ChangePage(page_cursor, tuple(rows), HistoryCursor(head, revision))
             try:
                 versions = self._authorized(revision, ctx)
                 if versions:
                     rows.append(self._summary(versions, ctx))
             except ChangeUnavailable:
                 continue
-        return ChangePage(tuple(rows), None)
+        return ChangePage(page_cursor, tuple(rows), None)
 
     def detail(self, request: HistoryRequest, ctx: AccessContext) -> ChangeDetail:
         require_owner(ctx, "inspect change history")

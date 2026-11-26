@@ -55,6 +55,7 @@ class ChangeSummary:
 
 @dataclass(frozen=True, slots=True)
 class ChangePage:
+    page_cursor: HistoryCursor | None
     changes: tuple[ChangeSummary, ...]
     next_cursor: HistoryCursor | None
 

@@ -1,3 +1,4 @@
+import subprocess
 from dataclasses import replace
 from pathlib import Path
 
@@ -166,10 +167,14 @@ def test_private_api_follows_an_opaque_cursor_after_an_empty_window(tmp_path: Pa
         OwnerCommit.for_update(DOCKER_ID),
     )
     git = sample.git()
-    for i in range(32):
+    history = container.use_cases.history
+    owner = AccessContext.for_owner(AccessCeiling(Sensitivity.RESTRICTED))
+    initial = history.list(owner).page_cursor
+    for i in range(34):
         (sample.root / "manual").write_text(str(i))
         git.stage(["manual"])
         git.commit("Unattributed", ["manual"])
+    assert history.detail(HistoryRequest(revision, initial), owner).change.revision == revision
     origin = "https://private.example.invalid"
     owner_credentials(sample.settings).provision(b"history-fixture")
     app = browser_api(container.browser_auth, BrowserBinding("private", origin), AccessCeiling(Sensitivity.RESTRICTED))
@@ -186,3 +191,5 @@ def test_private_api_follows_an_opaque_cursor_after_an_empty_window(tmp_path: Pa
         assert last["next_cursor"] is None
         assert client.get(f"/api/changes/{revision}").status_code == 404
         assert client.get(f"/api/changes/{revision}", params={"cursor": first["next_cursor"]}).status_code == 200
+        subprocess.run(["git", "-C", str(sample.root), "reset", "--hard", revision], check=True, capture_output=True)
+        assert client.get("/api/changes", params={"cursor": first["next_cursor"]}).status_code == 404
