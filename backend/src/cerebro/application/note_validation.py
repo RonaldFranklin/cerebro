@@ -43,7 +43,7 @@ def validate_candidate(
             Finding(
                 code=ViolationCode.INVALID_FIELD,
                 field="sensitivity",
-                message="an agent cannot lower the sensitivity of an existing note",
+                message="an agent cannot lower the sensitivity of an existing note; keep the current value",
             )
         )
     # Same rule as ``visible_id`` (history included), over the snapshot already read: no lookup per scanned token.

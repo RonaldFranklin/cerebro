@@ -1,6 +1,7 @@
 """Direct MCP tool dispatch over a real application, including safe wire errors."""
 
 import json
+import re
 from dataclasses import replace
 from pathlib import Path
 from typing import Any
@@ -9,8 +10,10 @@ import pytest
 from mcp import types
 
 from cerebro.adapters.inbound.mcp_tools import MCPTools
+from cerebro.adapters.inbound.write_guide import read_write_guide
 from cerebro.bootstrap.container import Container, build_container
 from cerebro.domain.access import AccessContext, Scope
+from cerebro.domain.enums import Status
 from tests.integration.content_kit import BROKEN_ID, DOCKER_ID, HUB_ID, SSH_ID, make_sample_repo
 from tests.integration.test_mcp_tools import AGENT, tools_for
 
@@ -46,6 +49,52 @@ def test_discovery_and_invocation_use_the_same_grant(scope: Scope, container: Co
     for name, args in (("cerebro_write", CREATE), ("cerebro_write_guide", {})):
         assert (name in listed) == (scope is Scope.WRITE)
         assert tools.call(name, args, lambda: ctx).is_error == (scope is not Scope.WRITE)
+
+
+def test_write_guide_carries_the_vocabulary_of_the_content_repository(container: Container) -> None:
+    result = tools_for(container).call("cerebro_write_guide", {}, lambda: WRITER)
+    assert not result.is_error
+    output = result.structured_content
+    assert output is not None
+    assert set(output) == {"guide", "areas", "types"}
+    assert output["areas"] == sorted(area.value for area in container.vocabulary.areas)
+    assert output["types"] == sorted(kind.value for kind in container.vocabulary.types)
+    assert {"core", "hub", "guide"} <= set(output["types"])
+
+
+def test_write_guide_explains_every_status() -> None:
+    listed = re.search(r"`status` \((.*?)\), `superseded_by`", read_write_guide())
+    assert listed is not None
+    assert re.findall(r"`([a-z]+)`: ", listed[1]) == [status.value for status in Status]
+
+
+def test_input_schemas_avoid_constructs_that_clients_reject(container: Container) -> None:
+    for tool in tools_for(container).list_tools(WRITER).tools:
+        assert not tool.input_schema.keys() & {"oneOf", "anyOf", "allOf"}, tool.name
+        pending: list[object] = list(tool.input_schema["properties"].values())
+        while pending:
+            schema = pending.pop()
+            assert schema is not False, tool.name
+            if isinstance(schema, dict):
+                pending.extend(schema.get("properties", {}).values())
+
+
+@pytest.mark.parametrize(
+    ("args", "field"),
+    [
+        ({key: value for key, value in CREATE.items() if key != "request_id"}, "request_id"),
+        ({**CREATE, "base_hash": "0" * 64}, "request"),
+        ({**CREATE, "operation": "update"}, "request"),
+        ({"operation": "update", "frontmatter": {}, "body": "x"}, "base_hash"),
+    ],
+)
+def test_operation_specific_arguments_are_enforced_without_schema_branches(
+    args: dict[str, object], field: str, container: Container
+) -> None:
+    result = tools_for(container).call("cerebro_write", args, lambda: WRITER)
+    assert result.is_error
+    assert result.structured_content is not None
+    assert result.structured_content["findings"][0]["field"] == field
 
 
 @pytest.mark.parametrize(

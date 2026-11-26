@@ -38,6 +38,7 @@ def tools_for(app: Container) -> MCPTools:
         read_note=cases.read_note,
         get_neighbors=cases.get_neighbors,
         agent_write=cases.agent_write,
+        get_vocabulary=cases.get_vocabulary,
     )
 
 
