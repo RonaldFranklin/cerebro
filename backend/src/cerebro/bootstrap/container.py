@@ -220,7 +220,7 @@ class Container:
             get_neighbors=GetNeighbors(notes, graph),
             get_graph=GetGraph(graph),
             history=OwnerHistory(notes, GitChangeHistory(git, self.cipher), lock.held),
-            owner_edit_note=Serialized(OwnerEditNote(notes, search, graph, clock, ids, vocabulary), lock),
+            owner_edit_note=Serialized(OwnerEditNote(notes, search, graph, clock, vocabulary), lock),
             rebuild_index=Serialized(self._rebuild, lock),
             health_report=HealthReport(notes, search, graph, clock, vocabulary),
             issue_agent_token=IssueAgentToken(self.tokens, clock, ids),

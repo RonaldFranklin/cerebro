@@ -38,8 +38,7 @@ class ConfigurationError(Exception):
 
 
 _CONFIG_KEYS = frozenset({"content_dir", "state_dir", "key_file", "git_name", "git_email", "git_remote", "git_branch"})
-# Accept valid retired quota keys in existing TOML configurations during upgrade.
-_LIMIT_KEYS = frozenset({"proposals_per_hour", "proposals_pending", "writes_per_hour"})
+_LIMIT_KEYS = frozenset({"writes_per_hour"})
 _MAX_CONFIG_BYTES = 65536
 
 

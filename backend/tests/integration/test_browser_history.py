@@ -12,7 +12,7 @@ from cerebro.application.ports.notes import NoteChange
 from cerebro.bootstrap.browser import owner_credentials
 from cerebro.bootstrap.container import build_container
 from cerebro.domain.access import AccessCeiling, AccessContext
-from cerebro.domain.commit_message import CommitMessage
+from cerebro.domain.commit_message import OwnerCommit
 from cerebro.domain.content_hash import content_hash
 from cerebro.domain.enums import Sensitivity
 from cerebro.domain.note import NoteId
@@ -29,7 +29,7 @@ def test_only_a_private_owner_can_list_and_read_an_encrypted_diff(tmp_path: Path
     changed = replace(before, body=f"{malicious}\n[[missing|unavailable metadata]]\n" + ("large sample\n" * 3000))
     revision = container.notes.apply(
         [NoteChange(note=changed, expected_hash=content_hash(before))],
-        CommitMessage.for_owner_edit(subject=f"Update note: {VAULT_ID.value}", edit_id="owner-edit-1234"),
+        OwnerCommit.for_update(VAULT_ID),
     )
     owner_credentials(sample.settings).provision(b"history-fixture")
     origin = f"https://{listener}.example.invalid"
@@ -74,7 +74,7 @@ def test_only_a_private_owner_can_list_and_read_an_encrypted_diff(tmp_path: Path
                     note=replace(clean, body=f"See [[{VAULT_ID.value}|alias]]."), expected_hash=content_hash(clean)
                 )
             ],
-            CommitMessage.for_owner_edit(subject=f"Update note: {DOCKER_ID.value}", edit_id="owner-edit-5678"),
+            OwnerCommit.for_update(DOCKER_ID),
         )
         (sample.root / "notes" / f"{VAULT_ID.value}.md").write_bytes(b"invalid note")
         assert client.get(endpoints[1]).json() == {"error": "Change unavailable."}
@@ -88,36 +88,33 @@ def test_only_a_private_owner_can_list_and_read_an_encrypted_diff(tmp_path: Path
         assert [row["revision"] for row in client.get(endpoints[0]).json()["changes"]] == [readable]
 
 
-def test_legacy_create_identifies_its_agent_and_corrupt_history_fails_closed(tmp_path: Path) -> None:
+def test_unattributed_commits_are_not_listed_and_corrupt_history_fails_closed(tmp_path: Path) -> None:
     sample = make_sample_repo(tmp_path)
     container = build_container(sample.settings)
     base = container.notes.get(VAULT_ID)
     assert base
-    created = replace(base, id=NoteId("legacy-record"))
-    message = CommitMessage(
-        subject="Add note: legacy-record",
-        proposal_id="legacy-id",
-        proposed_by="claude-code",
-        curated_by="curator/null",
-        approved_by="owner",
-    )
-    revision = container.notes.apply([NoteChange(note=created)], message)
+    created = replace(base, id=NoteId("manual-record"))
     owner = AccessContext.for_owner(AccessCeiling(Sensitivity.RESTRICTED))
     history = container.use_cases.history
-    detail = history.detail(HistoryRequest(revision), owner)
-    assert detail.change.actor == "claude-code"
-    assert detail.change.operation == "create"
-    assert base.body.rstrip().splitlines()[0] in detail.diff
-    # A malformed historical parent is never treated as a newly created note, even when the latest file is readable.
+    # The owner never creates notes, and trailers of the retired Inbox are not an attribution (ADR-0023).
+    added = container.notes.apply([NoteChange(note=created)], OwnerCommit(subject="Add note: manual-record"))
     path = f"notes/{created.id.value}.md"
     stored = (sample.root / path).read_bytes()
-    (sample.root / path).write_bytes(b"invalid format")
     git = sample.git()
+    (sample.root / path).write_bytes(stored + b"Retired trailers.\n")
+    retired = git.commit(
+        "Update note: manual-record\n\nProposed-by: claude-code\nCurated-by: curator/null\nApproved-by: owner\n"
+        "Proposal-Id: retired-0001",
+        [path],
+    )
+    listed = {row.revision for row in history.list(owner)}
+    assert added not in listed
+    assert retired not in listed
+    # A malformed historical parent is never treated as a newly created note, even when the latest file is readable.
+    (sample.root / path).write_bytes(b"invalid format")
     git.commit("Manual repair in progress", [path])
     (sample.root / path).write_bytes(stored)
-    repaired = git.commit(
-        CommitMessage.for_owner_edit(subject="Update note: legacy-record", edit_id="owner-edit-01").render(), [path]
-    )
+    repaired = git.commit(OwnerCommit.for_update(created.id).render(), [path])
     assert repaired not in {row.revision for row in history.list(owner)}
     with pytest.raises(ChangeUnavailable):
         history.detail(HistoryRequest(repaired), owner)

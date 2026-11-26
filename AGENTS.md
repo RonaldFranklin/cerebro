@@ -31,8 +31,8 @@ create/update operations with authenticated attribution in Git.
 - **Phase 3 is approved.** The owner CLI and four authenticated MCP read tools are implemented and tested.
   [Delivery record](docs/plans/phase-3.md) · [owner's manual client checks](docs/agent-integration.md).
 - **Phase 3 checkpoint:** only the owner's manual Claude Code and Codex tests remain.
-- **Phase 4 delivered the historical Inbox.** Phase 7 retired its submission and approval paths.
-  Earlier sealed records and backups are preserved. The owner's [Phase 4 checkpoint](docs/plans/phase-4.md#5-final-report)
+- **Phase 4 delivered the historical Inbox.** Phase 7 retired it, and
+  [ADR-0023](docs/adr/0023-no-legacy-compatibility.md) removed its leftovers without legacy compatibility. The owner's [Phase 4 checkpoint](docs/plans/phase-4.md#5-final-report)
   refers to that release.
 - **Phase 5 is approved.** The browser UI serves the overview, search, reader, graph, editor and health.
   The owner's manual checkpoints for Phases 3, 4 and 5 await their results.
@@ -61,8 +61,9 @@ create/update operations with authenticated attribution in Git.
 **Write path**
 - Inbound adapters call application use cases for every note change. Agent writes require explicit
   `write` authority and deterministic validation. Owner edits use `OwnerEditNote`.
-- Every applied agent change creates a Git commit identifying its authenticated agent, under
-  [ADR-0020](docs/adr/0020-direct-agent-writes.md). Preserve historical audit trailers.
+- Every applied change creates a Git commit whose `Written-by` trailer names its authenticated agent, or
+  `owner` for owner edits ([ADR-0020](docs/adr/0020-direct-agent-writes.md),
+  [ADR-0023](docs/adr/0023-no-legacy-compatibility.md)). No code reads data from earlier releases.
 
 **Security**
 - Never commit secrets, tokens, keys, `.env` files or real personal data. Use `.env.example` with placeholders.

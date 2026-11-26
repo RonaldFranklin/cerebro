@@ -1,4 +1,4 @@
-"""Read exact note blobs from the bounded first-parent history with authenticated attribution formats."""
+"""Read exact note blobs from the bounded first-parent history with its ``Written-by`` attribution."""
 
 import re
 from datetime import datetime
@@ -9,17 +9,13 @@ from cerebro.adapters.outbound.git import GitError, GitRepo
 from cerebro.application.history import RECENT_WINDOW, ChangeUnavailable, HistoryVersion
 from cerebro.application.ports.system import Cipher
 from cerebro.domain.access import validate_agent_name
-from cerebro.domain.commit_message import CommitMessage
+from cerebro.domain.commit_message import OWNER
 from cerebro.domain.errors import InvalidValueError
 from cerebro.domain.note import Note, NoteId
 
 _DIRECT = re.compile(
     r"(?P<verb>Add|Update) note: (?P<id>[a-z0-9-]{1,80})\n\nWritten-by: (?P<actor>[^\n]+)"
     r"(?P<receipt>\nWrite-Request: [0-9a-f]{64}\nWrite-Receipt: [a-zA-Z0-9+/=]{1,4096})?"
-)
-_LEGACY = re.compile(
-    r"(?P<verb>Add|Update|Link|Deprecate) note: (?P<id>[a-z0-9-]{1,80})\n\nProposed-by: (?P<actor>[^\n]+)"
-    r"\nCurated-by: (?P<curator>[^\n]+)\nApproved-by: (?P<owner>[^\n]+)\nProposal-Id: (?P<proposal>[^\n]+)"
 )
 
 
@@ -39,25 +35,19 @@ class GitChangeHistory:
         if not metadata:
             return None
         parent, timestamp, message, path = metadata
-        direct = _DIRECT.fullmatch(message)
-        match = direct or _LEGACY.fullmatch(message)
+        match = _DIRECT.fullmatch(message)
         if not match:
             return None
         try:
             note_id = NoteId(match["id"])
             actor = match["actor"]
-            if direct:
+            if actor == OWNER:  # owner edits only update existing notes and carry no receipt
+                if match["verb"] != "Update" or match["receipt"]:
+                    return None
+            else:
                 validate_agent_name(actor)
                 if (match["verb"] == "Add") != bool(match["receipt"]):
                     return None
-            else:
-                CommitMessage(
-                    subject=message.split("\n", 1)[0],
-                    proposal_id=match["proposal"],
-                    proposed_by=actor,
-                    curated_by=match["curator"],
-                    approved_by=match["owner"],
-                )
             moment = datetime.fromisoformat(timestamp)
         except InvalidValueError, ValueError:
             return None

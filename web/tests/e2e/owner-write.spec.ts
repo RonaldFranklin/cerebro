@@ -28,7 +28,6 @@ test("inspect an agent’s committed note and explicitly save an owner edit unde
   await page.getByRole("button",{name:"Explore SSH access",exact:true}).click();
   await expect(page.getByRole("radio",{name:"1 hop",exact:true})).toBeChecked();
   expect(git("log","-1","--format=%B").split("\n")).toContain("Written-by: fixture-agent");
-  await expect(page.getByRole("navigation").getByRole("link",{name:"Inbox",exact:true})).toHaveCount(0);
   await page.goto(demo.private_origin + "/notes/island-hub");
   await expect(page.locator(".markdown-body")).toContainText("Collect the infrastructure handover notes here.");
 
@@ -64,8 +63,7 @@ test("inspect an agent’s committed note and explicitly save an owner edit unde
   expect(saved.status()).toBe(200);
   expect((await saved.json()).commit).toBe(git("rev-parse","HEAD"));
   expect(git("rev-parse","HEAD^")).toBe(before);
-  for (const trailer of ["Proposed-by","Curated-by","Approved-by"])
-    expect(git("log","-1","--format=%B").split("\n")).toContain(trailer + ": owner");
+  expect(git("log","-1","--format=%B").trim()).toBe("Update note: server-ssh-access\n\nWritten-by: owner");
   await page.getByRole("button",{name:"Sign out",exact:true}).click();
   await expect(password).toBeVisible();
   await page.reload();

@@ -97,7 +97,7 @@ backend/
 
 | Port | Responsibility | Adapter(s) |
 |---|---|---|
-| `NoteRepository` | `get`, `list_refs` (body-free `NoteRef` snapshot), `list_notes`, `head()` (the current content revision: the id the last `apply` returned, `None` when empty), and `apply(changes, message)`: write one or more notes and record **one** commit with the trailers, all-or-nothing; each `NoteChange` carries the `expected_hash` (`None` = must not exist) and a mismatch raises `ContentConflict` | filesystem; in-memory fake |
+| `NoteRepository` | `get`, `list_refs` (body-free `NoteRef` snapshot), `list_notes`, `head()` (the current content revision: the id the last `apply` returned, `None` when empty), and `apply(changes, message)`: write one or more notes and record **one** commit with its `Written-by` trailer, all-or-nothing; each `NoteChange` carries the `expected_hash` (`None` = must not exist) and a mismatch raises `ContentConflict` | filesystem; in-memory fake |
 | `SearchIndex` | `upsert` / `remove` / `rebuild(notes, revision=)`, `built_from()` / `set_revision()` (the content revision the index reflects; `upsert`/`remove` never change it), `search(SearchQuery)` (ceiling mandatory; order: score, priority, id) and `find_similar` (duplicate detection); returns summaries only | SQLite FTS5 |
 | `GraphIndex` | `rebuild(refs, revision=)`, `built_from()` / `set_revision()` (as `SearchIndex`), `graph`, `backlinks`, `neighbors(hops)`, `orphans`, `broken_links`; every query takes the ceiling, hidden notes are neither nodes nor broken links | SQLite tables |
 | `VersionControl` | `push` to the backup remote. Commits are made by `NoteRepository.apply`, so a write and its commit cannot diverge | git CLI |
@@ -208,7 +208,7 @@ Workstation                                    Server (docker compose: cerebro-<
 |---|---|---|---|
 | Notes | content repo working copy | yes (private repo) | push to private remote |
 | Search/graph index | state dir, `index.sqlite` | no | no — rebuildable |
-| Tokens, write limits and retained legacy Inbox state | state dir, `state.sqlite` | no | yes (file backup) |
+| Tokens and login and write limits | state dir, `state.sqlite` | no | yes (file backup) |
 | Fernet key, admin password hash | secrets dir | no | owner keeps an offline copy of the key |
 
 Filesystem repository, operating notes (Phase 2):
@@ -230,16 +230,15 @@ the search and the graph tables, so start-up must compare **both** `built_from()
 not coordinated with other processes using the file: rolling deploys with different schema versions are unsupported
 (stop the old process first).
 
+`state.sqlite` is not disposable and has a single schema version. A new empty file is initialised; a file with any
+other version, including those of releases before [ADR-0023](adr/0023-no-legacy-compatibility.md), is refused with
+an error naming its path and version, and is never deleted, upgraded or repaired. Move it aside and issue new tokens.
+
 ### Accepted risks (owner decision, 2026-11-25)
 
 - **Token rows are not authenticated.** `state.sqlite` stores token rows (ceiling, scopes, revocation) in clear and
   unsigned; only the file mode (0600) and the directory (0700) protect them. Anyone who can write the file can raise
   a ceiling, add a scope (including `core`) or clear a revocation. The owner declined a per-row MAC and accepted this risk.
-- **No rollback or replay protection for proposal rows.** The sealed payload binds the proposal id, but not its
-  revision: restoring a whole older row (for example from a backup) passes every check.
-- **Historical proposal payloads.** Backups and WAL snapshots from before Phase 4 may contain sealed submissions
-  rejected after the initial write. Phase 4 scrubbed validation rejections at admission. Older backups can also contain proposals awaiting
-  review when the backup was taken. The Phase 7 cutover preserves backups and leaves legacy rows inert.
 - **A note raised to `restricted` leaves plaintext history.** The previous public or internal version stays in the
   content repository's git history and in backups; history is never rewritten. Agent writes and owner edits
   return a warning when this happens ([domain-model](domain-model.md)).

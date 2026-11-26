@@ -93,8 +93,7 @@ def test_concurrent_edit_preserves_winner_and_reports_history_warning(editor: tu
     assert git(repo, "rev-parse", "HEAD^") == before
     assert result["content_hash"] == client.get(PATH).json()["content_hash"]
     assert result["validation"]["ok"]
-    for key in ("Proposed-by", "Curated-by", "Approved-by"):
-        assert f"{key}: owner" in git(repo, "log", "-1", "--format=%B").splitlines()
+    assert git(repo, "log", "-1", "--format=%B").strip() == f"Update note: {SSH_ID.value}\n\nWritten-by: owner"
 
     stale = client.put(PATH, json=original)
     assert stale.status_code == 409
@@ -178,13 +177,3 @@ def test_editor_counts_metadata_in_utf8_bytes(editor: tuple[TestClient, Path]) -
     exact = {**inspected["note"], "lang": "é" * 128}
     assert client.put(PATH, json={**inspected, "note": exact}).status_code == 200
     assert client.get(PATH).json()["lang"] == exact["lang"]
-
-
-def test_legacy_inbox_has_no_routes_even_for_the_authenticated_owner(editor: tuple[TestClient, Path]) -> None:
-    client, repo = editor
-    before = git(repo, "rev-parse", "HEAD")
-    assert client.get("/api/inbox").status_code == 404
-    assert client.get("/api/inbox/old-id").status_code == 404
-    for action in ("amend", "approve", "reject", "resume"):
-        assert client.post(f"/api/inbox/old-id/{action}", json={"revision": 1}).status_code == 404
-    assert git(repo, "rev-parse", "HEAD") == before

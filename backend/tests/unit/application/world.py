@@ -5,7 +5,7 @@ from typing import Any
 
 from cerebro.application.ports.notes import NoteChange
 from cerebro.domain.access import AccessCeiling, AccessContext, Agent, Owner, Scope
-from cerebro.domain.commit_message import CommitMessage
+from cerebro.domain.commit_message import OwnerCommit
 from cerebro.domain.enums import Priority, Sensitivity, Status
 from cerebro.domain.note import Note, NoteId
 from cerebro.domain.note_ref import NoteRef
@@ -15,13 +15,7 @@ from tests.fakes.search import InMemoryGraphIndex, InMemorySearchIndex
 from tests.unit.domain.builders import make_note
 
 NID = NoteId
-MESSAGE = CommitMessage(
-    subject="Seed",
-    proposal_id="proposal-0001",
-    proposed_by="claude-code",
-    curated_by="curator/null",
-    approved_by="owner",
-)
+MESSAGE = OwnerCommit(subject="Seed")
 
 
 def ctx(

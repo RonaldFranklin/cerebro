@@ -52,8 +52,6 @@ class ViolationCode(StrEnum):
     HUB_CHAIN_CYCLE = "hub_chain_cycle"
     HUB_CHAIN_TOO_DEEP = "hub_chain_too_deep"
     LINK_TO_HIGHER_SENSITIVITY = "link_to_higher_sensitivity"
-    # duplicates (application: similarity search)
-    POSSIBLE_DUPLICATE = "possible_duplicate"
     # budgets
     BODY_OVER_SOFT_LIMIT = "body_over_soft_limit"
     BODY_OVER_HARD_LIMIT = "body_over_hard_limit"
@@ -142,9 +140,7 @@ class SeverityPolicy:
         )
 
 
-_ALWAYS_WARNINGS: Final = frozenset(
-    {ViolationCode.BODY_OVER_SOFT_LIMIT, ViolationCode.DUPLICATE_RELATED, ViolationCode.POSSIBLE_DUPLICATE}
-)
+_ALWAYS_WARNINGS: Final = frozenset({ViolationCode.BODY_OVER_SOFT_LIMIT, ViolationCode.DUPLICATE_RELATED})
 
 AGENT_WRITE_POLICY: Final = SeverityPolicy(name="agent_write", warnings=_ALWAYS_WARNINGS)
 """Agent writes use strict link validation."""

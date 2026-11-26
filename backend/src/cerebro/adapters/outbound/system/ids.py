@@ -2,29 +2,11 @@
 
 import secrets
 import string
-import threading
-import uuid
-
-_UUID7_LOCK = threading.Lock()
 
 
 class SystemIdGenerator:
-    """Owner edit ids are UUIDv7 (48-bit millisecond timestamp first, then a counter and random bits), rendered as
-    32 lowercase hex characters: time-sortable as plain strings and inside the 1-64 character id alphabet.
-
-    CPython 3.14's ``uuid.uuid7()`` keeps a process-wide counter, so ids created in the same millisecond still
-    increase monotonically within one process; a module-level lock around the call keeps that ordering across
-    threads (the counter state of ``uuid7`` is not documented as thread-safe). Across processes, order within the
-    same millisecond is not guaranteed.
-
-    """
-
     def new_note_suffix(self) -> str:
         return "".join(secrets.choice(string.ascii_lowercase + string.digits) for _ in range(4))
-
-    def new_edit_id(self) -> str:
-        with _UUID7_LOCK:
-            return uuid.uuid7().hex
 
     def new_token_id(self) -> str:
         # Not secret and not sortable: 64 random bits, with a prefix that makes it recognisable in logs.

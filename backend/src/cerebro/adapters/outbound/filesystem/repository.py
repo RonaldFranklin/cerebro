@@ -20,7 +20,7 @@ if it was public/internal, ciphertext if it was restricted): history is not rewr
 ``apply`` is all-or-nothing and makes exactly one commit: everything is validated first (``ContentConflict`` for a
 stale ``expected_hash``, an existing note on create or a missing one on update), then, under an exclusive lock
 (``.git/cerebro-notes.lock``, outside the tracked tree), the files are written atomically (temp file, fsync, rename,
-fsync of the directory), staged and committed with the rendered ``CommitMessage``. On any failure the planned paths
+fsync of the directory), staged and committed with the rendered commit message. On any failure the planned paths
 are restored through ``GitRepo.discard_changes`` (a draft that already sat at a planned path is never deleted) and a
 sanitized ``NoteWriteError`` is raised. An update that changes nothing is refused (git has nothing to commit).
 Reads of whole listings take a shared lock so they never see half of an ``apply``.
@@ -64,7 +64,7 @@ from cerebro.adapters.outbound.git import GitError, GitRepo
 from cerebro.application.errors import DecryptionError
 from cerebro.application.ports import Cipher, NoteChange
 from cerebro.application.ports.notes import CreateReceipt, check_agent_commit
-from cerebro.domain.commit_message import AgentWriteCommit, CommitMessage
+from cerebro.domain.commit_message import AgentWriteCommit, OwnerCommit
 from cerebro.domain.content_hash import content_hash, is_content_hash
 from cerebro.domain.enums import Sensitivity
 from cerebro.domain.errors import ContentConflict, InvalidValueError
@@ -207,7 +207,7 @@ class FilesystemNoteRepository:
                 pass
         raise NoteWriteError("invalid create receipt in content history")
 
-    def _render_commit(self, message: CommitMessage | AgentWriteCommit) -> str:
+    def _render_commit(self, message: OwnerCommit | AgentWriteCommit) -> str:
         header = message.render()
         if isinstance(message, AgentWriteCommit) and message.fingerprint is not None:
             # Bind the encrypted digest to its public note, authenticated actor and token-scoped request key.
@@ -287,7 +287,7 @@ class FilesystemNoteRepository:
 
     # -- writing -------------------------------------------------------------------------------------------------
 
-    def apply(self, changes: Sequence[NoteChange], message: CommitMessage | AgentWriteCommit) -> str:
+    def apply(self, changes: Sequence[NoteChange], message: OwnerCommit | AgentWriteCommit) -> str:
         if isinstance(message, AgentWriteCommit):
             check_agent_commit(changes, message)
         if not changes:
@@ -372,7 +372,7 @@ class FilesystemNoteRepository:
         return before
 
     def _write(
-        self, prepared: Sequence[_Prepared], message: CommitMessage | AgentWriteCommit, before: frozenset[str]
+        self, prepared: Sequence[_Prepared], message: OwnerCommit | AgentWriteCommit, before: frozenset[str]
     ) -> str:
         planned = [item.relative for item in prepared]
         created = [item.relative for item in prepared if item.change.expected_hash is None]
