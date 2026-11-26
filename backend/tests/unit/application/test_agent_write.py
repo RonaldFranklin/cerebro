@@ -134,3 +134,39 @@ def test_generated_collisions_are_retried_and_replay_rechecks_current_visibility
     )
     with pytest.raises(WriteRejected, match="target_unavailable"):
         write.execute(request(), ctx)
+
+
+def test_narrower_listener_cannot_check_guesses_of_original_restricted_create() -> None:
+    kit = Kit()
+    write = writer(kit)
+    private = replace(agent_ctx(Sensitivity.RESTRICTED, frozenset({Scope.WRITE})), token_id="token")
+    original = request(sensitivity="restricted")
+    receipt = write.execute(original, private)
+    note = kit.world.notes.get(receipt.note_id)
+    assert note is not None
+    kit.world.notes.apply(
+        [NoteChange(note=replace(note, sensitivity=Sensitivity.PUBLIC), expected_hash=content_hash(note))], MESSAGE
+    )
+    public = replace(agent_ctx(Sensitivity.PUBLIC, frozenset({Scope.WRITE})), token_id="token")
+    for guess in (original, replace(original, body="Another restricted procedure.")):
+        with pytest.raises(WriteRejected, match="outside_ceiling"):
+            write.execute(guess, public)
+
+
+def test_update_cannot_move_between_core_hubs_and_regular_notes() -> None:
+    kit = Kit()
+    write = writer(kit)
+    ctx = replace(agent_ctx(scopes=frozenset({Scope.WRITE})), token_id="token")
+    receipt = write.execute(request(), ctx)
+    base = kit.world.notes.get(receipt.note_id)
+    assert base is not None
+    moved = replace(
+        request(type="core", priority="P0", hub=None),
+        operation="update",
+        request_id=None,
+        target=base.id.value,
+        base_hash=content_hash(base),
+    )
+    with pytest.raises(WriteRejected, match="invalid_field"):
+        write.execute(moved, ctx)
+    assert kit.world.notes.head() == receipt.revision

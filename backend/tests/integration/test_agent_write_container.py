@@ -106,3 +106,29 @@ def test_redacted_note_is_protected_even_with_the_full_storage_hash(tmp_path: Pa
     with pytest.raises(WriteRejected):
         service.use_cases.agent_write.execute(unsafe, ctx)
     assert service.notes.head() == before
+
+
+@pytest.mark.parametrize("sensitivity", ["internal", "restricted"])
+def test_unchanged_update_has_one_safe_outcome_for_plaintext_and_encrypted_notes(
+    tmp_path: Path, sensitivity: str
+) -> None:
+    container = build_container(make_sample_repo(tmp_path).settings)
+    container.start()
+    issued = container.use_cases.issue_agent_token.execute(
+        IssueAgentTokenRequest(agent="codex", scopes=frozenset({Scope.WRITE}), ceiling=OWNER.ceiling), OWNER
+    )
+    ctx = container.use_cases.authenticate_token.execute(
+        AuthenticateTokenRequest(secret=issued.secret, listener=OWNER.ceiling)
+    )
+    original = create()
+    assert isinstance(original.frontmatter, dict)
+    original = replace(original, frontmatter={**original.frontmatter, "sensitivity": sensitivity})
+    receipt = container.use_cases.agent_write.execute(original, ctx)
+    note = container.notes.get(receipt.note_id)
+    assert note is not None
+    unchanged = replace(
+        original, operation="update", target=note.id.value, request_id=None, base_hash=content_hash(note)
+    )
+    with pytest.raises(WriteRejected, match="unchanged"):
+        container.use_cases.agent_write.execute(unchanged, ctx)
+    assert container.notes.head() == receipt.revision

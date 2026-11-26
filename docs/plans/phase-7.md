@@ -36,9 +36,9 @@ changes. Use one branch per step from updated main, independent diff review, gre
 ## Status
 
 **Implemented.** Step 1 was approved in PR #68. The step 2 application writer runs under the shared
-writer lock. Creates record an opaque token-scoped request key and a fingerprint in the same Git commit
+writer lock. Creates record an opaque token-scoped request key and an encrypted content fingerprint in the same Git commit
 as the note. The durable receipt consists of its note id and original revision. Feedback from validation
-accompanies a fresh write. The rolling-hour limit defaults to 20 and uses the state database.
+accompanies a fresh write. An unchanged update returns a bounded finding without a commit. The rolling-hour limit defaults to 20 and uses the state database.
 Before a write narrows visibility, the writer evicts the older search and graph projections. Startup
 compares both index revisions with HEAD and rebuilds after interrupted indexing.
 

@@ -41,6 +41,7 @@ tree clean); replacing an encrypted file by a plaintext one declaring ``internal
 note; listing a folder reads its entries by path (an attacker would need write access to the repository directory).
 """
 
+import base64
 import os
 import time
 from collections.abc import Sequence
@@ -104,6 +105,10 @@ class _Prepared:
     mode: int
 
 
+_RECEIPT_TRAILER = "Write-Receipt: "
+_RECEIPT_DOMAIN = b"cerebro/create-receipt/v1\x00"
+
+
 class FilesystemNoteRepository:
     """See the module docstring. ``git`` must manage the repository rooted at ``root``."""
 
@@ -149,21 +154,35 @@ class FilesystemNoteRepository:
         if found is None:
             return None
         revision, message = found
-        lines = message.splitlines()
-        if len(lines) == 5:
+        header, _, trailer = message.rpartition("\n")
+        lines = header.splitlines()
+        if len(lines) == 4 and trailer.startswith(_RECEIPT_TRAILER):
             try:
-                commit = AgentWriteCommit(
-                    note_id=NoteId(lines[0].removeprefix("Add note: ")),
-                    written_by=lines[2].removeprefix("Written-by: "),
-                    request_key=request_key,
-                    fingerprint=lines[4].removeprefix("Write-Fingerprint: "),
-                )
-            except InvalidValueError:
+                sealed = base64.b64decode(trailer.removeprefix(_RECEIPT_TRAILER), validate=True)
+                plaintext = self._cipher.decrypt(sealed)
+                binding = _RECEIPT_DOMAIN + header.encode("ascii") + b"\x00"
+                if plaintext.startswith(binding):
+                    fingerprint = plaintext[len(binding) :].decode("ascii")
+                    commit = AgentWriteCommit(
+                        note_id=NoteId(lines[0].removeprefix("Add note: ")),
+                        written_by=lines[2].removeprefix("Written-by: "),
+                        request_key=request_key,
+                        fingerprint=fingerprint,
+                    )
+                    if commit.render() == header:
+                        return CreateReceipt(note_id=commit.note_id, revision=revision, fingerprint=fingerprint)
+            except DecryptionError, ValueError:
                 pass
-            else:
-                if commit.render() == message and commit.fingerprint is not None:
-                    return CreateReceipt(note_id=commit.note_id, revision=revision, fingerprint=commit.fingerprint)
         raise NoteWriteError("invalid create receipt in content history")
+
+    def _render_commit(self, message: CommitMessage | AgentWriteCommit) -> str:
+        header = message.render()
+        if isinstance(message, AgentWriteCommit) and message.fingerprint is not None:
+            # Bind the encrypted digest to its public note, authenticated actor and token-scoped request key.
+            binding = _RECEIPT_DOMAIN + header.encode("ascii") + b"\x00"
+            sealed = self._cipher.encrypt(binding + message.fingerprint.encode("ascii"))
+            return f"{header}\n{_RECEIPT_TRAILER}{base64.b64encode(sealed).decode('ascii')}"
+        return header
 
     def _existing_paths(self, note_id: NoteId) -> list[str]:
         for folder in FOLDERS:
@@ -361,7 +380,7 @@ class FilesystemNoteRepository:
             head_before = self._git.head()
         except GitError:
             raise NoteWriteError("could not inspect the content repository; nothing was written") from None
-        rendered = message.render()
+        rendered = self._render_commit(message)
         try:
             for item in prepared:
                 write_file_atomic(self._root, item.relative, item.data, mode=item.mode)

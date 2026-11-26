@@ -127,5 +127,5 @@ class AgentWriteCommit:
     def render(self) -> str:
         message = f"{self.subject}\n\nWritten-by: {self.written_by}"
         if self.request_key is not None:
-            message += f"\nWrite-Request: {self.request_key}\nWrite-Fingerprint: {self.fingerprint}"
+            message += f"\nWrite-Request: {self.request_key}"
         return message

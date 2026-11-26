@@ -23,7 +23,7 @@ from cerebro.domain.links import loose_link_targets
 from cerebro.domain.note import Note, NoteId
 from cerebro.domain.note_ref import NoteRef
 from cerebro.domain.report import PROPOSAL_POLICY, Severity, ValidationReport
-from cerebro.domain.vocabulary import Vocabulary
+from cerebro.domain.vocabulary import CORE, HUB, Vocabulary
 
 _REQUEST_ID = re.compile(r"[A-Za-z0-9_-]{1,64}")
 _SETTABLE = frozenset(FIELD_ORDER) - {"id", "created", "updated"}
@@ -93,15 +93,21 @@ class AgentWrite:
             if receipt:
                 raise WriteRejected(_CONFLICT) from None
             raise
+        if not ctx.ceiling.allows(candidate.sensitivity):
+            raise WriteRejected(WriteFinding("outside_ceiling", "sensitivity", "Choose an authorized sensitivity."))
         if key is not None:
             # Canonical user-controlled content, independent of service timestamps and allocated identifiers.
             fingerprint = content_hash(replace(candidate, id=NoteId("create"), created=date.min, updated=date.min))
         if receipt is not None and receipt.fingerprint != fingerprint:
             raise WriteRejected(_CONFLICT)
-        if not ctx.ceiling.allows(candidate.sensitivity):
-            raise WriteRejected(WriteFinding("outside_ceiling", "sensitivity", "Choose an authorized sensitivity."))
         if receipt is not None:
             return AgentWriteResult(receipt.note_id, receipt.revision)
+        if base and base.type != candidate.type and {base.type, candidate.type} & {CORE, HUB}:
+            raise WriteRejected(
+                WriteFinding("invalid_field", "type", "Keep the note in its original core, hub or regular category.")
+            )
+        if base and replace(candidate, updated=base.updated) == base:
+            raise WriteRejected(WriteFinding("unchanged", "request", "The stored note already contains these changes."))
         if not self._references_visible(candidate, ctx):
             raise WriteRejected(_REFERENCE)
         report = validate_candidate(
