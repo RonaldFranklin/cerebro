@@ -64,9 +64,12 @@ Cérebro makes that context a single, structured, versioned source that agents c
 
 From the repository root in Linux or WSL, export the instance variables from `.env.example` with your own
 absolute paths. Use a new content directory, a private state directory and a key file outside both repositories.
-Run the following in Bash as the service user.
+Use a secrets directory whose entire path is protected from replacement by other users. Run each block in Bash
+from the repository root as the service user.
 
 ```bash
+(
+set -eu
 cd backend
 uv sync --locked
 uv run cerebro --check-config
@@ -87,6 +90,7 @@ with path.open("xb") as key:
     key.write(generate_key() + b"\n")
 KEY
 uv run cerebro owner-password
+)
 ```
 
 Save the key and owner password in your password manager outside this machine. Set your areas in
@@ -94,8 +98,12 @@ Save the key and owner password in your password manager outside this machine. S
 a token and save the printed value for the client. Start the private MCP listener in the same shell.
 
 ```bash
+(
+set -eu
+cd backend
 uv run cerebro token issue codex --ceiling internal --scope read --scope write
 uv run cerebro-mcp
+)
 ```
 
 From another terminal, verify that an unauthenticated request to `http://127.0.0.1:8765/mcp` returns HTTP 401.
