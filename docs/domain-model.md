@@ -88,7 +88,10 @@ Structure and rule details enforced by the domain:
   `warning` (reported, e.g. by the health report, but not blocking). Agent writes and owner edits share the same
   rules; today both treat only the soft word limit and duplicate `related` ids as warnings; **broken links are
   additionally a warning for owner edits** and an error for agent writes. Structural frontmatter problems are
-  always errors. Agent writes may also return a `possible_duplicate` warning from the similarity search.
+  always errors. An agent create may also return a `possible_duplicate` warning: the words of its title and
+  summary overlap at least by half (Jaccard similarity; bodies are not compared) with those of a current note the
+  caller may see. Only for a token with `read` does the warning name that note; it never names one above the
+  caller's ceiling.
 - Enforced outside the domain: `id` equals the file name (filesystem repository adapter, Phase 2); `id` is
   immutable on update.
 - **Cross-note rules** are pure functions over a snapshot `Mapping[NoteId, NoteRef]` (see Links); the proposed
@@ -279,9 +282,9 @@ Allowed-value lists are fine. Exactly what is and is not named:
 - Never named: received values, unknown frontmatter keys (reported as `unknown field #N`, with length, N being
   the 1-based order of appearance), link, `related`, `hub` and `superseded_by` targets (reported by position:
   `link #N of body`, `related entry #N`), and any id on a `superseded_by` or hub chain (reported by length:
-  `4 hubs deep (maximum 3)`), because chains walk the unfiltered snapshot. Duplicate findings say
-  `similar to an existing note (NN%)`, without identifying the matching note.
-- Named, by exception: the id of a *stored* note that links to the one being checked, in the inbound-link
+  `4 hubs deep (maximum 3)`), because chains walk the unfiltered snapshot.
+- Named, by exception: the id of a note similar to a new one, in the `possible_duplicate` warning, only to a
+  token with `read` and within its ceiling (see above); the id of a *stored* note that links to the one being checked, in the inbound-link
   sensitivity finding (`<id> links to this note`). That note is by definition below the checked note's
   sensitivity, so naming it reveals nothing the reader could not see; and health-issue subjects (stored note ids in the owner-only health report).
 - Exception chains carry no value either: handlers that catch a stdlib error raise the replacement outside the

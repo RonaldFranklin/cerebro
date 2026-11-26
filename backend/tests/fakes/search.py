@@ -91,7 +91,7 @@ class InMemorySearchIndex:
         for note in self._notes.values():
             if not is_visible(note.sensitivity, note.status, ceiling):
                 continue
-            have = _terms(f"{note.title} {note.summary} {note.body}")
+            have = _terms(f"{note.title} {note.summary}")
             union = wanted | have
             score = len(wanted & have) / len(union) if union else 0.0
             if score > 0.0:
