@@ -69,7 +69,11 @@ class HealthReport:
                 code=HealthCode.CHANGES_QUARANTINED,
                 severity=Severity.WARNING,
                 field=None,
-                message="Uncommitted content changes were saved in this state directory folder.",
+                message=(
+                    "Incomplete quarantine. Inspect this state directory folder and the content checkout."
+                    if name.endswith(".partial")
+                    else "Uncommitted content changes were saved in this state directory folder."
+                ),
             )
             for name in self._quarantines()
         ]

@@ -233,10 +233,14 @@ Filesystem repository, operating notes (Phase 2):
   writers and backs up working files, staged changes and deletions (including untracked and ignored files) in a
   private timestamped `quarantine-*` directory under state. It then restores the affected paths to HEAD. Each
   directory contains `worktree.tar`, `staged.patch` and the base commit followed by NUL-separated Git status
-  entries in `status`. Copies contain the original bytes, including any plaintext the owner placed there, and must
-  stay private on the server like the derived index. Recovery captures entries by atomic rename and installs HEAD
-  without replacing a later editor save. If recovery is interrupted, inspect `.git/cerebro-quarantine-in-progress`
-  and the state directory before retrying. The health report names each completed archive. The service never prunes it.
+  entries in `status`. The original inodes remain under `originals/` in that directory (or under the same
+  `quarantine-*` name inside the content repository's `.git/` on separate volumes). This preserves writes through
+  editor descriptors that were open before recovery. Archives and originals contain the owner's exact bytes,
+  including any plaintext. Keep these directories local like the derived index: exclude `quarantine-*` and
+  `cerebro-quarantine-in-progress` from external state and filesystem backups. Git pushes exclude them.
+  Recovery installs HEAD without replacing a later editor save. After an interruption inspect the state directory
+  and `.git/cerebro-quarantine-in-progress`. Health lists completed and incomplete (`.partial`) snapshots.
+  The service never prunes them.
   Listings check before and after reading; `get` checks after reading and, when the file looks uncommitted, waits for
   any running `apply` and checks again. Residual risk: index flags set by hand (`assume-unchanged`, `skip-worktree`)
   hide a file's edits from git, so never set them on note files.

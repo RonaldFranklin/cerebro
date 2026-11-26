@@ -80,14 +80,15 @@ def _recover(root: Path, state: Path, git: GitRepo, head: str, status: str) -> N
     roots = sorted(name for name in names if not any(str(parent) in names for parent in Path(name).parents))
     indexed = sorted({e[3:] for e in entries if e[:2] not in ("??", "!!")})
     stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%S.%fZ")
-    pending = Path(tempfile.mkdtemp(prefix=f".quarantine-{stamp}-", dir=state))
+    pending = Path(tempfile.mkdtemp(prefix=f"quarantine-{stamp}-", suffix=".partial", dir=state))
+    complete = pending.with_suffix("")
     (pending / "status").write_bytes(head.encode() + b"\0" + os.fsencode(status))
     git.save_staged_patch(pending / "staged.patch")
     # Same filesystem as the content checkout even when state lives on another mounted volume.
     scratch = root / ".git" / _SCRATCH
     scratch.mkdir(mode=0o700)
     captured, restored = scratch / "captured", scratch / "restored"
-    captured.mkdir()
+    captured.mkdir(mode=0o700)
     restored.mkdir()
     moved: list[str] = []
     published = False
@@ -104,25 +105,32 @@ def _recover(root: Path, state: Path, git: GitRepo, head: str, status: str) -> N
         for path in pending.iterdir():
             with path.open("rb") as handle:
                 os.fsync(handle.fileno())
+        # An editor can keep writing through an already-open descriptor after the tar is closed.
+        # Retain the displaced inodes on their original filesystem as well as the immutable snapshot.
+        try:
+            captured = captured.rename(pending / "originals")
+        except OSError as error:
+            if error.errno != errno.EXDEV:
+                raise
+            captured = captured.rename(root / ".git" / complete.name)
+            _sync(root / ".git")
         _sync(pending)
-        pending.rename(state / pending.name[1:])
+        pending.rename(complete)
         _sync(state)
         published = True
         if git.head() != head:
             raise NoteWriteError("the content HEAD changed during quarantine")
         for name in roots:
             _move(restored, root, name)
-            # Remove only empty nested directories left by quarantined untracked files.
-            parts = Path(name).parts[:-1]
-            while len(parts) > 1:
-                with open_directory(root, parts[:-1]) as parent:
-                    try:
-                        os.rmdir(parts[-1], dir_fd=parent)
-                    except OSError as error:
-                        if error.errno in (errno.ENOTEMPTY, errno.ENOENT):
-                            break
-                        raise
-                parts = parts[:-1]
+        # Each directory is visited once, after all files are back in place, deepest first.
+        parents = {p for name in roots for p in Path(name).parents if len(p.parts) > 1}
+        for path in sorted(parents, key=lambda p: len(p.parts), reverse=True):
+            try:
+                with open_directory(root, path.parts[:-1]) as parent:
+                    os.rmdir(path.name, dir_fd=parent)
+            except OSError as error:
+                if error.errno not in (errno.ENOTEMPTY, errno.ENOENT, errno.ENOTDIR):
+                    raise
         os.replace(scratch / "index", root / ".git/index")
         _sync(root / ".git")
     except BaseException:

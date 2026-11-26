@@ -5,6 +5,7 @@ rebuilds before it answers, or fails; it never returns the note's title or summa
 """
 
 import contextlib
+import errno
 import tarfile
 from collections.abc import Callable, Sequence
 from dataclasses import replace
@@ -332,7 +333,10 @@ def test_quarantine_failure_keeps_all_original_files(service: Service, monkeypat
     with pytest.raises(NoteWriteError):
         service.container.start()
     assert (root / "draft.txt").read_text() == "keep this"
-    assert not list(service.sample.state_dir.glob("quarantine-*"))
+    report = service.container.use_cases.health_report.execute(HealthReportRequest(), OWNER)
+    [warning] = [i for i in report.issues if i.code.value == "changes_quarantined"]
+    assert warning.subject.endswith(".partial")
+    assert "incomplete" in warning.message.lower()
 
 
 @pytest.mark.parametrize("operation", ["MERGE_HEAD", "rebase-merge"])
@@ -407,3 +411,36 @@ def test_dirty_directory_replaced_by_file_is_quarantined(service: Service) -> No
         entry = archive.extractfile("schema")
         assert entry is not None
         assert entry.read() == b"saved replacement"
+
+
+@pytest.mark.parametrize("split_volumes", [False, True])
+def test_quarantine_retains_later_writes_through_an_open_file(
+    service: Service, monkeypatch: pytest.MonkeyPatch, split_volumes: bool
+) -> None:
+    root = service.sample.root
+    draft = root / "draft"
+    original_rename = Path.rename
+
+    def rename(path: Path, target: Path) -> Path:
+        if split_volumes and path.name == "captured" and target.name == "originals":
+            raise OSError(errno.EXDEV, "separate mounts")
+        return original_rename(path, target)
+
+    monkeypatch.setattr(Path, "rename", rename)
+    with draft.open("wb", buffering=0) as handle:
+        handle.write(b"early")
+        service.container.start()
+        handle.write(b" late")
+    [snapshot] = service.sample.state_dir.glob("quarantine-*")
+    originals = root / ".git" / snapshot.name if split_volumes else snapshot / "originals"
+    assert (originals / "draft").read_bytes() == b"early late"
+
+
+def test_multiple_nested_siblings_are_quarantined_in_one_pass(service: Service) -> None:
+    root = service.sample.root
+    directory = root / "notes/drafts/session"
+    directory.mkdir(parents=True)
+    for filename in ["one", "two"]:
+        (directory / filename).write_text(filename)
+    service.narrow(NARROWINGS["archived"])
+    assert not (root / "notes/drafts").exists()
