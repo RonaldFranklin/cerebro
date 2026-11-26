@@ -15,15 +15,20 @@ class NoteFileError(NoteReadError):
     when several files are wrong at once (listings report all of them, they never skip a file silently).
     """
 
-    def __init__(self, path: str, reason: str, *, problems: Sequence[tuple[str, str]] = ()) -> None:
+    def __init__(
+        self, path: str, reason: str, *, problems: Sequence[tuple[str, str]] = (), stable: bool = False
+    ) -> None:
         self.path = path
         self.reason = reason
-        self.problems: tuple[tuple[str, str], ...] = tuple(problems) or ((path, reason),)
-        shown = [f"{p!a}: {r}" for p, r in self.problems[:_MAX_LISTED]]
-        more = len(self.problems) - len(shown)
+        self.stable = stable
+        """For one file: the reason follows from the bytes or the kind of the file alone (``FileProblem.stable``
+        once the file is known to equal ``HEAD``)."""
+        listed = tuple(problems) or ((path, reason),)
+        shown = [f"{p!a}: {r}" for p, r in listed[:_MAX_LISTED]]
+        more = len(listed) - len(shown)
         if more > 0:
             shown.append(f"... and {more} more")
-        super().__init__("; ".join(shown))
+        super().__init__("; ".join(shown), problems=listed)
 
     @classmethod
     def from_problems(cls, problems: Sequence[tuple[str, str]]) -> NoteFileError:

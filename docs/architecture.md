@@ -97,13 +97,13 @@ backend/
 
 | Port | Responsibility | Adapter(s) |
 |---|---|---|
-| `NoteRepository` | `get`, `list_refs` (body-free `NoteRef` snapshot), `list_notes`, `head()` (the current content revision: the id the last `apply` returned, `None` when empty), and `apply(changes, message)`: write one or more notes and record **one** commit with its `Written-by` trailer, all-or-nothing; each `NoteChange` carries the `expected_hash` (`None` = must not exist) and a mismatch raises `ContentConflict` | filesystem; in-memory fake |
+| `NoteRepository` | `get`, `list_refs` (body-free `NoteRef` snapshot), `list_notes` (strict: raises on any problem file), `scan()` (usable notes plus every problem file, each `stable` or not; see below), `head()` (the current content revision: the id the last `apply` returned, `None` when empty), and `apply(changes, message)`: write one or more notes and record **one** commit with its `Written-by` trailer, all-or-nothing; each `NoteChange` carries the `expected_hash` (`None` = must not exist) and a mismatch raises `ContentConflict` | filesystem; in-memory fake |
 | `SearchIndex` | `upsert` / `remove` / `rebuild(notes, revision=)`, `built_from()` / `set_revision()` (the content revision the index reflects; `upsert`/`remove` never change it), `search(SearchQuery)` (ceiling mandatory; order: score, priority, id) and `find_similar` (duplicate detection); returns summaries only | SQLite FTS5 |
 | `GraphIndex` | `rebuild(refs, revision=)`, `built_from()` / `set_revision()` (as `SearchIndex`), `graph`, `backlinks`, `neighbors(hops)`, `orphans`, `broken_links`; every query takes the ceiling, hidden notes are neither nodes nor broken links | SQLite tables |
 | `VersionControl` | `push` to the backup remote. Commits are made by `NoteRepository.apply`, so a write and its commit cannot diverge | git CLI |
 | `Cipher` | encrypt/decrypt restricted note payloads (used by the filesystem adapter only); `DecryptionError` on tampering | Fernet |
 | `TokenStore` | `add`, `get`, `find_by_hash` (also returns revoked tokens), `save`, `all`; tokens are stored hashed | SQLite |
-| `WriteAttemptStore` | Atomically reserve a rolling-hour slot for an authenticated token; a refusal leaves state unchanged | SQLite; in-memory fake |
+| `WriteAttemptStore` | Atomically reserve a rolling-hour slot for an authenticated token; a refusal leaves state unchanged; `release` gives the slot back when the write failed on a note file problem before anything was written | SQLite; in-memory fake |
 | `ChangeHistory` | Return recent first-parent revisions, attribution and note versions for private owner history | Git/filesystem; in-memory fake |
 | `Clock`, `IdGenerator` | `now()`; note ids, token ids and token secrets, for deterministic tests | system / fixed fakes |
 
@@ -163,10 +163,14 @@ body (whole or one section) whose target the reader cannot see, or that does not
   [write decision](adr/0020-direct-agent-writes.md) and [domain contract](domain-model.md#7-agent-writes).
 
 **Maintenance**
-- `RebuildIndex` — re-read the content repo, decrypt restricted notes in memory, rebuild the index (owner only; also
-  the recovery path when an index update failed after a commit).
+- `RebuildIndex` — re-read the content repo (`scan`), decrypt restricted notes in memory, rebuild the index (owner
+  only; also the recovery path when an index update failed after a commit). Files with a stable problem are left
+  out and the index is still recorded as built from `head()`; any problem that is not stable fails the rebuild and
+  records nothing (see the filesystem notes below).
 - `HealthReport` — orphans, broken links, hub chains, overdue `review_by`, budget violations, secrets in existing
-  notes (never echoed), stale indexes (owner only, restricted ceiling).
+  notes (never echoed), stale indexes (owner only, restricted ceiling). Problem note files are listed first, by
+  path with a fixed reason (`note_file_excluded`, `note_file_blocking`); the report itself never fails because of
+  a note file.
   An index is stale when its `built_from()` differs from the repository `head()` (`index_is_stale`; the
   `Container.start()` reindexes when it is stale, implemented in Phase 2 PR 8), or when its content
   differs note by note. `RebuildIndex` records `head()` (read before the notes); agent writes and
@@ -221,16 +225,29 @@ Workstation                                    Server (docker compose: cerebro-<
 
 Filesystem repository, operating notes (Phase 2):
 
-- Only committed note content is served. `get`, `list_notes` and `list_refs` refuse, naming every path, a note file
-  under `core/`, `hubs/` or `notes/` that differs from `HEAD` (staged, edited, deleted, untracked or ignored: an
-  abandoned hand edit, an orphan left by an interrupted create, a note left staged by a crash). An index rebuilt from
-  the working tree can therefore be recorded as built from `HEAD`; while such a file exists, rebuilds, the reads that
-  need one, the health report and agent writes (cross-note validation lists every note) fail. Nothing is discarded
-  automatically: the owner commits the file or runs `git restore --staged --worktree` on it (or deletes a file that
-  was never committed). Other files (`schema/`, `README.md`, dotfiles, non-`.md` files) are not checked.
+- Only committed note content is served. A note file under `core/`, `hubs/` or `notes/` that differs from `HEAD`
+  (staged, edited, deleted, untracked or ignored: an abandoned hand edit, an orphan left by an interrupted create, a
+  note left staged by a crash) is never read into an index: `get` raises for it, and `scan` reports it as a problem
+  that is **not stable**, so rebuilds, the reads that need one, and writes fail (fail-closed) until the owner commits
+  the file or runs `git restore --staged --worktree` on it (or deletes a file that was never committed). Nothing is
+  discarded automatically. Other files (`schema/`, `README.md`, dotfiles, non-`.md` files) are not checked.
   Listings check before and after reading; `get` checks after reading and, when the file looks uncommitted, waits for
   any running `apply` and checks again. Residual risk: index flags set by hand (`assume-unchanged`, `skip-worktree`)
   hide a file's edits from git, so never set them on note files.
+- **One invalid committed file does not take the others down.** A file that equals `HEAD` but is not a valid note
+  (malformed frontmatter, wrong folder or file name, a plaintext file declaring `restricted`, an oversized file) is a
+  **stable** problem: the same revision always gives the same result, so it is left out of `scan` and the index is
+  recorded as built from `head()` without it (no rebuild per request). Every copy of an id stored in several folders
+  is left out, so neither copy can stand for the id. `get` returns `None` for such an id: it reads as missing
+  everywhere (search, graph, reads, link targets are redacted), so exclusion only ever narrows what is served. Not
+  stable, hence fail-closed: a restricted note that cannot be decrypted (the result depends on the configured key),
+  a symlinked or unreadable file, a folder that is not a real directory.
+- Writes are conservative: cross-note validation (`list_refs`, `list_notes`) needs every note, so agent writes and
+  owner edits fail while **any** problem file exists, stable or not (an incomplete set could pass a budget or hub
+  rule the full set fails). An agent's quota slot is given back in that case. The owner fixes the file by hand and
+  commits it; the health report names it.
+- Below the `restricted` ceiling, a note file that cannot be served now (`NoteReadError` on `get`) reads exactly like
+  a missing note, so an agent cannot learn that a hidden note exists; at `restricted` the error propagates.
 - `apply` refuses when a `.git/index.lock` exists (the error tells the owner to remove a stale one), when anything is
   staged (the paths are named), or when a planned note is untracked, has uncommitted edits, or a new note's path is
   already known to git, and commits only the planned paths.

@@ -6,7 +6,7 @@ import { useVisibleGraph } from "./visibleGraph";
 import "./health.css";
 
 type Severity = "error" | "warning";
-interface Finding {code: string; severity: Severity; field: string | null; subject: string}
+interface Finding {code: string; severity: Severity; field: string | null; subject: string; message: string}
 interface HealthReport {
   ok: boolean;
   notes_checked: number;
@@ -26,8 +26,10 @@ const descriptions: Record<string,string> = {
   body_over_hard_limit: "Body exceeds the maximum size",
   hub_over_budget: "Hub exceeds its word budget",
   core_over_budget: "Core notes exceed their combined word budget",
+  note_file_excluded: "Committed file is not a valid note",
+  note_file_blocking: "Note file differs from the last commit or cannot be read",
 };
-const nonNoteFindings = new Set(["index_stale","core_over_budget"]);
+const nonNoteFindings = new Set(["index_stale","core_over_budget","note_file_excluded","note_file_blocking"]);
 
 function indexChecks(report: HealthReport) {
   const codes = new Set(report.issues.map(issue => issue.code));
@@ -76,7 +78,8 @@ export function HealthScreen({api}: {api:ApiClient}) {
             finding.subject.length <= 80 && /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(finding.subject);
           const title = descriptions[finding.code] ?? finding.code.replaceAll("_"," ");
           return <li key={index}><span className="health-severity" data-tone={finding.severity}>{finding.severity === "error" ? "Error" : "Warning"}</span>
-            <div className="health-detail"><strong>{title}</strong><code translate="no">{finding.code}</code></div>
+            <div className="health-detail"><strong>{title}</strong><code translate="no">{finding.code}</code>
+              {finding.message && <p className="health-message">{finding.message}</p>}</div>
             <div className="health-subject">{link ? <a translate="no" href={notePath(finding.subject,true)}>{finding.subject}</a>
               : <span translate="no">{finding.subject}</span>}{finding.field && <small translate="no">{finding.field}</small>}</div></li>;
         })}</ul>}

@@ -148,7 +148,8 @@ def run_read_command(
         case ReadNoteRequest():
             result = note_view(read.execute(request, ctx))
         case RebuildIndexRequest():
-            result = {"notes_indexed": reindex.execute(request, ctx).notes_indexed}
+            rebuilt = reindex.execute(request, ctx)
+            result = {"notes_indexed": rebuilt.notes_indexed, "files_excluded": rebuilt.files_excluded}
         case HealthReportRequest():
             report = health.execute(request, ctx)
             result = health_view(report)

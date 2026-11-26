@@ -4,10 +4,10 @@ from collections.abc import Iterable, Mapping
 
 from cerebro.application.access import require_owner
 from cerebro.application.dto import HealthCode, HealthIssue, HealthReportRequest, HealthReportResult
-from cerebro.application.errors import PermissionDenied
+from cerebro.application.errors import NoteReadError, PermissionDenied
 from cerebro.application.index_state import index_is_stale
 from cerebro.application.ports.graph import GraphIndex
-from cerebro.application.ports.notes import NoteRepository
+from cerebro.application.ports.notes import FileProblem, NoteRepository
 from cerebro.application.ports.search import MAX_LIMIT, SearchIndex, SearchQuery
 from cerebro.application.ports.system import Clock
 from cerebro.domain.access import AccessCeiling, AccessContext
@@ -33,6 +33,11 @@ class HealthReport:
     cycles, hub chains), the combined P0 budget. It adds orphan notes and overdue ``review_by`` dates, then checks both
     index revisions and individual entries against the content repository. A stale index requires ``RebuildIndex``.
 
+    Problem files come first, by path with the fixed reason: ``note_file_excluded`` for a committed file that is
+    not a valid note (left out of everything else), ``note_file_blocking`` for a file that differs from the last
+    commit or cannot be read (rebuilds and writes fail until the owner fixes it; the index entries are then not
+    compared, since the files read are not the indexed revision). The report never fails because of a note file.
+
     Secrets in existing notes are reported as ``secret_detected`` with the field, detector and line only,
     described from the findings' structured fields (the scanner's message text is never used), so the
     report never carries any part of a secret.
@@ -56,9 +61,18 @@ class HealthReport:
         require_owner(ctx, "read the health report")
         if ctx.ceiling.level is not Sensitivity.RESTRICTED:
             raise PermissionDenied("read the health report below the restricted ceiling")
-        notes = self._notes.list_notes()
+        try:
+            scan = self._notes.scan()
+        except NoteReadError as error:
+            problems = [FileProblem(path, reason, stable=False) for path, reason in error.problems]
+            return HealthReportResult(
+                issues=tuple(map(_file_issue, problems or [FileProblem("notes", "cannot be listed", stable=False)])),
+                notes_checked=0,
+                search_index_checked=False,
+            )
+        notes = scan.notes
         now = self._clock.now()
-        issues: list[HealthIssue] = []
+        issues: list[HealthIssue] = [_file_issue(problem) for problem in scan.problems]
         issues.extend(self._note_issues(notes))
         issues.extend(
             HealthIssue(
@@ -81,8 +95,8 @@ class HealthReport:
             for n in notes
             if n.is_current and n.review_by is not None and n.review_by < now.date()
         )
-        search_checked = len(notes) <= MAX_LIMIT
-        issues.extend(self._index_issues(notes, search_checked=search_checked))
+        search_checked = scan.stable and len(notes) <= MAX_LIMIT
+        issues.extend(self._index_issues(notes, entries=scan.stable, search_checked=search_checked))
         return HealthReportResult(
             issues=tuple(issues),
             notes_checked=len(notes),
@@ -109,7 +123,7 @@ class HealthReport:
         words = {n.id: word_count(n.body) for n in notes if n.priority is Priority.P0 and n.is_current}
         yield from (_finding_issue("core-budget", f) for f in core_budget_findings(words))
 
-    def _index_issues(self, notes: tuple[Note, ...], *, search_checked: bool) -> Iterable[HealthIssue]:
+    def _index_issues(self, notes: tuple[Note, ...], *, entries: bool, search_checked: bool) -> Iterable[HealthIssue]:
         if index_is_stale(self._notes, self._search, self._graph):
             yield HealthIssue(
                 subject="index",
@@ -118,6 +132,8 @@ class HealthReport:
                 field=None,
                 message="an index was not built from the current content revision: run RebuildIndex",
             )
+        if not entries:
+            return
         by_id = {n.id: n for n in notes}
         stored_refs = {n.id: NoteRef.from_note(n) for n in notes}
         indexed_refs = {r.id: r for r in self._graph.graph(ceiling=FULL_VIEW, include_history=True).nodes}
@@ -128,6 +144,16 @@ class HealthReport:
         stored = {i: _search_view(n) for i, n in by_id.items()}
         indexed = {h.id: (h.title, h.summary, h.area, h.type, h.priority, h.sensitivity, h.status) for h in hits}
         yield from _differences("search index", HealthCode.SEARCH_INDEX_STALE, stored, indexed)
+
+
+def _file_issue(problem: FileProblem) -> HealthIssue:
+    if problem.stable:
+        code, effect = HealthCode.NOTE_FILE_EXCLUDED, "left out of reads, search and the graph until fixed"
+    else:
+        code, effect = HealthCode.NOTE_FILE_BLOCKING, "index rebuilds and writes fail until it is fixed"
+    return HealthIssue(
+        subject=problem.path, code=code, severity=Severity.ERROR, field=None, message=f"{problem.reason} ({effect})"
+    )
 
 
 def _search_view(n: Note) -> tuple[object, ...]:

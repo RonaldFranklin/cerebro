@@ -14,6 +14,7 @@ from cerebro.application.errors import (
 )
 from cerebro.bootstrap.browser import owner_credentials
 from cerebro.bootstrap.container import build_container
+from cerebro.bootstrap.diagnostics import owner_message
 from cerebro.bootstrap.init_content import InitializationError, initialize_content
 from cerebro.bootstrap.settings import ConfigurationError, load_settings
 from cerebro.domain.access import AccessCeiling, AccessContext
@@ -57,7 +58,7 @@ def main() -> int:
     except (NoteNotFound, SectionNotFound) as error:
         print(f"cerebro: {error}", file=sys.stderr)
         return 1
-    except Exception:
-        # Storage and dependency exceptions can include file paths, invalid values or note content.
-        print("cerebro: operation failed", file=sys.stderr)
+    except Exception as error:
+        # Storage and dependency exceptions can include invalid values or note content: only safe texts are shown.
+        print(f"cerebro: {owner_message(error)}", file=sys.stderr)
         return 1

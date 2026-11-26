@@ -4,6 +4,8 @@ Inbound adapters map each of these to their own error format in one place. Domai
 (``InvalidValueError``, ``ContentConflict``) propagate unchanged.
 """
 
+from collections.abc import Sequence
+
 from cerebro.domain.note import NoteId
 
 
@@ -12,7 +14,12 @@ class ApplicationError(Exception):
 
 
 class NoteReadError(ApplicationError):
-    """Stored note data is unreadable or ambiguous."""
+    """Stored note data is unreadable or ambiguous. ``problems`` lists ``(path, reason)`` pairs for the owner (fixed
+    reasons, never note content); never show them to an agent, whose ceiling may hide those notes."""
+
+    def __init__(self, message: str = "note data is unreadable", *, problems: Sequence[tuple[str, str]] = ()) -> None:
+        super().__init__(message)
+        self.problems: tuple[tuple[str, str], ...] = tuple(problems)
 
 
 class NoteNotFound(ApplicationError):  # noqa: N818

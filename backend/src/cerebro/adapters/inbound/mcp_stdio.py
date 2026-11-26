@@ -12,6 +12,12 @@ from cerebro.adapters.inbound.input_limits import MAX_INPUT_BYTES
 from cerebro.adapters.inbound.mcp_http import decode_frame, invalid_arguments, validate_params
 from cerebro.adapters.inbound.mcp_tools import InvalidToolArguments
 
+CONNECT_TIMEOUT = 5.0
+"""Seconds to reach the local listener; failing that, the reply is "Cérebro offline"."""
+REPLY_TIMEOUT = 120.0
+"""Seconds to wait for the reply once connected. A write or a stale-index rebuild may first wait for the writer lock
+(30 s by default) and the repository lock (10 s): a shorter wait would report a busy server as offline."""
+
 
 def bridge(source: BinaryIO, sink: BinaryIO, *, host: str, port: int, secret: str) -> int:
     version: str | None = None
@@ -48,8 +54,11 @@ def bridge(source: BinaryIO, sink: BinaryIO, *, host: str, port: int, secret: st
             elif version is not None:
                 headers["MCP-Protocol-Version"] = version
             # HTTPConnection opens the given socket directly. It never discovers proxies or follows redirects.
-            conn = http.client.HTTPConnection(host, port, timeout=5)
+            conn = http.client.HTTPConnection(host, port, timeout=CONNECT_TIMEOUT)
             try:
+                conn.connect()
+                if conn.sock is not None:
+                    conn.sock.settimeout(REPLY_TIMEOUT)
                 conn.request("POST", "/mcp", body=frame, headers=headers)
                 response = conn.getresponse()
                 if response.status in (401, 403):

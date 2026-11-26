@@ -26,6 +26,7 @@ from cerebro.adapters.inbound.mcp_stdio import bridge
 from cerebro.adapters.inbound.mcp_tools import MCPTools
 from cerebro.application.browser import BrowserBinding
 from cerebro.bootstrap.container import build_container
+from cerebro.bootstrap.diagnostics import owner_message
 from cerebro.bootstrap.settings import load_settings
 from cerebro.domain.access import AccessCeiling
 from cerebro.domain.enums import Sensitivity
@@ -155,8 +156,8 @@ def serve() -> int:
             server = uvicorn.Server(config)
             server.run(sockets=sockets)
             return 0 if server.started else 1
-    except Exception:
-        print("cerebro: MCP server unavailable", file=sys.stderr)
+    except Exception as error:
+        print(f"cerebro: MCP server unavailable: {owner_message(error)}", file=sys.stderr)
         return 1
 
 

@@ -10,6 +10,7 @@ from enum import StrEnum
 from mcp import MCPError, types
 from mcp.server import Server, ServerRequestContext
 
+from cerebro.adapters.inbound.diagnostics import LOCAL_FAILURE, NOTE_FILES_FAILURE, log_failure
 from cerebro.adapters.inbound.input_limits import MAX_FIELD_BYTES, MAX_QUERY_BYTES, bounded_text
 from cerebro.adapters.inbound.mcp_write import WRITE_TOOL, write_request
 from cerebro.adapters.inbound.read_views import overview_view, read_view, search_view
@@ -29,6 +30,7 @@ from cerebro.application.dto import (
 from cerebro.application.errors import (
     AuthenticationFailed,
     NoteNotFound,
+    NoteReadError,
     PermissionDenied,
     SectionNotFound,
 )
@@ -232,6 +234,11 @@ def _structured_error(details: dict[str, object]) -> types.CallToolResult:
     )
 
 
+def _route(name: str) -> str:
+    """The tool name for the operator log, only when it is one of ours (clients choose the name)."""
+    return name if name in _TOOLS else "unknown tool"
+
+
 def tool_scope(name: str) -> Scope:
     return Scope.WRITE if name in {WRITE_TOOL.name, "cerebro_write_guide"} else Scope.READ
 
@@ -305,9 +312,13 @@ class MCPTools:
             )
         except PermissionDenied, AuthenticationFailed:
             return _error("Access denied.")
-        except Exception:
+        except NoteReadError as error:
+            log_failure(f"mcp {_route(name)}", error)
+            return _error(NOTE_FILES_FAILURE)
+        except Exception as error:
             # Filesystem, SQLite or SDK errors may contain private content. The wire error is fixed.
-            return _error("Cérebro offline")
+            log_failure(f"mcp {_route(name)}", error)
+            return _error(LOCAL_FAILURE)
 
     def server(self, authenticate: Callable[[object], AccessContext]) -> Server[dict[str, object]]:
         async def list_tools(
@@ -317,8 +328,9 @@ class MCPTools:
                 return self.list_tools(await asyncio.to_thread(authenticate, ctx.request))
             except AuthenticationFailed, PermissionDenied:
                 raise MCPError(code=types.INVALID_REQUEST, message="Access denied.") from None
-            except Exception:
-                raise MCPError(code=types.INTERNAL_ERROR, message="Cérebro offline") from None
+            except Exception as error:
+                log_failure("mcp tools/list", error)
+                raise MCPError(code=types.INTERNAL_ERROR, message=LOCAL_FAILURE) from None
 
         async def call_tool(
             ctx: ServerRequestContext[dict[str, object]], params: types.CallToolRequestParams

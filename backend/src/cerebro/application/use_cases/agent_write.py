@@ -4,12 +4,12 @@ import re
 import unicodedata
 from collections.abc import Iterator
 from dataclasses import replace
-from datetime import date
+from datetime import date, datetime
 
-from cerebro.application.access import require_scope, visible_id
+from cerebro.application.access import require_scope, stored_note, visible_id
 from cerebro.application.agent_write import AgentWriteRequest, AgentWriteResult, WriteFinding, WriteRejected, projected
 from cerebro.application.dto import sensitivity_raise_warnings
-from cerebro.application.errors import PermissionDenied
+from cerebro.application.errors import NoteReadError, PermissionDenied
 from cerebro.application.index_state import index_commit
 from cerebro.application.note_validation import validate_candidate
 from cerebro.application.ports.graph import GraphIndex
@@ -69,7 +69,17 @@ class AgentWrite:
         now = self._clock.now()
         if not self._attempts.reserve(ctx.token_id, now, self._limit):
             raise WriteRejected(WriteFinding("rate_limited", "request", "Wait for a rolling-hour quota slot."))
+        try:
+            return self._write(request, ctx, now, ctx.token_id, ctx.principal.name)
+        except NoteReadError:
+            # A note file needs the owner's attention: raised before ``apply``, so nothing was written. The agent
+            # did nothing wrong, so the attempt does not count against its quota.
+            self._attempts.release(ctx.token_id, now)
+            raise
 
+    def _write(
+        self, request: AgentWriteRequest, ctx: AccessContext, now: datetime, token_id: str, writer: str
+    ) -> AgentWriteResult:
         if request.has_unexpected_fields:
             raise WriteRejected(
                 WriteFinding(
@@ -87,7 +97,7 @@ class AgentWrite:
                 raise WriteRejected(WriteFinding("invalid_field", "request_id", "Supply a 1-64 character request id."))
             if request.target is not None or request.base_hash is not None:
                 raise WriteRejected(WriteFinding("invalid_field", "target", "Omit target and base_hash on create."))
-            key = create_request_key(ctx.token_id, request.request_id)
+            key = create_request_key(token_id, request.request_id)
             created = self._notes.find_create(key)
             if created is not None:
                 _require_core_scope(self._visible_target(created.note.id, ctx), ctx, "target")
@@ -143,7 +153,7 @@ class AgentWrite:
         warnings = projected(report, Severity.WARNING)
         if base is None:
             warnings += self._possible_duplicate(candidate, ctx)
-        message = AgentWriteCommit(note_id=note_id, written_by=ctx.principal.name, request_key=key)
+        message = AgentWriteCommit(note_id=note_id, written_by=writer, request_key=key)
         revision = self._commit(candidate, message, request.base_hash)
         return AgentWriteResult(
             note_id,
@@ -194,7 +204,7 @@ class AgentWrite:
         ]
 
     def _visible_target(self, note_id: NoteId, ctx: AccessContext) -> Note:
-        note = self._notes.get(note_id)
+        note = stored_note(self._notes, note_id, ctx)
         if note is None or not ctx.ceiling.allows(note.sensitivity) or self._unavailable_references(note, ctx):
             raise WriteRejected(_UNAVAILABLE)
         return note

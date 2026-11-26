@@ -4,13 +4,16 @@ Layout (domain model section 1): ``core/`` holds the notes of type ``core``, ``h
 ``notes/`` all the others, flat, one file ``<id>.md`` per note. The folder follows from the type, so a change that
 would alter a note's type across those groups is refused (a note never moves; ``id`` and ``type`` are immutable).
 
-Reading refuses, with ``NoteFileError`` naming the relative path and a fixed reason (never content): symlinks
-anywhere, files over the size cap, malformed frontmatter, ``id`` different from the file stem, a note in the wrong
-folder, the same id in two folders, and any file that is neither a plaintext nor a valid encrypted note. Listings
-report every bad file at once instead of skipping any (a silently dropped note would corrupt the indexes).
+Problem files are named by relative path with a fixed reason (never content): symlinks anywhere, files over the
+size cap, malformed frontmatter, ``id`` different from the file stem, a note in the wrong folder, the same id in two
+folders, and any file that is neither a plaintext nor a valid encrypted note. ``scan`` reports every one of them
+(``FileProblem``), never dropping a file silently; ``list_notes`` raises ``NoteFileError`` naming them all.
+A problem is *stable* when the file equals ``HEAD`` and the reason follows from its bytes or kind alone (not for a
+decryption failure, which depends on the configured key, nor for I/O errors): such a file is left out of ``scan``,
+every copy of a duplicated id is left out, and ``get`` returns ``None`` for it, so it reads as missing everywhere.
 Non-``.md`` files and dotfiles are ignored.
 
-Only committed note content is served: ``get`` and the listings refuse (``NoteFileError``, reason
+Only committed note content is served: ``get`` refuses and ``scan`` reports as not stable (``NoteFileError``, reason
 ``UNCOMMITTED_REASON``, naming every such path) a note file that differs from ``HEAD`` in the index or the working tree
 (staged, edited, deleted, untracked or ignored), so an index rebuilt from ``list_notes`` and recorded as built from
 ``head()`` never holds uncommitted content (an abandoned edit lowering a sensitivity, an orphan left by an interrupted
@@ -51,6 +54,7 @@ encrypted file by a plaintext one declaring ``internal`` is indistinguishable fr
 its entries by path (an attacker would need write access to the repository directory).
 """
 
+import errno
 import os
 import time
 from collections.abc import Sequence
@@ -72,7 +76,7 @@ from cerebro.adapters.outbound.filesystem.safeio import (
 from cerebro.adapters.outbound.git import GitError, GitRepo
 from cerebro.application.errors import DecryptionError
 from cerebro.application.ports import Cipher, NoteChange
-from cerebro.application.ports.notes import CommittedCreate, check_agent_commit
+from cerebro.application.ports.notes import CommittedCreate, FileProblem, NoteScan, check_agent_commit
 from cerebro.domain.commit_message import AgentWriteCommit, OwnerCommit
 from cerebro.domain.content_hash import content_hash, is_content_hash
 from cerebro.domain.enums import Sensitivity
@@ -94,6 +98,8 @@ UNCOMMITTED_REASON: Final = (
     "differs from the last commit (staged, edited, deleted or never committed): commit it, or discard it with"
     " git restore --staged --worktree (delete the file if it was never committed)"
 )
+_UNDECRYPTABLE: Final = "restricted note cannot be decrypted (wrong key, tampering or swapped id)"
+_DUPLICATE_REASON: Final = "the same note id exists in several folders"
 _INDEX_LOCK_HINT: Final = (
     "if no git command is running in the content repository, a stale .git/index.lock left by an interrupted git"
     " command blocks commits: remove that file"
@@ -136,9 +142,7 @@ def decode_note_file(relative: str, data: bytes, cipher: Cipher) -> Note:
     except RestrictedFormatError:
         raise NoteFileError(relative, "malformed restricted-note file") from None
     except DecryptionError:
-        raise NoteFileError(
-            relative, "restricted note cannot be decrypted (wrong key, tampering or swapped id)"
-        ) from None
+        raise NoteFileError(relative, _UNDECRYPTABLE) from None
     except NoteFormatError as exc:
         raise NoteFileError(relative, exc.reason) from None
     if folder_for(note) != folder:
@@ -175,39 +179,55 @@ class FilesystemNoteRepository:
         found = self._existing_paths(note_id)
         if not found:
             return None
-        if len(found) > 1:
-            raise NoteFileError(found[0], "the same note id exists in several folders")
-        note = self._read(found[0])
+        note, problem = self._lookup(found)
         if not self._uncommitted(found):  # checked after the read: what was read was not being edited
-            return note
+            return note  # ``None`` for a committed file that is not a valid note: left out, as in ``scan``
         # An ``apply`` may be between writing this file and committing it: wait for it (shared lock), then decide.
         with file_lock(self._lock_path, exclusive=False, timeout=self._lock_timeout):
             found = self._existing_paths(note_id)
             if not found:
                 return None
-            if len(found) > 1:
-                raise NoteFileError(found[0], "the same note id exists in several folders")
-            note = self._read(found[0])
+            note, problem = self._lookup(found)
             if self._uncommitted(found):
-                raise NoteFileError(found[0], UNCOMMITTED_REASON)
+                raise problem or NoteFileError(found[0], UNCOMMITTED_REASON)
             return note
 
-    def list_notes(self) -> tuple[Note, ...]:
-        """Checked before and after reading: a file edited by hand during the listing is refused too."""
+    def _lookup(self, found: Sequence[str]) -> tuple[Note | None, NoteFileError | None]:
+        """The note at the only path in ``found``, or ``None`` with the problem when the files themselves make it
+        unusable (the same id in several folders, invalid content). Raises for anything else (I/O)."""
+        if len(found) > 1:
+            return None, NoteFileError(found[0], _DUPLICATE_REASON, stable=True)
+        try:
+            return self._read(found[0]), None
+        except NoteFileError as exc:
+            if not exc.stable:
+                raise
+            return None, exc
+
+    def scan(self) -> NoteScan:
+        """Checked before and after reading: a file edited by hand during the scan is reported too. A problem is
+        stable only when it follows from the file's bytes or kind and the file equals ``HEAD``; files that differ
+        from ``HEAD`` are left out (their content is never served) and reported as not stable."""
         with file_lock(self._lock_path, exclusive=False, timeout=self._lock_timeout):
             before = self._uncommitted(FOLDERS)
-            notes: tuple[Note, ...] = ()
-            problems: list[tuple[str, str]] = []
-            try:
-                notes = self._load_all()
-            except NoteFileError as exc:
-                problems.extend(exc.problems)
-            reported = {path for path, _ in problems}
-            uncommitted = sorted(set(before) | set(self._uncommitted(FOLDERS)))
-            problems.extend((path, UNCOMMITTED_REASON) for path in uncommitted if path not in reported)
-            if problems:
-                raise NoteFileError.from_problems(problems)
-            return notes
+            notes, problems = self._load_all()
+            uncommitted = set(before) | set(self._uncommitted(FOLDERS))
+        reported = {problem.path for problem in problems}
+        problems = [
+            FileProblem(p.path, f"{p.reason}; it {UNCOMMITTED_REASON}", stable=False) if p.path in uncommitted else p
+            for p in problems
+        ]
+        problems += [FileProblem(path, UNCOMMITTED_REASON, stable=False) for path in uncommitted - reported]
+        return NoteScan(
+            notes=tuple(note for path, note in notes if path not in uncommitted),
+            problems=tuple(sorted(problems, key=lambda p: p.path)),
+        )
+
+    def list_notes(self) -> tuple[Note, ...]:
+        scan = self.scan()
+        if scan.problems:
+            raise NoteFileError.from_problems([(p.path, p.reason) for p in scan.problems])
+        return scan.notes
 
     def list_refs(self) -> tuple[NoteRef, ...]:
         return tuple(NoteRef.from_note(note) for note in self.list_notes())
@@ -268,17 +288,28 @@ class FilesystemNoteRepository:
         return [rel for rel in candidates if os.path.lexists(self._root / rel)]
 
     def _read(self, relative: str) -> Note:
+        """``NoteFileError.stable`` is set for invalid content and oversized files; never for an I/O failure (a
+        symlinked file is refused as not stable too: its error cannot be told from a folder swapped meanwhile) nor
+        for a restricted note that cannot be decrypted."""
         try:
             data = read_regular_file(self._root, relative, MAX_FILE_BYTES)
         except FileNotFoundError:
             raise NoteFileError(relative, "the file disappeared while reading") from None
-        except OSError:
-            raise NoteFileError(relative, "cannot be read (symlink, not a regular file or too large)") from None
-        return decode_note_file(relative, data, self._cipher)
+        except OSError as exc:
+            raise NoteFileError(
+                relative, "cannot be read (symlink, not a regular file or too large)", stable=exc.errno == errno.EFBIG
+            ) from None
+        try:
+            return decode_note_file(relative, data, self._cipher)
+        except NoteFileError as exc:
+            # A decryption failure depends on the configured keys, not on the file alone: a wrong key must fail
+            # loudly, and fixing it must not leave restricted notes out of an index recorded as fresh.
+            raise NoteFileError(exc.path, exc.reason, stable=exc.reason != _UNDECRYPTABLE) from None
 
-    def _load_all(self) -> tuple[Note, ...]:
-        notes: dict[NoteId, Note] = {}
-        problems: list[tuple[str, str]] = []
+    def _load_all(self) -> tuple[list[tuple[str, Note]], list[FileProblem]]:
+        """``(path, note)`` pairs ordered by id, and every problem found (folder problems are never stable)."""
+        entries: list[tuple[str, os.DirEntry[str]]] = []
+        problems: list[FileProblem] = []
         for folder in FOLDERS:
             directory = self._root / folder
             try:
@@ -289,45 +320,42 @@ class FilesystemNoteRepository:
             if not exists:
                 continue
             if not is_real:
-                problems.append((folder, "is not a real directory (symlink or file)"))
+                problems.append(FileProblem(folder, "is not a real directory (symlink or file)", stable=False))
                 continue
             try:
-                entries = sorted(os.scandir(directory), key=lambda e: e.name)
+                entries.extend((folder, entry) for entry in sorted(os.scandir(directory), key=lambda e: e.name))
             except OSError:
-                problems.append((folder, "cannot be listed"))
-                continue
-            for entry in entries:
-                self._load_entry(folder, entry, notes, problems)
-        if problems:
-            raise NoteFileError.from_problems(problems)
-        return tuple(notes[i] for i in sorted(notes))
+                problems.append(FileProblem(folder, "cannot be listed", stable=False))
+        names = [e.name for _, e in entries if e.name.endswith(".md") and not e.name.startswith(".")]
+        duplicated = {name for name in names if names.count(name) > 1}
+        notes: list[tuple[str, Note]] = []
+        for folder, entry in entries:
+            relative = f"{folder}/{entry.name}"
+            if entry.name in duplicated:  # every copy is left out: none of them may stand for the id
+                problems.append(FileProblem(relative, _DUPLICATE_REASON, stable=True))
+            elif note := self._load_entry(relative, entry, problems):
+                notes.append((relative, note))
+        return sorted(notes, key=lambda item: item[1].id), problems
 
-    def _load_entry(
-        self, folder: str, entry: os.DirEntry[str], notes: dict[NoteId, Note], problems: list[tuple[str, str]]
-    ) -> None:
+    def _load_entry(self, relative: str, entry: os.DirEntry[str], problems: list[FileProblem]) -> Note | None:
         name = entry.name
-        relative = f"{folder}/{name}"
         if name.startswith("."):
-            return
+            return None
         if entry.is_dir(follow_symlinks=False):
-            problems.append((relative, "unexpected directory (the layout is flat)"))
-            return
+            problems.append(FileProblem(relative, "unexpected directory (the layout is flat)", stable=True))
+            return None
         if not name.endswith(".md"):
-            return
+            return None
         try:
-            note_id = NoteId(name.removesuffix(".md"))
+            NoteId(name.removesuffix(".md"))
         except InvalidValueError:
-            problems.append((relative, "the file name is not a valid note id"))
-            return
+            problems.append(FileProblem(relative, "the file name is not a valid note id", stable=True))
+            return None
         try:
-            note = self._read(relative)
+            return self._read(relative)
         except NoteFileError as exc:
-            problems.extend(exc.problems)
-            return
-        if note.id in notes:
-            problems.append((relative, "the same note id exists in several folders"))
-            return
-        notes[note_id] = note
+            problems.append(FileProblem(relative, exc.reason, stable=exc.stable))
+            return None
 
     # -- writing -------------------------------------------------------------------------------------------------
 
@@ -371,7 +399,7 @@ class FilesystemNoteRepository:
             if not found:
                 raise ContentConflict(expected, "")
             if len(found) > 1:
-                raise NoteFileError(found[0], "the same note id exists in several folders")
+                raise NoteFileError(found[0], _DUPLICATE_REASON)
             stored = self._read(found[0])
             if found[0] != item.relative:
                 raise InvalidValueError("type", "a note cannot move between core/, hubs/ and notes/")

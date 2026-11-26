@@ -36,6 +36,34 @@ class CommittedCreate:
     note: Note
 
 
+@dataclass(frozen=True, slots=True)
+class FileProblem:
+    """A file of the content repository that cannot be used as a note: its relative ``path`` and a fixed ``reason``
+    (never note content).
+
+    ``stable`` is true when the problem follows from the committed content alone (the file equals ``HEAD``, so the
+    same revision always gives the same problem: malformed or undecryptable content, a wrong folder or file name,
+    a symlink, an oversized file, the same id in several folders). An index built without such a file can be recorded
+    as built from ``head()``. Anything else (a file that differs from ``HEAD``, an I/O error) is not stable."""
+
+    path: str
+    reason: str
+    stable: bool
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class NoteScan:
+    """Every usable note, ordered by id, and every file left out of ``notes`` with the reason."""
+
+    notes: tuple[Note, ...]
+    problems: tuple[FileProblem, ...] = ()
+
+    @property
+    def stable(self) -> bool:
+        """``notes`` is a function of ``head()``: every problem is stable."""
+        return all(problem.stable for problem in self.problems)
+
+
 def check_agent_commit(changes: Sequence[NoteChange], message: AgentWriteCommit) -> None:
     """Keep the request key and authenticated attribution tied to the single change committed."""
     if len(changes) != 1 or changes[0].note.id != message.note_id:
@@ -50,7 +78,8 @@ class NoteRepository(Protocol):
     """
 
     def get(self, note_id: NoteId) -> Note | None:
-        """The stored note, or ``None`` if it does not exist."""
+        """The stored note, or ``None`` if it does not exist or its file has a stable problem (see ``scan``).
+        Raises ``NoteReadError`` when the file cannot be served now (it differs from ``HEAD``, an I/O error)."""
         ...
 
     def list_refs(self) -> tuple[NoteRef, ...]:
@@ -58,7 +87,14 @@ class NoteRepository(Protocol):
         ...
 
     def list_notes(self) -> tuple[Note, ...]:
-        """Every note, ordered by id (used to rebuild the indexes)."""
+        """Every note, ordered by id. Strict: raises ``NoteReadError`` naming every problem of ``scan`` (a
+        cross-note check over an incomplete set could pass a rule the full set fails)."""
+        ...
+
+    def scan(self) -> NoteScan:
+        """Every usable note and every problem file, for the index rebuild and the health report. A file with a
+        stable problem is left out and listed, and so is every copy of an id stored more than once; ``get``
+        returns ``None`` for such an id. Raises ``NoteReadError`` only when the scan itself cannot run."""
         ...
 
     def head(self) -> str | None:

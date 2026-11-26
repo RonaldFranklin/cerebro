@@ -13,6 +13,7 @@ from starlette.responses import JSONResponse, Response
 from starlette.routing import Route, Router
 from starlette.types import Message, Receive, Scope, Send
 
+from cerebro.adapters.inbound.diagnostics import LOCAL_FAILURE, log_failure
 from cerebro.adapters.inbound.input_limits import MAX_INPUT_BYTES
 from cerebro.adapters.inbound.mcp_tools import InvalidToolArguments, MCPTools, parse_tool, tool_scope
 from cerebro.application.dto import AuthenticateTokenRequest
@@ -106,9 +107,10 @@ def http_app(
             except PermissionDenied:
                 await Response("Access denied.", status_code=403)(scope, receive, send)
                 return
-            except Exception:
+            except Exception as error:
+                log_failure("mcp authentication", error)
                 await JSONResponse(
-                    {"jsonrpc": "2.0", "id": rpc_id, "error": {"code": -32603, "message": "Cérebro offline"}},
+                    {"jsonrpc": "2.0", "id": rpc_id, "error": {"code": -32603, "message": LOCAL_FAILURE}},
                     status_code=503,
                 )(scope, receive, send)
                 return

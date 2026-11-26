@@ -32,3 +32,12 @@ class SqliteWriteAttemptStore:
                 )
             db.execute("INSERT INTO write_attempts (token_id, reserved_us) VALUES (?, ?)", (token_id, current))
             return True
+
+    def release(self, token_id: str, reserved_at: datetime) -> None:
+        reserved = (reserved_at - _EPOCH) // _MICROSECOND
+        with self._db.write() as db:
+            db.execute(
+                "DELETE FROM write_attempts WHERE rowid = (SELECT rowid FROM write_attempts "
+                "WHERE token_id = ? AND reserved_us = ? LIMIT 1)",
+                (token_id, reserved),
+            )
