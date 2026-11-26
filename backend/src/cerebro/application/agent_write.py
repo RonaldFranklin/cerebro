@@ -27,7 +27,8 @@ class WriteFinding:
 
 
 class WriteRejected(ApplicationError):  # noqa: N818
-    def __init__(self, first: WriteFinding, *others: WriteFinding) -> None:
+    def __init__(self, first: WriteFinding, *others: WriteFinding, server_failure: bool = False) -> None:
+        self.server_failure = server_failure
         self.findings = (first, *others)
         super().__init__(first.code)
 

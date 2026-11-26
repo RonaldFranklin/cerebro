@@ -311,6 +311,15 @@ def test_create_can_retry_after_repeated_suffix_collisions(monkeypatch: pytest.M
     assert write.execute(request(), ctx).note_id == NoteId("direct-write-0001")
 
 
+def test_generated_id_skips_an_excluded_file_before_reading_it() -> None:
+    kit = Kit()
+    occupied = "direct-write-0001"
+    kit.world.notes.problems.append(FileProblem(f"notes/{occupied}.md", "unexpected directory", stable=True))
+    kit.world.notes.unreadable.add(NoteId(occupied))
+    ctx = replace(agent_ctx(scopes=frozenset({Scope.WRITE})), token_id="token")
+    assert writer(kit).execute(request(), ctx).note_id == NoteId("direct-write-0002")
+
+
 def test_generated_collisions_are_retried_and_replay_rechecks_current_visibility() -> None:
     kit = Kit()
     kit.world.add(id=NoteId("direct-write-0001"), sensitivity=Sensitivity.RESTRICTED)
@@ -481,14 +490,24 @@ def test_calls_on_invalid_committed_notes_leave_quota_for_unrelated_writes() -> 
     for candidate, code in (
         (update, "target_unavailable"),
         (request(related=["broken"]), "broken_link"),
-        (request(related=["vault-layout"]), "broken_link"),
-        (request(related=["not-here"]), "broken_link"),
         (replace(update_of("server-ssh-access", kit), body="See [[broken]]."), "broken_link"),
     ):
         with pytest.raises(WriteRejected, match=code):
             write.execute(candidate, ctx)
     assert kit.commits == before
     assert write.execute(request(), ctx).revision
+    with pytest.raises(WriteRejected, match="rate_limited"):
+        write.execute(request(), ctx)
+
+
+@pytest.mark.parametrize("refs", [["not-here"], ["vault-layout"], ["broken", "not-here"]])
+def test_invalid_commit_does_not_exempt_unrelated_client_link_errors(refs: list[str]) -> None:
+    kit = Kit()
+    write = writer(kit, 1)
+    ctx = replace(agent_ctx(scopes=frozenset({Scope.WRITE})), token_id="token-one")
+    kit.world.notes.problems.append(FileProblem("notes/broken.md", "invalid frontmatter", stable=True))
+    with pytest.raises(WriteRejected, match="broken_link"):
+        write.execute(request(related=refs), ctx)
     with pytest.raises(WriteRejected, match="rate_limited"):
         write.execute(request(), ctx)
 

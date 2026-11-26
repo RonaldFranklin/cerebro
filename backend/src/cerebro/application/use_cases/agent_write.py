@@ -72,9 +72,7 @@ class AgentWrite:
             scan = write_snapshot(self._notes)
             return self._write(request, ctx, ctx.token_id, ctx.principal, now.date(), scan)
         except WriteRejected as error:
-            # Unavailable targets and references share their response and quota behavior across ceilings.
-            code = error.findings[0].code
-            if code == "id_unavailable" or (scan.problems and code in {"broken_link", "target_unavailable"}):
+            if error.server_failure:
                 self._attempts.release(ctx.token_id, now)
             raise
         except Exception:
@@ -93,6 +91,7 @@ class AgentWrite:
                 )
             )
 
+        excluded = scan.excluded_stems
         key = None
         base = None
         created = None
@@ -104,7 +103,7 @@ class AgentWrite:
             key = create_request_key(token_id, request.request_id)
             created = self._notes.find_create(key)
             if created is not None:
-                _require_core_scope(self._visible_target(created.note.id, ctx), ctx, "target")
+                _require_core_scope(self._visible_target(created.note.id, ctx, excluded), ctx, "target")
             note_id = created.note.id if created else _CREATE_PLACEHOLDER
         elif request.operation == "update":
             if request.request_id is not None or not is_content_hash(request.base_hash):
@@ -113,7 +112,7 @@ class AgentWrite:
                 note_id = NoteId(request.target or "")
             except InvalidValueError:
                 raise WriteRejected(_UNAVAILABLE) from None
-            base = self._visible_target(note_id, ctx)
+            base = self._visible_target(note_id, ctx, excluded)
             _require_core_scope(base, ctx, "target")
             if content_hash(base) != request.base_hash:
                 raise self._stale()
@@ -130,11 +129,10 @@ class AgentWrite:
             raise WriteRejected(WriteFinding("outside_ceiling", "sensitivity", "Choose an authorized sensitivity."))
         _require_core_scope(candidate, ctx, "priority")
         if key is not None and created is None:
-            note_id = self._new_id(candidate.title, scan)
+            note_id = self._new_id(candidate.title, excluded)
             candidate = replace(candidate, id=note_id)
-        unavailable = self._unavailable_references(candidate, ctx)
-        if unavailable:
-            raise WriteRejected(*unavailable[:12])
+        if unavailable := self._unavailable_references(candidate, ctx, excluded):
+            raise unavailable
         if created is not None:
             # Compare with the note as the original commit stored it, ignoring service timestamps (ADR-0024).
             if replace(candidate, created=date.min, updated=date.min) != replace(
@@ -178,27 +176,33 @@ class AgentWrite:
                 return (WriteFinding("possible_duplicate", "title", hint),)
         return ()
 
-    def _new_id(self, title: str, scan: NoteScan) -> NoteId:
+    def _new_id(self, title: str, excluded: frozenset[str]) -> NoteId:
         decomposed = unicodedata.normalize("NFKD", title.casefold())
         unaccented = "".join(char for char in decomposed if not unicodedata.combining(char))
         stem = re.sub(r"[^a-z0-9]+", "-", unaccented).strip("-")[:60].rstrip("-") or "note"
         for _ in range(32):
             note_id = NoteId(f"{stem}-{self._ids.new_note_suffix()}")
-            if self._notes.get(note_id) is None and note_id.value not in scan.excluded_stems:
+            if note_id.value not in excluded and self._notes.get(note_id) is None:
                 return note_id
-        raise WriteRejected(WriteFinding("id_unavailable", "request", "Retry the create with the same request id."))
+        raise WriteRejected(
+            WriteFinding("id_unavailable", "request", "Retry the create with the same request id."), server_failure=True
+        )
 
-    def _unavailable_references(self, note: Note, ctx: AccessContext) -> list[WriteFinding]:
+    def _unavailable_references(self, note: Note, ctx: AccessContext, excluded: frozenset[str]) -> WriteRejected | None:
         """One finding per position (entry or text line) that references a missing or hidden note. It is built from
         the submitted note alone, so both cases read exactly the same. Only the first explains the link format."""
         visible: dict[NoteId, bool] = {note.id: True}
         positions: dict[tuple[str, str], None] = {}  # ordered and without duplicates
         for field, position, ref in references(note):
             if ref not in visible:
-                visible[ref] = visible_id(self._notes, ref, ctx, include_history=True) is not None
+                visible[ref] = (
+                    ref.value not in excluded and visible_id(self._notes, ref, ctx, include_history=True) is not None
+                )
             if not visible[ref]:
                 positions[field, position] = None
-        return [
+        if not positions:
+            return None
+        findings = [
             WriteFinding(
                 "broken_link",
                 field,
@@ -206,11 +210,17 @@ class AgentWrite:
             )
             for number, (field, position) in enumerate(positions)
         ]
+        only_excluded = all(ref.value in excluded for ref, readable in visible.items() if not readable)
+        return WriteRejected(*findings[:12], server_failure=only_excluded)
 
-    def _visible_target(self, note_id: NoteId, ctx: AccessContext) -> Note:
+    def _visible_target(self, note_id: NoteId, ctx: AccessContext, excluded: frozenset[str]) -> Note:
+        if note_id.value in excluded:
+            raise WriteRejected(_UNAVAILABLE, server_failure=True)
         note = stored_note(self._notes, note_id, ctx)
-        if note is None or not ctx.ceiling.allows(note.sensitivity) or self._unavailable_references(note, ctx):
+        if note is None or not ctx.ceiling.allows(note.sensitivity):
             raise WriteRejected(_UNAVAILABLE)
+        if unavailable := self._unavailable_references(note, ctx, excluded):
+            raise WriteRejected(_UNAVAILABLE, server_failure=unavailable.server_failure)
         return note
 
     @staticmethod
