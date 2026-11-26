@@ -4,7 +4,7 @@
 
 ## 1. Delivery sequence
 
-PR 1 records the decision in [ADR-0019](../adr/0019-owner-browser-api.md). PR 2 pins the approved inventory. PR 3 implements owner authentication. PR 4 mounts the authenticated browser service. PR 5 implements browser reads. PR 6 implements private owner writes. PR 7 delivers the browser foundation. PRs 8–11 are planned. Start each branch from current main after the preceding PR merges. The owner authorizes merges for all eleven PRs, including security and dependency changes, with independent review, findings resolved, completed green CI and scripts/merge-pr.sh. The dependency, ADR and privileged setup boundaries are recorded in §6.
+PR 1 records the decision in [ADR-0019](../adr/0019-owner-browser-api.md). PR 2 pins the approved inventory. PR 3 implements owner authentication. PR 4 mounts the authenticated browser service. PR 5 implements browser reads. PR 6 implements private owner writes. PR 7 delivers the browser foundation. PR 8 delivers search and the note reader. PRs 9–11 are planned. Start each branch from current main after the preceding PR merges. The owner authorizes merges for all eleven PRs, including security and dependency changes, with independent review, findings resolved, completed green CI and scripts/merge-pr.sh. The dependency, ADR and privileged setup boundaries are recorded in §6.
 
 | PR and branch | Deliverable | Verification before merge |
 |---|---|---|
@@ -354,3 +354,22 @@ certificate's SHA-256 fingerprint against the terminal output before accepting i
 the instance. The owner installation and global browser trust configuration are untouched.
 
 [Sign-in](../screenshots/phase-5/07-login.png) · [Overview](../screenshots/phase-5/07-overview.png)
+
+### PR 8 delivery record
+
+Search applies the text query, area, type, priority, status and history filters on submit. Filter options
+come from the visible graph. A session-scoped query client cancels superseded requests and restores the
+submitted criteria on return from the reader. A result opens its note or one of its sections. The reader
+preserves the history selection in note, hub and section links. Hub membership is displayed separately
+from the note introduction.
+
+The shared Markdown component escapes raw HTML in Marked and allows only approved formatting and link
+elements through DOMPurify. Images render as text. Valid visible wikilinks open the same-origin reader.
+External HTTP(S) links use a no-referrer policy. The note language applies to prose. Code, links and
+recognized inline commands, paths and identifiers preserve their original text during browser translation.
+The reader and search screens use the same-origin API, session and CSP.
+
+Playwright exercises filtering, cancellation, missing notes, keyboard navigation, hubs, section links,
+HTML sanitization and translation boundaries. The installed-service test captures the production build
+against the disposable HTTPS fixture. [Search screenshot](../screenshots/phase-5/08-search.png) ·
+[Reader screenshot](../screenshots/phase-5/08-reader.png)
