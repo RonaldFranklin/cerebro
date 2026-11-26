@@ -44,6 +44,7 @@ def create(
     title: str = TITLE,
     summary: str = SUMMARY,
     sensitivity: Sensitivity = Sensitivity.INTERNAL,
+    scopes: frozenset[Scope] = WRITER,
 ) -> tuple[NoteId, tuple[WriteFinding, ...]]:
     """Create a note as an agent whose ceiling is ``sensitivity``; returns its id and the duplicate warnings."""
     w = kit.world
@@ -63,7 +64,7 @@ def create(
                 "hub": "infrastructure",
             },
         ),
-        replace(agent_ctx(sensitivity, WRITER), token_id="token-one"),
+        replace(agent_ctx(sensitivity, scopes), token_id="token-one"),
     )
     return result.note_id, tuple(f for f in result.findings if f.code == "possible_duplicate")
 
@@ -115,6 +116,16 @@ def test_unrelated_notes_do_not_warn(index: SearchIndex, title: str, summary: st
     create(index, kit, "one")
 
     assert create(index, kit, "two", title, summary)[1] == ()
+
+
+def test_a_token_without_read_is_warned_without_an_id(index: SearchIndex) -> None:
+    kit = Kit()
+    original, _ = create(index, kit, "one")
+
+    _, (warning,) = create(index, kit, "two", scopes=frozenset({Scope.WRITE}))
+
+    assert original.value not in warning.hint
+    assert "read" not in warning.hint.casefold()
 
 
 def test_a_hidden_near_duplicate_neither_warns_nor_is_named(index: SearchIndex) -> None:

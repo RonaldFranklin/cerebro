@@ -153,11 +153,14 @@ class AgentWrite:
         )
 
     def _possible_duplicate(self, note: Note, ctx: AccessContext) -> tuple[WriteFinding, ...]:
-        """A warning naming the most similar current note the caller can read, if one is similar enough."""
+        """A warning if a current note within the ceiling is similar enough. It names the most similar one only
+        to a token with ``read``."""
         hits = self._search.find_similar(f"{note.title} {note.summary}", ceiling=ctx.ceiling, limit=3)
         for hit in hits:
             if hit.score >= _DUPLICATE_SIMILARITY and visible_id(self._notes, hit.id, ctx, include_history=False):
-                hint = f"Note `{hit.id.value}` has a similar title and summary. Read it and keep one note per topic."
+                hint = "A current note has a similar title and summary. Keep one note per topic."
+                if ctx.can(Scope.READ):
+                    hint = f"Note `{hit.id.value}` has a similar title and summary. Read it; keep one note per topic."
                 return (WriteFinding("possible_duplicate", "title", hint),)
         return ()
 
