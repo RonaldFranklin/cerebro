@@ -6,6 +6,7 @@ const body = [
   "Run git status in ./notes/demo.md and use `uv run pytest`. Keep note-id unchanged.", "",
   "Follow the step-by-step instructions for docker compose up -d and read [[missing-note]].", "",
   `[Other port](https://${location.hostname}:5483/) and [dotted host](https://${location.hostname}.:5483/).`, "",
+  "Run git clean before continuing. The tool git is available here.", "",
   "| Name | Value |", "| --- | --- |", "| Example | One |", "",
   'Raw <em title="fixture">markup</em> remains text.', "",
   '![Image](https://example.invalid/fixture.png)', "",

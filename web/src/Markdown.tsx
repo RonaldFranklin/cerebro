@@ -88,15 +88,10 @@ export function markdownHeadings(body: string): MarkdownHeading[] {
 }
 
 // Preserve technical tokens in prose. Authors use code spans for arbitrary shell syntax.
-const command = [
-  /git (?:status|diff|log|show|add|commit|checkout|switch|branch|fetch|pull|push|merge|restore|clone)/,
-  /docker (?:compose (?:up|down|logs|ps|build|pull|start|stop|restart|config)|build|run|ps|images)/,
-  /(?:pnpm|npm) (?:run [a-z][\w:-]*|exec [a-z][\w-]*|install|test|build|lint)/,
-  /uv (?:run [a-z][\w-]*|sync|lock)/,
-  /cerebro (?:inbox (?:list|approve|reject|amend)|token (?:list|issue|revoke)|search|read|reindex|health|owner-password)/,
-  /python3? -m [a-z][\w.]*/,
-].map(pattern => pattern.source.replaceAll(" ", "[ \\t]+")).join("|");
-const shellCommand = new RegExp(`\\b(?:${command})\\b(?:[ \\t]+--?[a-zA-Z][\\w-]*(?:=[\\w.-]+)?)*`);
+// The command word is open-ended. A small set of tool namespaces takes a second word.
+const tool = /(?:docker[ \t]+compose|(?:pnpm|npm|uv)[ \t]+(?:run|exec)|cerebro[ \t]+(?:inbox|token)|python3?[ \t]+-m|git|pnpm|npm|uv|docker|cerebro|python3?)/;
+const commandWord = /(?!(?:is|are|was|and|or|in|on|with|for|to|from|before|after)\b)(?:[a-z][\w.:-]*|--?[a-zA-Z][\w-]*)/;
+const shellCommand = new RegExp(`\\b${tool.source}[ \\t]+${commandWord.source}\\b(?:[ \\t]+--?[a-zA-Z][\\w-]*(?:=[\\w.-]+)?)*`);
 const pathToken = /(?<![\w./~-])(?:~\/|\.\.?\/|\/|[\w.-]+\/)(?:[\w.-]+\/)*[\w.-]*[\w-]/;
 const optionOrFile = /(?<!\w)--[a-z][\w-]*|\b[\w-]+\.(?:md|toml|yaml|yml|json|sh|py|ts|tsx|js|css|html|sqlite)\b/;
 const possibleId = /(?<![\w-])(?<id>[a-z0-9]+(?:-[a-z0-9]+)*)(?![\w-])/;

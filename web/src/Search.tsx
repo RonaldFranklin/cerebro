@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 import type { ApiClient } from "./api";
-import { markdownHeadings } from "./Markdown";
+import { markdownHeadings, TechnicalText } from "./Markdown";
 import { notePath, type Note } from "./Reader";
 import { useVisibleGraph } from "./visibleGraph";
 import "./search.css";
@@ -15,9 +15,10 @@ const filters: Filter[] = ["area", "type", "priority", "status"];
 const defaults: Criteria = { q: "", area: "", type: "", priority: "", status: "", history: false };
 type Options = Record<Filter, string[]>;
 function visibleFilters(draft: Criteria, options?: Options): Criteria {
+  if (!options) return draft;
   let next = draft;
   for (const key of filters) {
-    if (draft[key] && !options?.[key].includes(draft[key])) next = {...next, [key]: ""};
+    if (draft[key] && !options[key].includes(draft[key])) next = {...next, [key]: ""};
   }
   return next;
 }
@@ -66,6 +67,11 @@ export function SearchScreen({api}: {api: ApiClient}) {
     queryFn: ({signal}) => api.read<{results: NoteSummary[]}>(searchPath(criteria), signal),
   });
 
+  const visibleIds = useMemo(() => {
+    const notes = draft.history === criteria.history && metadata.data ? metadata.data.nodes : results.data?.results;
+    return new Set(notes?.map(note => note.id));
+  }, [draft.history, criteria.history, metadata.data, results.data]);
+
   const awaitingOptions = metadata.isPending && filters.some(key => draft[key] !== "");
 
   function submit(event: FormEvent) {
@@ -86,6 +92,11 @@ export function SearchScreen({api}: {api: ApiClient}) {
   const count = results.data?.results.length ?? 0;
   const status = results.isPending ? "Searching…" : results.isError ? "Search is unavailable." :
     count === 0 ? "No matching notes." : `${count} ${count === 1 ? "result" : "results"} shown.`;
+  const description = [
+    criteria.q && `Search text: ${criteria.q}.`,
+    ...filters.filter(key => criteria[key]).map(key => `${key}: ${criteria[key]}.`),
+    criteria.history && "Includes historical notes.",
+  ].filter(Boolean).join(" ");
   return <article className="search-view">
     <header className="page-heading"><h1>Search</h1></header>
     <form role="search" className="search-form" onSubmit={submit}>
@@ -104,6 +115,7 @@ export function SearchScreen({api}: {api: ApiClient}) {
         return <label key={key}>{label}
           <select value={draft[key]} onChange={e => setDraft({...draft, [key]: e.target.value})}>
             <option value="">Any {key}</option>
+            {!options && draft[key] && <option value={draft[key]}>{draft[key]}</option>}
             {values.map(value => <option key={value} value={value}>{value}</option>)}
           </select>
         </label>;
@@ -116,14 +128,15 @@ export function SearchScreen({api}: {api: ApiClient}) {
     </form>
     <section className="search-results" aria-labelledby="results-heading">
       <div className="panel-heading"><h2 id="results-heading">Results</h2>
-        <span className="item-count" role="status" aria-atomic="true">{status}</span></div>
+        <span className="item-count" role="status" aria-atomic="true">{status}
+          {description && <span className="search-announcement"> {description}</span>}</span></div>
       {results.isError && <button type="button" onClick={() => void results.refetch()}>Retry search</button>}
       {results.isSuccess && count > 0 &&
         <ul>{results.data.results.map(note => <li key={note.id}>
           <div className="search-note-meta"><span>{note.type}</span><span>{note.area}</span>
             <span translate="no">{note.priority}</span><span>{note.status}</span></div>
-          <h3><a href={notePath(note.id, criteria.history)}>{note.title}</a></h3>
-          <p>{note.summary}</p>
+          <h3><a href={notePath(note.id, criteria.history)}><TechnicalText text={note.title} visibleIds={visibleIds}/></a></h3>
+          <p><TechnicalText text={note.summary} visibleIds={visibleIds}/></p>
           <button type="button" className="section-toggle" aria-expanded={expanded === note.id}
             aria-label={`Sections for ${note.title}`} onClick={() => setExpanded(expanded === note.id ? null : note.id)}>Sections</button>
           {expanded === note.id && <NoteSections api={api} note={note} history={criteria.history}/>}

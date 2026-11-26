@@ -5,12 +5,14 @@ test("reader preserves history across sections and masks unavailable notes", asy
     ceiling: "internal", csrf_token: "fixture", absolute_remaining_seconds: 28800,
   }}));
   await page.route("**/api/graph?*", route => route.fulfill({json:{nodes:[], edges:[], center:null}}));
+  let failOutline = true;
   await page.route("**/api/notes/**", route => {
     const url = new URL(route.request().url());
     if (url.pathname !== "/api/notes/fixture-guide") {
       return route.fulfill({status:404, json:{error:"Not found."}});
     }
     const section = url.searchParams.get("section");
+    if (!section && failOutline) return route.fulfill({status:503, json:{error:"Unavailable."}});
     if (url.searchParams.get("history") !== "true" || (section && !["Working copy", "Other section"].includes(section))) {
       return route.fulfill({status:404,json:{error:"Not found."}});
     }
@@ -21,6 +23,12 @@ test("reader preserves history across sections and masks unavailable notes", asy
       body: section ? "## " + section + "\n\nSelected " + section + "." : "## Working copy\n\nFull content.\n\n## Other section\n",
     }});
   });
+  await page.goto("/notes/fixture-guide?history=true&section=Working+copy");
+  await expect(page.getByText("Selected Working copy.")).toBeVisible();
+  await expect(page.getByText("Could not load sections.")).toBeVisible();
+  failOutline = false;
+  await page.getByRole("button", {name:"Retry sections"}).click();
+  await expect(page.getByRole("navigation", {name:"Sections"}).getByRole("link", {name:"Other section"})).toBeVisible();
   await page.goto("/notes/fixture-guide?history=true");
   await expect(page.getByRole("heading", {name:"Working notes"})).toBeVisible();
   await expect(page.getByText("git status", {exact:true})).toHaveAttribute("translate", "no");

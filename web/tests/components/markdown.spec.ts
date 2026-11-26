@@ -11,9 +11,10 @@ test("semantic prose, sections, wikilinks and technical translation boundaries",
   const wiki = body.getByRole("link", { name: "[[valid-note#Setup]]", exact: true });
   await expect(wiki).toHaveAttribute("href", "/notes/valid-note?section=Setup&history=true");
   await expect(wiki).toHaveAttribute("translate", "no");
-  for (const token of ["git status", "./notes/demo.md", "uv run pytest", "note-id", "docker compose up -d"]) {
+  for (const token of ["git status", "./notes/demo.md", "uv run pytest", "note-id", "docker compose up -d", "git clean"]) {
     await expect(body.getByText(token, {exact:true})).toHaveAttribute("translate", "no");
   }
+  await expect(body.locator('[translate="no"]').filter({hasText: /before continuing|git is/})).toHaveCount(0);
   await expect(body.getByRole("link", {name: "[[missing-note]]"})).toHaveCount(0);
   await expect(body.locator('[translate="no"]').filter({hasText: "step-by-step"})).toHaveCount(0);
   const title = page.locator(".plain-fixture");

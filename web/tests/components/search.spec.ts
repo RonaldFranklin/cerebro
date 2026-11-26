@@ -136,7 +136,7 @@ test("results announce successful completion and history-only filters leave the 
   const area = page.getByRole("combobox", {name: "Area"});
   await area.selectOption("research");
   await page.getByRole("button", {name: "Search notes"}).click();
-  await expect(status).toHaveText("1 result shown.");
+  await expect(status).toContainText("1 result shown.");
   await expect(status).toHaveAttribute("data-marker", "persistent");
   await page.getByLabel("Include history").uncheck();
   await expect(area).toHaveValue("");
@@ -145,4 +145,50 @@ test("results announce successful completion and history-only filters leave the 
   await expect(status).toHaveText("No matching notes.");
   await expect.poll(() => queries.at(-1)?.get("history")).toBe("false");
   expect(queries.at(-1)?.has("area")).toBe(false);
+});
+
+test("missing metadata preserves the active filters and technical tokens", async ({page}) => {
+  await session(page);
+  await page.clock.install();
+  const result = {...note, title: "Inspect git status", summary: "Open ./notes/demo.md"};
+  let metadataAvailable = true;
+  await page.route("**/api/graph?history=*", route => route.fulfill(metadataAvailable
+    ? {json: {nodes: [note], edges: []}} : {status: 503, json: {}}));
+  const requests: URLSearchParams[] = [];
+  await page.route("**/api/search?*", route => {
+    requests.push(new URL(route.request().url()).searchParams);
+    return route.fulfill({json: {results: [result]}});
+  });
+  await page.goto("/search");
+  const area = page.getByRole("combobox", {name: "Area"});
+  await area.selectOption("research");
+  await page.getByRole("button", {name: "Search notes"}).click();
+  await expect.poll(() => requests.at(-1)?.get("area")).toBe("research");
+  await page.getByRole("navigation", {name: "Workspace"}).getByRole("link", {name: "Graph"}).click();
+  await page.clock.fastForward(6 * 60_000);
+  metadataAvailable = false;
+  await page.goBack();
+  await expect(page.getByRole("button", {name: "Retry filters"})).toBeVisible();
+  await expect(area).toHaveValue("research");
+  const input = page.getByRole("searchbox");
+  await input.fill("updated");
+  await input.press("Enter");
+  await expect.poll(() => requests.at(-1)?.get("q")).toBe("updated");
+  expect(requests.at(-1)?.get("area")).toBe("research");
+  await expect(page.getByText("git status", {exact: true})).toHaveAttribute("translate", "no");
+  await expect(page.getByText("./notes/demo.md", {exact: true})).toHaveAttribute("translate", "no");
+});
+
+test("cached searches with equal result counts announce the new criteria", async ({page}) => {
+  await session(page);
+  await page.route("**/api/search?*", route => route.fulfill({json: {results: [note]}}));
+  await page.goto("/search");
+  const input = page.getByRole("searchbox");
+  const status = page.getByRole("region", {name: "Results"}).getByRole("status");
+  for (const text of ["alpha", "beta", "alpha"]) {
+    await input.fill(text);
+    await input.press("Enter");
+    await expect(status).toContainText("1 result shown.");
+    await expect(status).toContainText(text);
+  }
 });

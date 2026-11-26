@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { useMemo } from "react";
+import { useMemo, type ReactNode } from "react";
 
 import { ApiError, type ApiClient, type Ceiling } from "./api";
 import { Markdown, markdownHeadings, TechnicalText } from "./Markdown";
@@ -42,8 +42,8 @@ function Meta({ label, value }: { label: string; value: string }) {
   return <div><dt>{label}</dt><dd translate="no">{value}</dd></div>;
 }
 
-function Document({ note, history, outlineBody, visibleIds }: {
-  note: Note; history: boolean; outlineBody: string; visibleIds: ReadonlySet<string>;
+function Document({ note, history, outlineBody, outlineStatus, visibleIds }: {
+  note: Note; history: boolean; outlineBody: string; outlineStatus?: ReactNode; visibleIds: ReadonlySet<string>;
 }) {
   const headings = useMemo(() => markdownHeadings(outlineBody), [outlineBody]);
   const wholeNote = notePath(note.id, history);
@@ -71,6 +71,7 @@ function Document({ note, history, outlineBody, visibleIds }: {
         </section>}
       </div>
       <aside className="reader-aside" aria-label="Note information">
+        {outlineStatus}
         {headings.length > 0 && <nav aria-label="Sections"><h2>Sections</h2><ul>{headings.map((heading, index) =>
           <li key={index}><a translate="no" href={notePath(note.id, history, heading.title)}
             aria-current={note.section === heading.title ? "location" : undefined}>{heading.title}</a></li>
@@ -114,5 +115,9 @@ export function ReaderScreen({ api, id, history, section }: {
       {section && <a href={notePath(id, history)}>Read full note</a>} <a href="/search">Back to search</a>
     </section>;
   }
-  return <Document note={result.data} history={history} outlineBody={full.data?.body ?? result.data.body} visibleIds={visibleIds}/>;
+  const outlineStatus = section && !full.data && (full.isError
+    ? <div><p role="status">Could not load sections.</p><button onClick={() => void full.refetch()}>Retry sections</button></div>
+    : <p role="status">Loading sections…</p>);
+  return <Document note={result.data} history={history} outlineBody={full.data?.body ?? ""}
+    outlineStatus={outlineStatus} visibleIds={visibleIds}/>;
 }
