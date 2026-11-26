@@ -113,3 +113,21 @@ test("the HTML neighborhood follows two-hop connections through matching nodes o
   await expect(explore("Destination")).toHaveCount(0);
   await expect(connections).toHaveCount(0);
 });
+
+test("connections mount on request and distinguish notes sharing a title", async ({page}) => {
+  await page.route("**/api/session", route => route.fulfill({json:{ceiling:"restricted",csrf_token:"fixture",absolute_remaining_seconds:28800}}));
+  await page.route("**/api/graph**", route => route.fulfill({json:{
+    nodes:[{...guide, title:"Index"}, {...hub, title:"Index"}], edges:[edge], center:null,
+  }}));
+  await page.goto("/graph");
+  const trigger = page.getByText("Connections", {exact:true});
+  await expect(trigger).toBeVisible();
+  await expect(page.locator('[aria-label="Graph connections"] li')).toHaveCount(0);
+  await trigger.focus();
+  await trigger.press("Enter");
+  const row = page.getByRole("region", {name:"Graph connections"}).getByRole("listitem");
+  for (const text of ["guide", "catalog", "related"]) {
+    await expect(row.getByText(text, {exact:true})).toHaveAttribute("translate", "no");
+  }
+  await expect(row).toContainText("Index (guide) → Index (catalog)");
+});

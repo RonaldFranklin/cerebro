@@ -38,6 +38,31 @@ function Dot({value}: {value: string}) {
   return <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><circle cx="6" cy="6" r="5" fill={colorFor(value)}/></svg>;
 }
 
+function ConnectionList({graph}: {graph: GraphData}) {
+  const titles = new Map(graph.nodes.map(node => [node.id, node.title]));
+  const unique = new Set<string>();
+  const repeated = new Set<string>();
+  for (const title of titles.values()) {
+    if (unique.has(title)) repeated.add(title);
+    unique.add(title);
+  }
+  function endpoint(id: string) {
+    const title = titles.get(id)!;
+    return repeated.has(title) ? <>{title} (<span translate="no">{id}</span>)</> : title;
+  }
+  return <section aria-label="Graph connections"><ul>{graph.edges.map((edge, index) => <li key={index}>
+    {endpoint(edge.source)} → {endpoint(edge.target)} · <span translate="no">{edge.kind}</span>{edge.section && ` · ${edge.section}`}
+  </li>)}</ul></section>;
+}
+
+function Connections({graph}: {graph: GraphData}) {
+  const [open, setOpen] = useState(false);
+  return <details className="graph-connections" onToggle={event => setOpen(event.currentTarget.open)}>
+    <summary>Connections</summary>
+    {open && <ConnectionList graph={graph}/>}
+  </details>;
+}
+
 export default function GraphScreen({api}: {api: ApiClient}) {
   const client = useQueryClient();
   const [workspace, setWorkspace] = useState(() => client.getQueryData<Workspace>(graphState) ?? initial);
@@ -71,7 +96,6 @@ export default function GraphScreen({api}: {api: ApiClient}) {
   });
   const source = local ? nearby : catalog;
   const graph = useMemo(() => source.data && filterGraph(source.data, view.filters), [source.data, view.filters]);
-  const titles = useMemo(() => new Map(graph?.nodes.map(node => [node.id, node.title])), [graph]);
   const legend = useMemo(() => [...new Set(graph?.nodes.map(node => node[view.colorBy]))].sort(), [graph, view.colorBy]);
   const center = local && graph?.nodes.find(node => node.id === local.center);
   useEffect(() => { client.setQueryData(graphState, workspace); }, [client, workspace]);
@@ -127,14 +151,7 @@ export default function GraphScreen({api}: {api: ApiClient}) {
         </div>}
       </section>
       <section className="graph-list" aria-labelledby="graph-notes"><h2 id="graph-notes">Notes</h2>
-        {graph.edges.length > 0 && <details className="graph-connections">
-          <summary>Connections</summary>
-          <section aria-label="Graph connections">
-            <ul>{graph.edges.map((edge, index) => <li key={index}>
-              {titles.get(edge.source)} → {titles.get(edge.target)} · {edge.kind}{edge.section && ` · ${edge.section}`}
-            </li>)}</ul>
-          </section>
-        </details>}
+        {graph.edges.length > 0 && <Connections graph={graph}/>}
         <ul>{graph.nodes.map(node => <li key={node.id}>
           <Dot value={node[view.colorBy]}/><div><a href={notePath(node.id, view.history)}>{node.title}</a>
             <span translate="no">{node.area} · {node.priority}</span></div>
