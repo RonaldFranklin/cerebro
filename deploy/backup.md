@@ -51,7 +51,10 @@ separately under the content owner, away from the shutdown interval. Keep Git's 
 ## Verify a restore
 
 Use an empty private directory and an authenticated host Git client (`gh auth setup-git --hostname github.com`).
-Point `SNAPSHOT` at a completed directory printed by the command above and set `RESTORE_DIR` to a fresh path.
+For the hml drill, choose a snapshot produced from hml fixtures or a sanitized hml checkout, use only its hml
+Fernet key, and set `ENVIRONMENT=hml`. Point `SNAPSHOT` at its completed snapshot directory and `RESTORE_DIR`
+at a fresh path. A production recovery requires the owner's approval, production access controls, its own private
+restore location and its separate production key.
 
 ```sh
 umask 077
@@ -63,6 +66,6 @@ install -m 0600 "$SNAPSHOT/state.sqlite" "$SNAPSHOT/owner.verifier" "$RESTORE_DI
 python3 -c 'import sqlite3,sys; db=sqlite3.connect(sys.argv[1]); sys.exit(db.execute("PRAGMA quick_check").fetchall() != [("ok",)])' "$RESTORE_DIR/state/state.sqlite"
 ```
 
-Stop on a nonzero exit. Use the restored files in an isolated hml instance with the corresponding escrowed key,
-a new empty index directory and distinct loopback ports. Verify authenticated login and representative note reads
-before considering a production recovery.
+Stop on a nonzero exit. For the hml drill, start an isolated hml instance using these fixture files, the hml key,
+a new empty index directory and distinct loopback ports. Verify authenticated login and representative fixture reads.
+Keep production snapshots and their key exclusively within the production recovery environment.

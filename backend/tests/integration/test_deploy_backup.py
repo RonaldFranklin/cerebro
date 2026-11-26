@@ -144,7 +144,17 @@ def test_failed_backup_preserves_the_last_snapshot(backup: Backup, failure: str)
     assert set(backup.copies.iterdir()) == previous
 
 
-@pytest.mark.parametrize("excluded", ["index.sqlite", "nested/quarantine-fixture/worktree.tar"])
+@pytest.mark.parametrize(
+    "excluded",
+    [
+        "index.sqlite",
+        "index.sqlite-shm",
+        "nested/state.sqlite",
+        "state.sqlite-wal",
+        "owner.verifier",
+        "nested/quarantine-fixture/worktree.tar",
+    ],
+)
 def test_refuses_a_checkout_with_excluded_artifacts_in_history(backup: Backup, excluded: str) -> None:
     artifact = backup.content / excluded
     artifact.parent.mkdir(parents=True, exist_ok=True)

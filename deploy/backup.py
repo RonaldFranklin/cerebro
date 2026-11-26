@@ -40,14 +40,6 @@ def backup(content: Path, state: Path, destination: Path, repository: str, branc
         raise ValueError("choose a backup directory outside content and state")
     if not stat.S_ISDIR((content / ".git").lstat().st_mode):
         raise ValueError("expected the content checkout")
-    metadata = json.loads(
-        subprocess.check_output(
-            ["gh", "repo", "view", f"github.com/{repository}", "--json", "nameWithOwner,visibility"],
-            text=True,
-        )
-    )
-    if metadata.get("visibility") != "PRIVATE" or metadata["nameWithOwner"].casefold() != repository.casefold():
-        raise ValueError("GitHub did not confirm the requested private repository")
     source = state / "state.sqlite"
     verifier = state / "owner.verifier"
     if not all(stat.S_ISREG(p.lstat().st_mode) for p in (source, verifier)):
@@ -87,12 +79,23 @@ def backup(content: Path, state: Path, destination: Path, repository: str, branc
             "--full-history",
             revision,
             "--",
+            ":(glob)**/state.sqlite",
+            ":(glob)**/state.sqlite-*",
+            ":(glob)**/owner.verifier",
             ":(glob)**/index.sqlite",
             ":(glob)**/index.sqlite-*",
             ":(glob)**/quarantine-*/**",
             cwd=transport,
         ):
             raise ValueError("content history includes a local-only backup exclusion")
+        metadata = json.loads(
+            subprocess.check_output(
+                ["gh", "repo", "view", f"github.com/{repository}", "--json", "nameWithOwner,visibility"],
+                text=True,
+            )
+        )
+        if metadata.get("visibility") != "PRIVATE" or metadata["nameWithOwner"].casefold() != repository.casefold():
+            raise ValueError("GitHub did not confirm the requested private repository")
         git(
             "-c",
             "http.followRedirects=false",
