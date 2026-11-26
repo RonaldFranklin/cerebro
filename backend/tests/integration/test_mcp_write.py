@@ -122,8 +122,9 @@ _WRITABLE = (
 def _read(tools: MCPTools, note_id: str) -> dict[str, Any]:
     result = tools.call("cerebro_read", {"id": note_id}, lambda: WRITER)
     assert not result.is_error
-    assert result.structured_content is not None
-    return result.structured_content
+    view: dict[str, Any] | None = result.structured_content
+    assert view is not None
+    return view
 
 
 def _update(tools: MCPTools, note_id: str, body: str | None = None, **changes: object) -> types.CallToolResult:
@@ -155,6 +156,7 @@ def test_notes_linking_archived_targets_and_hubs_stay_readable_and_updatable(con
         assert _read(tools, target.value)["status"] == "archived"
 
     view = _read(tools, note_id)
-    assert (view["body"], view["hub"], view["related"]) == ("See [[docker-conventions]].", HUB_ID.value, [DOCKER_ID.value])
+    expected = ("See [[docker-conventions]].", HUB_ID.value, [DOCKER_ID.value])
+    assert (view["body"], view["hub"], view["related"]) == expected
     updated = _update(tools, note_id, body="Still see [[docker-conventions]].")
     assert not updated.is_error, updated.structured_content
