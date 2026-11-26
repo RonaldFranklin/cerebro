@@ -94,6 +94,9 @@ def test_deployment_model(tmp_path: Path, environment: str, port: str) -> None:
         {"network_mode": "host", "ports": []},
         {"network_mode": "host"},
         {"networks": {"another": None}},
+        {"command": ["cerebro-mcp", "--container", "--enable-public"]},
+        {"entrypoint": ["sh", "-c", "cerebro-mcp --enable-public"]},
+        {"environment": {"CEREBRO_PRIVATE_PORT": "18765", "CEREBRO_GIT_BRANCH": "prod"}},
         {"user": "0:10001"},
         {"user": "10001:0"},
     ],
@@ -101,7 +104,15 @@ def test_deployment_model(tmp_path: Path, environment: str, port: str) -> None:
 def test_preflight_refuses_unsafe_service(overrides: dict[str, object]) -> None:
     network = {"name": "cerebro-hml_default"}
     service = {
-        "environment": {"CEREBRO_PRIVATE_PORT": "18765"},
+        "command": [
+            "cerebro-mcp",
+            "--container",
+            "--private-origin",
+            "https://example.invalid",
+            "--web-dist",
+            "/opt/cerebro/web",
+        ],
+        "environment": {"CEREBRO_PRIVATE_PORT": "18765", "CEREBRO_GIT_BRANCH": "hml"},
         "ports": [{"target": 18765, "published": "18765", "host_ip": "127.0.0.1"}],
         "networks": {"default": None},
         "user": "10001:10001",
@@ -109,3 +120,69 @@ def test_preflight_refuses_unsafe_service(overrides: dict[str, object]) -> None:
     model = {"name": "cerebro-hml", "networks": {"default": network}, "services": {"backend": service}}
     assert checked(model).returncode == 0
     assert checked({**model, "services": {"backend": {**service, **overrides}}}).returncode != 0
+
+
+@pytest.mark.parametrize("failure", ["", "up", "inspect", "port", "network", "health", "preflight"])
+def test_guarded_start(tmp_path: Path, failure: str) -> None:
+    """Real Compose resolves the file; a simulated daemon records startup and shutdown."""
+    import shutil
+
+    docker = shutil.which("docker")
+    assert docker
+    stub = tmp_path / "docker"
+    stub.write_text("""#!/bin/sh
+echo "$*" >> "$CALLS"
+case "$*" in
+    *" config --format json") exec "$REAL_DOCKER" "$@" ;;
+    *" up "*) test "$FAILURE" != up ;;
+    *" ps "*) echo abc ;;
+    "container inspect abc") test "$FAILURE" != inspect && cat "$CONTAINER" ;;
+    "network inspect cerebro-hml_default") cat "$NETWORK" ;;
+    *" stop backend") exit 0 ;;
+    *) exit 1 ;;
+esac
+""")
+    stub.chmod(0o700)
+    port = "18765"
+    network = "cerebro-hml_default"
+    calls = tmp_path / "calls"
+    instance = {
+        "Id": "abc",
+        "State": {"Health": {"Status": "unhealthy" if failure == "health" else "healthy"}},
+        "Config": {"Labels": {"com.docker.compose.project": "cerebro-hml", "com.docker.compose.service": "backend"}},
+        "HostConfig": {"NetworkMode": network},
+        "NetworkSettings": {
+            "Networks": {network: {}},
+            "Ports": {f"{port}/tcp": [{"HostIp": "0.0.0.0" if failure == "port" else "127.0.0.1", "HostPort": port}]},
+        },
+    }
+    bridge: dict[str, object] = {
+        "Name": network,
+        "Driver": "host" if failure == "network" else "bridge",
+        "Containers": {"abc": {}},
+        "Labels": {"com.docker.compose.project": "cerebro-hml", "com.docker.compose.network": "default"},
+    }
+    for filename, record in (("instance", instance), ("bridge", bridge)):
+        (tmp_path / filename).write_text(json.dumps([record]))
+    env = {
+        "PATH": f"{tmp_path}:{os.environ['PATH']}",
+        "ENVIRONMENT": "hml",
+        "PRIVATE_PORT": port,
+        "PRIVATE_ORIGIN": "https://hml.example.invalid",
+        "APP_SHA": "a" * 40,
+        "DATA_DIR": str(tmp_path / "hml"),
+        "CEREBRO_GIT_NAME": "Fixture",
+        "CEREBRO_GIT_EMAIL": "fixture@example.invalid",
+        "REAL_DOCKER": docker,
+        "FAILURE": failure,
+        "CALLS": str(calls),
+        "CONTAINER": str(tmp_path / "instance"),
+        "NETWORK": str(tmp_path / "bridge"),
+    }
+    if failure == "preflight":
+        env["COMPOSE_PROJECT_NAME"] = "cerebro-prod"
+    result = subprocess.run([str(ROOT / "deploy/start.sh"), "/dev/null"], env=env, capture_output=True, check=False)
+    assert (result.returncode == 0) == (not failure), result.stderr
+    commands = calls.read_text()
+    assert (" up " in commands) == (failure != "preflight")
+    assert (" stop backend" in commands) == (failure not in ("", "preflight"))
