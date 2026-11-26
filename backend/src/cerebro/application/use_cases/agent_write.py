@@ -1,6 +1,7 @@
 """Authenticated full-note replacement. The composition root serializes the entire operation."""
 
 import re
+import unicodedata
 from dataclasses import replace
 from datetime import date
 
@@ -25,6 +26,7 @@ from cerebro.domain.note_ref import NoteRef
 from cerebro.domain.report import AGENT_WRITE_POLICY, Severity, ValidationReport
 from cerebro.domain.vocabulary import CORE, HUB, Vocabulary
 
+_CREATE_PLACEHOLDER = NoteId("create")
 _REQUEST_ID = re.compile(r"[A-Za-z0-9_-]{1,64}")
 _SETTABLE = frozenset(FIELD_ORDER) - {"id", "created", "updated"}
 _UNAVAILABLE = WriteFinding("target_unavailable", "target", "Search for a writable note and read it in full.")
@@ -82,7 +84,7 @@ class AgentWrite:
             receipt = self._notes.find_create(key)
             if receipt is not None:
                 self._visible_target(receipt.note_id, ctx)
-            note_id = receipt.note_id if receipt else self._new_id()
+            note_id = receipt.note_id if receipt else _CREATE_PLACEHOLDER
         elif request.operation == "update":
             if request.request_id is not None or not is_content_hash(request.base_hash):
                 raise WriteRejected(WriteFinding("invalid_field", "base_hash", "Supply the hash from a full read."))
@@ -104,11 +106,14 @@ class AgentWrite:
             raise
         if not ctx.ceiling.allows(candidate.sensitivity):
             raise WriteRejected(WriteFinding("outside_ceiling", "sensitivity", "Choose an authorized sensitivity."))
+        if key is not None and receipt is None:
+            note_id = self._new_id(candidate.title)
+            candidate = replace(candidate, id=note_id)
         if not self._references_visible(candidate, ctx):
             raise WriteRejected(_REFERENCE)
         if key is not None:
             # Canonical user-controlled content, independent of service timestamps and allocated identifiers.
-            fingerprint = content_hash(replace(candidate, id=NoteId("create"), created=date.min, updated=date.min))
+            fingerprint = content_hash(replace(candidate, id=_CREATE_PLACEHOLDER, created=date.min, updated=date.min))
         if receipt is not None and receipt.fingerprint != fingerprint:
             raise WriteRejected(_CONFLICT)
         if receipt is not None:
@@ -141,11 +146,15 @@ class AgentWrite:
             sensitivity_raise_warnings(base.sensitivity if base else None, candidate.sensitivity),
         )
 
-    def _new_id(self) -> NoteId:
-        while True:
-            note_id = NoteId(self._ids.new_note_id())
+    def _new_id(self, title: str) -> NoteId:
+        decomposed = unicodedata.normalize("NFKD", title.casefold())
+        unaccented = "".join(char for char in decomposed if not unicodedata.combining(char))
+        stem = re.sub(r"[^a-z0-9]+", "-", unaccented).strip("-")[:60].rstrip("-") or "note"
+        for _ in range(32):
+            note_id = NoteId(f"{stem}-{self._ids.new_note_suffix()}")
             if self._notes.get(note_id) is None:
                 return note_id
+        raise WriteRejected(WriteFinding("id_unavailable", "request", "Retry the create with the same request id."))
 
     def _references_visible(self, note: Note, ctx: AccessContext) -> bool:
         refs = set(note.related)

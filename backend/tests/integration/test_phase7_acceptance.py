@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import re
 import sqlite3
 from contextlib import closing
 from pathlib import Path
@@ -96,6 +97,7 @@ def test_sdk_create_update_and_audit_across_transports(tmp_path: Path) -> None:
             assert not receipt.is_error
             assert receipt.structured_content
             note_id = receipt.structured_content["note_id"]
+            assert re.fullmatch(r"resuming-a-sample-project-[a-z0-9]{4}", note_id)
             assert receipt.structured_content["revision"] == raw_git(settings.content_repo, "rev-parse", "HEAD").strip()
             assert "Written-by: sdk-author" in raw_git(settings.content_repo, "log", "-1", "--format=%B").splitlines()
             replay = await direct.call_tool(_WRITE, create)

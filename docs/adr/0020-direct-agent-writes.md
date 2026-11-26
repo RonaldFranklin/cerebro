@@ -1,6 +1,6 @@
 # ADR-0020: Validated direct agent writes and owner change history
 
-- **Status:** accepted
+- **Status:** accepted; ID generation and the default quota are superseded by [ADR-0021](0021-readable-note-ids.md)
 - **Date:** 2026-11-26
 
 ## Context
