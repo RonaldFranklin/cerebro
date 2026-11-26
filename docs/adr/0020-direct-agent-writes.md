@@ -1,6 +1,6 @@
 # ADR-0020: Validated direct agent writes and owner change history
 
-- **Status:** accepted
+- **Status:** accepted; ID generation and the default quota are superseded by [ADR-0021](0021-readable-note-ids.md)
 - **Date:** 2026-11-26
 
 ## Context
@@ -20,9 +20,8 @@ and review through Git history.
   attribution. Each accepted content change produces one Git commit with a validated `Written-by`
   trailer carrying the agent name. Retain attribution on historical and owner commits.
 - Serialize validation, compare-and-swap, commit and index maintenance with other writers. Use the
-  lesser of the socket and token ceilings on targets, candidates and references. On create, derive an ASCII kebab-case stem of up to 60
-  characters from the title, using `note` for an empty stem. Append a hyphen and four random lowercase
-  ASCII letters or digits. Retry collisions internally. Preserve all existing ids, including on title edits. A missing and an invisible update target yield
+  lesser of the socket and token ceilings on targets, candidates and references. Allocate unpredictable
+  note ids on create and resolve collisions internally. A missing and an invisible update target yield
   the same error. Only a complete, unredacted read of a writable projection supplies an update
   `base_hash`. Recheck visibility and the full hash under the lock. Keep immutable note fields intact.
 - Run schema, per-note and combined budgets, link and secret checks before committing. Check inbound
@@ -31,7 +30,7 @@ and review through Git history.
   hidden notes, hashes of hidden content, or raw scanner matches. Hidden and missing references receive
   the same rejection and remediation, including references inside Markdown code or an alias. Check
   every target covered by read-time redaction before evaluating target-dependent rules. Preserve existing warning and error severity for agent note validation.
-- Use a durable rolling-hour limit per authenticated token id (default 60, configurable). Count admitted
+- Use a durable rolling-hour limit per authenticated token id (default 20, configurable). Count admitted
   attempts including invalid candidates and conflicts, so a failing loop also stops. Atomically reserve
   before application validation and keep only quota metadata. A refusal at capacity records nothing.
   A crash may consume a slot. Create requests carry a client-generated request id scoped to the token.
@@ -54,8 +53,7 @@ and review through Git history.
 
 An agent can correct rejected input immediately. Content quality now also depends on agents following
 the guide, searching before creating, and preferring updates. The owner can inspect or recover a committed
-version using existing Git history and backups. Use non-sensitive titles because title words in ids
-remain visible in restricted filenames and Git history even when note content is encrypted. Quota reservations and Git commits have separate durability
+version using existing Git history and backups. Quota reservations and Git commits have separate durability
 boundaries. Deployment must preserve the state database, content repository and encryption key together.
 
 ## Alternatives considered
