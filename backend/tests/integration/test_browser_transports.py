@@ -89,7 +89,8 @@ def test_two_https_origins_share_service_but_isolate_sessions(tmp_path: Path) ->
             assert request(client, private, "GET", "/api/session", {"Cookie": both})[0] == 401
             assert request(client, public, "GET", "/api/session", {"Cookie": both})[0] == 200
         log = config.with_suffix(".log").read_text()
-        for secret in [*tokens.values(), *cookies.values(), "synthetic-owner-password"]:
+        session_ids = [cookie.partition("=")[2] for cookie in cookies.values()]
+        for secret in [*tokens.values(), *session_ids, "synthetic-owner-password"]:
             assert secret not in log
 
 

@@ -50,6 +50,13 @@ def _origin(value: str) -> str:
     host = parsed.hostname or ""
     if ":" in host:
         host = f"[{ipaddress.IPv6Address(host).compressed}]"
+    elif re.fullmatch(r"[0-9]+|0x[0-9a-f]*", host.rsplit(".", 1)[-1]):
+        # Browsers parse domains ending in a number as IPv4, including hex/octal and shortened forms.
+        # The configured origin must already use the canonical dotted-decimal spelling.
+        try:
+            host = str(ipaddress.IPv4Address(host))
+        except ipaddress.AddressValueError:
+            raise ValueError("invalid browser origin") from None
     elif not all(re.fullmatch(r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?", label) for label in host.split(".")):
         raise ValueError("invalid browser origin")
     port = parsed.port

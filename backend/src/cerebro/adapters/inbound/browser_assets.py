@@ -50,11 +50,12 @@ def _build_file(root: Path, name: str, *, asset: bool) -> Iterator[BinaryIO]:
             directory = os.open(component, _DIRECTORY, dir_fd=directory)
             stack.callback(os.close, directory)
         fd = os.open(name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=directory)
-        stream = stack.enter_context(os.fdopen(fd, "rb"))
+        stack.callback(os.close, fd)
         info = os.fstat(fd)
         if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:
             raise FileNotFoundError
-        yield stream
+        with os.fdopen(fd, "rb", closefd=False) as stream:
+            yield stream
 
 
 def _chunks(stream: BinaryIO) -> Iterator[bytes]:

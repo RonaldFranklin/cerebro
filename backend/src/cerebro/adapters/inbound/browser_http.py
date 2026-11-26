@@ -3,9 +3,10 @@
 import secrets
 from collections.abc import Mapping
 from dataclasses import dataclass
+from urllib.parse import urlsplit
 
 from starlette.datastructures import Headers, MutableHeaders
-from starlette.responses import PlainTextResponse
+from starlette.responses import JSONResponse, PlainTextResponse, Response
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from cerebro.application.browser import BrowserBinding
@@ -19,6 +20,12 @@ class BrowserListener:
 
 def browser_http(mcp: ASGIApp, listeners: Mapping[int, BrowserListener], assets: ASGIApp) -> ASGIApp:
     sockets = dict(listeners)
+    authorities = {}
+    for listener in sockets.values():
+        origin = urlsplit(listener.binding.origin)
+        authorities[listener.binding] = (
+            {origin.netloc, f"{origin.netloc}:443"} if origin.port is None else {origin.netloc}
+        )
 
     async def handle(scope: Scope, receive: Receive, send: Send) -> None:
         if scope["type"] != "http" or scope["path"] == "/mcp":
@@ -47,14 +54,19 @@ def browser_http(mcp: ASGIApp, listeners: Mapping[int, BrowserListener], assets:
         socket = scope.get("server")
         listener = sockets.get(socket[1]) if socket else None
         headers = Headers(scope=scope)
-        if listener is None or headers.getlist("host") != [listener.binding.origin.removeprefix("https://")]:
-            await PlainTextResponse("Invalid request.", 400)(scope, receive, send_browser)
-            return
+        hosts = headers.getlist("host")
         origins = headers.getlist("origin")
-        if origins and origins != [listener.binding.origin]:
-            await PlainTextResponse("Access denied.", 403)(scope, receive, send_browser)
+        if listener is None or len(hosts) != 1 or hosts[0].lower() not in authorities[listener.binding]:
+            status, message = 400, "Invalid request."
+        elif origins and origins != [listener.binding.origin]:
+            status, message = 403, "Access denied."
+        else:
+            app = listener.api if api_request else assets
+            await app(browser_scope, receive, send_browser)
             return
-        app = listener.api if api_request else assets
-        await app(browser_scope, receive, send_browser)
+        response: Response = (
+            JSONResponse({"error": message}, status) if api_request else PlainTextResponse(message, status)
+        )
+        await response(scope, receive, send_browser)
 
     return handle

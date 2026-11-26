@@ -126,3 +126,21 @@ def test_asset_encoded_separator_cannot_escape_build(dist: Path) -> None:
     browser = client(dist)
     for route in ("/assets/%2e%2e%2findex.html", "/assets%2Fmain-12345678.js"):
         assert browser.get(route).status_code == 404
+
+
+@pytest.mark.parametrize("asset", [False, True])
+def test_directory_in_place_of_file_returns_404_and_releases_descriptors(dist: Path, asset: bool) -> None:
+    descriptors = Path("/proc/self/fd")
+    if asset:
+        file = dist / "assets/file-12345678.js"
+        route = "/assets/file-12345678.js"
+    else:
+        file = dist / "index.html"
+        file.unlink()
+        route = "/"
+    file.mkdir()
+    browser = client(dist)
+    before = len(list(descriptors.iterdir()))
+    for _ in range(10):
+        assert browser.get(route).status_code == 404
+    assert len(list(descriptors.iterdir())) == before
