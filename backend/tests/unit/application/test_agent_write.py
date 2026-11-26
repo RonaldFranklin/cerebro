@@ -467,7 +467,10 @@ def test_a_failed_index_update_after_the_commit_is_flagged_not_raised(method: st
         raise OSError("synthetic index failure")
 
     setattr(w.graph, method, boom)
-    created = writer(kit).execute(request(), ctx)
+    write = writer(kit, 1)
+    created = write.execute(request(), ctx)
+    with pytest.raises(WriteRejected, match="rate_limited"):
+        write.execute(request(), ctx)
     assert w.notes.head() == created.revision
     assert index_is_stale(w.notes, w.search, w.graph)
     # A replay reads the commit history, not the stale index.
