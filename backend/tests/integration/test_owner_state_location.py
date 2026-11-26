@@ -122,7 +122,7 @@ def test_parent_sync_failure_prevents_first_provision(tmp_path: Path, monkeypatc
     assert verifier.verify(b"fixture") is not None
 
 
-@pytest.mark.parametrize("installation", ["source", "wheel"])
+@pytest.mark.parametrize("installation", ["source", "wheel", "wheel-linked-module"])
 def test_refuses_explicit_application_worktree_without_gitfile(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, installation: str
 ) -> None:
@@ -134,8 +134,13 @@ def test_refuses_explicit_application_worktree_without_gitfile(
     _git(tmp_path, "init", "--bare", str(git_dir))
     module = checkout / "backend/src/cerebro/bootstrap/browser.py"
     module.parent.mkdir(parents=True)
-    module.write_text("# Fixture application source\n")
-    if installation == "wheel":
+    if installation == "wheel-linked-module":
+        original = module.with_name("implementation.py")
+        original.write_text("# Fixture application source\n")
+        module.symlink_to(original.name)
+    else:
+        module.write_text("# Fixture application source\n")
+    if installation != "source":
         (checkout / "backend/pyproject.toml").write_text('[project]\nname="cerebro"\n')
     explicit = ["--git-dir", str(git_dir), "--work-tree", str(checkout)]
     _git(tmp_path, *explicit, "add", "--", str(checkout / "backend"))
