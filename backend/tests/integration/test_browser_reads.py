@@ -17,6 +17,7 @@ from cerebro.bootstrap.container import Container, build_container
 from cerebro.domain.access import AccessCeiling, AccessContext
 from cerebro.domain.enums import Sensitivity
 from tests.integration.content_kit import (
+    BROKEN_ID,
     CORE_ID,
     DOCKER_ID,
     HUB_ID,
@@ -179,3 +180,23 @@ def test_health_requires_restricted_listener(service: Service) -> None:
     assert response.status_code == 403
     assert VAULT_ID.value not in response.text
     assert "notes_checked" not in response.text
+
+
+def test_two_hop_filters_require_a_path_through_matching_nodes(service: Service) -> None:
+    path = f"/api/notes/{BROKEN_ID.value}/neighbors"
+    unfiltered = service.private.get(path, params={"hops": 2}).json()
+    assert DOCKER_ID.value in {node["id"] for node in unfiltered["nodes"]}
+    # Both the center and the Docker note are P2. Their only intermediate is the P1 hub.
+    filtered = service.private.get(path, params={"hops": 2, "priority": "P2"}).json()
+    assert filtered["center"] == BROKEN_ID.value
+    assert [node["id"] for node in filtered["nodes"]] == [BROKEN_ID.value]
+    assert filtered["edges"] == []
+    absent_center = service.private.get(path, params={"hops": 2, "priority": "P1"}).json()
+    assert absent_center == {"center": None, "nodes": [], "edges": []}
+
+
+def test_private_read_with_a_redacted_reference_has_no_edit_hash(service: Service) -> None:
+    response = service.private.get(f"/api/notes/{BROKEN_ID.value}")
+    assert response.status_code == 200
+    assert "ghost-note" not in response.json()["body"]
+    assert "content_hash" not in response.json()

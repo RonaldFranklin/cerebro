@@ -63,7 +63,7 @@ class Search(Filters):
     @field_validator("q")
     @classmethod
     def bound_query(cls, value: str) -> str:
-        return bounded_text(value, MAX_QUERY_BYTES)
+        return bounded_text(value, MAX_QUERY_BYTES) if value else ""
 
 
 class Graph(Filters):
@@ -172,7 +172,11 @@ def install_browser_reads(app: FastAPI, cases: BrowserReads) -> None:
         ctx = request.state.ctx
         result = cases.read_note.execute(query, ctx)
         view = read_view(result)
-        if ctx.ceiling.level is Sensitivity.RESTRICTED and result.visible_content_hash == result.content_hash:
+        if (
+            params.section is None
+            and ctx.ceiling.level is Sensitivity.RESTRICTED
+            and result.visible_content_hash == result.content_hash
+        ):
             view["content_hash"] = result.content_hash
         return view
 
