@@ -24,7 +24,8 @@ from cerebro.adapters.outbound.filesystem import (
 from cerebro.adapters.outbound.filesystem import repository as repository_module
 from cerebro.adapters.outbound.git import GitError, GitRepo
 from cerebro.application.ports import Cipher, NoteChange, NoteRepository
-from cerebro.domain.commit_message import AgentWriteCommit, create_request_key
+from cerebro.application.ports.notes import CommittedCreate
+from cerebro.domain.commit_message import AgentWriteCommit, OwnerCommit, create_request_key
 from cerebro.domain.content_hash import content_hash
 from cerebro.domain.enums import Priority, Sensitivity
 from cerebro.domain.errors import ContentConflict, InvalidValueError
@@ -110,53 +111,43 @@ def tree_files(root: Path) -> dict[str, bytes]:
 # -- layout and format ---------------------------------------------------------------------------------------------
 
 
-def test_reopened_repository_reads_the_original_git_receipt(
+def test_reopened_repository_reads_the_original_created_note(
     git: GitRepo, root: Path, cipher: Cipher, repo: FilesystemNoteRepository
 ) -> None:
     note = make_note(sensitivity=Sensitivity.RESTRICTED)
     key = create_request_key("token-fixture", "request-fixture")
-    message = AgentWriteCommit(note_id=note.id, written_by="test-agent", request_key=key, fingerprint="d" * 64)
+    message = AgentWriteCommit(note_id=note.id, written_by="test-agent", request_key=key)
     revision = repo.apply([NoteChange(note=note)], message)
-    repo.apply([NoteChange(note=hub_note())], MESSAGE)
+    later = NoteChange(note=replace(note, body="Changed later."), expected_hash=content_hash(note))
+    repo.apply([later], OwnerCommit.for_update(note.id))
     reopened = FilesystemNoteRepository(root, git=git, cipher=cipher)
-    receipt = reopened.find_create(key)
-    assert receipt is not None
-    assert receipt.revision == revision
-    assert receipt.note_id == note.id
+    assert reopened.find_create(key) == CommittedCreate(revision=revision, note=note)
     text = git.describe_commit(revision)[1]
-    assert text.startswith(f"Add note: {note.id.value}\n\nWritten-by: test-agent\nWrite-Request: {key}\n")
-    assert "d" * 64 not in text
-    assert note.body not in text
+    assert text == f"Add note: {note.id.value}\n\nWritten-by: test-agent\nWrite-Request: {key}"
     wrong_key = FilesystemNoteRepository(root, git=git, cipher=FernetCipher([generate_key()]))
-    with pytest.raises(NoteWriteError, match="invalid create receipt"):
+    with pytest.raises(NoteWriteError, match="invalid create record"):
         wrong_key.find_create(key)
 
 
-@pytest.mark.parametrize("alter", ["actor", "key", "note", "ciphertext", "plaintext"])
-def test_tampered_create_receipt_fails_closed(repo: FilesystemNoteRepository, git: GitRepo, alter: str) -> None:
+@pytest.mark.parametrize("alter", ["note", "trailer", "subject"])
+def test_malformed_create_record_fails_closed(repo: FilesystemNoteRepository, git: GitRepo, alter: str) -> None:
     note = plain()
     key = create_request_key("test-token", "first-request")
-    message = AgentWriteCommit(note_id=note.id, written_by="test-agent", request_key=key, fingerprint="b" * 64)
-    revision = repo.apply([NoteChange(note=note)], message)
-    text = git.describe_commit(revision)[1]
-    search_key = key
-    if alter == "actor":
-        text = text.replace("Written-by: test-agent", "Written-by: other-agent")
-    elif alter == "key":
-        search_key = create_request_key("other-token", "first-request")
-        text = text.replace(key, search_key)
-    elif alter == "note":
+    message = AgentWriteCommit(note_id=note.id, written_by="test-agent", request_key=key)
+    repo.apply([NoteChange(note=note)], message)
+    text = message.render()
+    if alter == "note":
         text = text.replace(f"Add note: {note.id.value}", "Add note: other-note")
-    elif alter == "ciphertext":
-        text = text[:-16]
+    elif alter == "trailer":
+        text += "\nWrite-Receipt: AAAA"
     else:
-        text = text.rsplit("\n", 1)[0] + "\nWrite-Fingerprint: " + "b" * 64
+        text = text.replace("Add note:", "Update note:")
     # A newer matching record must never fall back to another commit or allow a fresh create.
     other = plain(id=NoteId("second-note"))
     repo.apply([NoteChange(note=other)], MESSAGE)
     git._run(["commit", "--amend", "--quiet", "-F", "-"], stdin=text)
-    with pytest.raises(NoteWriteError, match="invalid create receipt"):
-        repo.find_create(search_key)
+    with pytest.raises(NoteWriteError, match="invalid create record"):
+        repo.find_create(key)
 
 
 def test_files_are_placed_by_type_and_named_after_the_id(repo: FilesystemNoteRepository, root: Path) -> None:

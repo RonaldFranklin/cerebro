@@ -29,14 +29,15 @@ class NoteChange:
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
-class CreateReceipt:
-    note_id: NoteId
+class CommittedCreate:
+    """A committed agent create: its revision and the note exactly as that commit stored it (ADR-0024)."""
+
     revision: str
-    fingerprint: str
+    note: Note
 
 
 def check_agent_commit(changes: Sequence[NoteChange], message: AgentWriteCommit) -> None:
-    """Keep the receipt and authenticated attribution tied to the single change committed."""
+    """Keep the request key and authenticated attribution tied to the single change committed."""
     if len(changes) != 1 or changes[0].note.id != message.note_id:
         raise InvalidValueError("changes", "agent writes must identify exactly one changed note")
     if (changes[0].expected_hash is None) != (message.request_key is not None):
@@ -67,8 +68,9 @@ class NoteRepository(Protocol):
         """
         ...
 
-    def find_create(self, request_key: str) -> CreateReceipt | None:
-        """Locate the committed create on the current history, independently of derived index state."""
+    def find_create(self, request_key: str) -> CommittedCreate | None:
+        """The create committed with this request key on the current history, with the note as it was then
+        committed, independently of derived index state. ``None`` if no commit carries the key."""
         ...
 
     def apply(self, changes: Sequence[NoteChange], message: OwnerCommit | AgentWriteCommit) -> str:
