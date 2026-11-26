@@ -107,12 +107,12 @@ backend/
 | `ChangeHistory` | Return recent first-parent revisions, attribution and note versions for private owner history | Git/filesystem; in-memory fake |
 | `Clock`, `IdGenerator` | `now()`; note ids, token ids and token secrets, for deterministic tests | system / fixed fakes |
 
-Recent changes scans at most 32 first-parent revisions and shows up to 20 attributable note changes.
-The application checks current and historical visibility before returning the actor, timestamp, note and
-unified diff. Whole documents are compared, and only the returned diff is bounded (16,384 characters), with
-clipping marked as truncated. When the changed regions of both versions are too large to align line by line (their
-line counts multiply to more than 4,000 x 4,000), the region is shown as removed and then added, with the removed
-lines limited to half of the output. Git retains the complete history.
+Recent changes scans at most 32 first-parent revisions and shows up to 20 attributable note changes. The application
+checks current and historical visibility before returning the actor, timestamp, note and unified diff. Whole
+documents are compared, and only the returned diff is bounded (16,384 characters), with clipping marked as
+truncated; a clipped diff gives removed lines at most half of that bound. When the changed regions of both versions
+are too large to align line by line (their line counts multiply to more than 4,000 x 4,000), the region is shown as
+removed and then added. Git retains the complete history.
 
 Ports know nothing about access: use cases apply the ceiling and raise `NoteNotFound` for hidden notes exactly as
 for missing ones, while the two indexes filter by the mandatory ceiling argument. Application exceptions live in

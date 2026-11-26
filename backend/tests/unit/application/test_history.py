@@ -110,6 +110,16 @@ def test_a_clipped_removed_side_is_marked_truncated_even_when_the_additions_are_
     assert result.truncated
 
 
+@pytest.mark.parametrize(("lines", "width"), [(150, 70), (1, 10_000)], ids=["many-lines", "one-long-line"])
+def test_a_clipped_rewrite_shows_both_removals_and_additions(lines: int, width: int) -> None:
+    result = _detail(("o" * width + "\n") * lines, ("n" * width + "\n") * lines)
+    shown = result.diff.splitlines()
+    assert any(line.startswith("-ooo") for line in shown)
+    assert any(line.startswith("+nnn") for line in shown)
+    assert result.truncated
+    assert len(result.diff) <= MAX_DIFF_CHARS
+
+
 @pytest.mark.parametrize(
     ("before", "after"),
     [("Text.", "Text.\n"), ("Text.\n", "Text."), ("One.\r\nTwo.", "One.\nTwo.")],
