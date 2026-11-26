@@ -34,7 +34,10 @@ Inbox, which are validated, curated and approved before becoming notes.
 - **Phase 4 is delivered.** The fifth MCP tool submits agent proposals for quota-controlled validation, curation
   and local owner review. The [delivery record and security checkpoint](docs/plans/phase-4.md#5-final-report)
   and [manual proposal checks](docs/agent-integration.md#3-propose-in-both-clients-and-approve-locally)
-  are ready for the owner. Phase 5 planning follows the owner's direction.
+  are ready for the owner.
+- **Next delivery sequence:** plan Phase 5 (API and web UI) for owner approval before coding. Phase 7
+  (curator) follows Phase 5. Finish with Phase 6 (deploy), first validating Docker in WSL dev with sample
+  content, then validating hml and promoting the same image to prod on the server.
 - **Phase 2 decisions (2026-11-25):** the owner declined a MAC for token rows and accepted the
   [residual risk](docs/architecture.md#accepted-risks-owner-decision-2026-11-25). The owner approved
   `types-pyyaml` as a development dependency for strict type checking of the filesystem adapter.

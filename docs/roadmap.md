@@ -122,6 +122,9 @@ produced a scrubbed rejection. The acceptance test observed no state database or
 quota refusal. The [phase report](plans/phase-4.md#5-final-report) records verification and the security
 checkpoint. [Manual real-client checks](agent-integration.md#3-propose-in-both-clients-and-approve-locally).
 
+The next delivery sequence is Phase 5 (API and web UI), Phase 7 (curator), then Phase 6 (deployment).
+Phase 8 remains the later backlog. The owner reviews the Phase 5 plan before implementation.
+
 ## ⬜ Phase 5 — HTTP API and web UI
 
 - Choose the Node version per [ADR-0013](adr/0013-stack-and-dependency-policy.md) (Active LTS at phase start),
@@ -134,18 +137,6 @@ checkpoint. [Manual real-client checks](agent-integration.md#3-propose-in-both-c
 **Acceptance:** the owner can browse, read, search, explore the graph, approve proposals and edit notes from
 the browser.
 
-## ⬜ Phase 6 — Deploy (hml, prod)
-
-- Dockerfile(s), `deploy/compose.yaml` with `cerebro-hml` and `cerebro-prod` projects, healthchecks,
-  restart policy, log rotation, separate volumes.
-- Same image promoted from hml to prod (`cerebro-backend:git-<sha>`).
-- `tailscale serve` HTTPS in front of the private listener.
-- Backups: content repo pushed to the private remote; state dir file backup; Fernet key escrow documented.
-- Scheduled jobs never run between 00:00 and 01:00 local time (server shuts down daily at 01:00).
-
-**Acceptance:** hml and prod running on the server; Claude Code and Codex on the workstation use prod via
-Tailscale; restore of content + state tested on hml.
-
 ## ⬜ Phase 7 — Curator
 
 - `Curator` adapters for Anthropic and OpenAI (provider chosen by configuration).
@@ -155,6 +146,20 @@ Tailscale; restore of content + state tested on hml.
 
 **Acceptance:** proposals are curated automatically and shown to the owner as decisions with diffs; cost per
 curation logged.
+
+## ⬜ Phase 6 — Deploy (hml, prod)
+
+- First validate the Docker image and Compose configuration in WSL dev with synthetic content. Check
+  startup, health and persistence across a container restart before deploying to the server.
+- Dockerfile(s), `deploy/compose.yaml` with `cerebro-hml` and `cerebro-prod` projects, healthchecks,
+  restart policy, log rotation, separate volumes.
+- Finish on the server. Validate in hml, then promote the same image to prod (`cerebro-backend:git-<sha>`).
+- `tailscale serve` HTTPS in front of the private listener.
+- Backups: content repo pushed to the private remote; state dir file backup; Fernet key escrow documented.
+- Scheduled jobs never run between 00:00 and 01:00 local time (server shuts down daily at 01:00).
+
+**Acceptance:** hml and prod running on the server; Claude Code and Codex on the workstation use prod via
+Tailscale; restore of content + state tested on hml.
 
 ## ⬜ Phase 8 — Later
 
