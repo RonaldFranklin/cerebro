@@ -28,7 +28,8 @@ and review through Git history.
   links on sensitivity changes. Return bounded field codes and correction hints, including stale-base
   recovery. Project findings to the requester: never echo raw input, hidden target ids, counts from
   hidden notes, hashes of hidden content, or raw scanner matches. Hidden and missing references receive
-  the same remediation. Preserve existing warning and error severity for agent note validation.
+  the same rejection and remediation, including references inside Markdown code or an alias. Check
+  every target covered by read-time redaction before evaluating target-dependent rules. Preserve existing warning and error severity for agent note validation.
 - Use a durable rolling-hour limit per authenticated token id (default 20, configurable). Count admitted
   attempts including invalid candidates and conflicts, so a failing loop also stops. Atomically reserve
   before application validation and keep only quota metadata. A refusal at capacity records nothing.

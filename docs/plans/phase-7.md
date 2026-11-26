@@ -20,7 +20,8 @@ changes. Use one branch per step from updated main, independent diff review, gre
   Inspect Git for one commit per change and authenticated authorship. A stale update preserves the winner.
 - Invalid schema, missing links, oversize text and synthetic secrets yield bounded actionable feedback.
   Confirm rejected payloads are absent from Git, state and logs. Exercise cross-ceiling targets,
-  inbound and outbound links, redacted reads and concurrent requests. A quota refusal changes no content.
+  inbound and outbound links, redacted reads and concurrent requests. Compare missing and hidden
+  links in code spans, fenced blocks, metadata and aliases for identical errors and commit outcomes. A quota refusal changes no content.
   Validate that legacy grants cannot write and historical records survive cutover.
 - The guide covers durable decisions, configuration, architecture, working procedures and project
   conventions. Exclude secrets, transient conversations, logs, obvious facts and duplicates. Include

@@ -112,7 +112,9 @@ Structure and rule details enforced by the domain:
   **inbound**: when a note is created or its sensitivity rises (agent writes and owner edits alike), stored notes of lower sensitivity that link to it
   (body, `hub`, `related`, `superseded_by`) are errors, reported as "<linking-id> links to this note". Equal or lower sensitivity is fine. A missing target is a
   `broken_link`, not this. The message names only the target id as the author wrote it (never its title or
-  sensitivity); only owner diagnostics may include details about other stored notes. Agent-facing errors normalize hidden and missing references. The health report runs
+  sensitivity); only owner diagnostics may include details about other stored notes. For direct agent
+  writes, reject a missing or invisible target identically for every reference covered by read-time
+  redaction, including code and aliases. Check these before target-dependent rules. The health report runs
   the rule too, so legacy leaks are listed as errors.
 - `title` and `summary` may not contain `[[` (`wikilink_in_metadata`, error on every write path): search results
   and the overview serve them without link redaction.
