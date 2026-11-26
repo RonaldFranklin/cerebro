@@ -80,6 +80,7 @@ elif len(sys.argv) == 4 and sys.argv[3] in ("created", "running"):
         or labels.get("com.docker.compose.service") != "backend"
         or container["HostConfig"]["NetworkMode"] != name
         or container["HostConfig"]["PortBindings"] != bindings
+        or set(runtime["Networks"] or {}) - {name}
         or bridge["Name"] != name
         or bridge["Driver"] != "bridge"
         or bridge.get("Options")

@@ -13,6 +13,13 @@ trap 'rm -rf -- "$scratch"' EXIT
 "${dc[@]}" config --format json > "$scratch/model"
 project=$(python3 "$check" --project < "$scratch/model")
 dc+=(-p "$project")
+state=$(python3 -c 'import json, sys; print(next(v["source"] for v in json.load(sys.stdin)["services"]["backend"]["volumes"] if v["target"] == "/data/state"))' < "$scratch/model")
+# Lock the existing directory inode for this deployment, including final verification.
+exec {lock_fd}<"$state"
+if ! flock --exclusive --nonblock "$lock_fd"; then
+    echo "Another startup holds the deployment lock for this state directory." >&2
+    exit 1
+fi
 
 image=$(python3 -c 'import json, sys; print(json.load(sys.stdin)["services"]["backend"]["image"])' < "$scratch/model")
 docker image inspect "$image" > /dev/null

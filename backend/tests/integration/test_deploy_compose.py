@@ -137,6 +137,8 @@ def test_preflight_refuses_unsafe_service(tmp_path: Path, overrides: dict[str, o
         "inspect",
         "port",
         "network",
+        "attached",
+        "concurrent",
         "foreign",
         "late-foreign",
         "health",
@@ -149,6 +151,7 @@ def test_preflight_refuses_unsafe_service(tmp_path: Path, overrides: dict[str, o
 )
 def test_guarded_start(tmp_path: Path, failure: str) -> None:
     """Real Compose resolves the file; a simulated daemon records startup and shutdown."""
+    import fcntl
     import shutil
 
     docker = shutil.which("docker")
@@ -182,7 +185,7 @@ esac
             "PortBindings": {f"{port}/tcp": [{"HostIp": "127.0.0.1", "HostPort": port}]},
         },
         "NetworkSettings": {
-            "Networks": {network: {}},
+            "Networks": {network: {}, "other": {}} if failure == "attached" else {network: {}},
             "Ports": {f"{port}/tcp": [{"HostIp": "0.0.0.0" if failure == "port" else "127.0.0.1", "HostPort": port}]},
         },
     }
@@ -225,13 +228,21 @@ esac
         (data / part).mkdir(parents=True)
     if failure == "preflight":
         env["COMPOSE_PROJECT_NAME"] = "cerebro-prod"
-    result = subprocess.run([str(ROOT / "deploy/start.sh"), "/dev/null"], env=env, capture_output=True, check=False)
+    lock_fd = os.open(data / "state", os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        if failure == "concurrent":
+            fcntl.flock(lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        result = subprocess.run([str(ROOT / "deploy/start.sh"), "/dev/null"], env=env, capture_output=True, check=False)
+    finally:
+        os.close(lock_fd)
     assert (result.returncode == 0) == (not failure), result.stderr
     commands = calls.read_text()
-    assert (" create " in commands) == (failure not in ("preflight", "missing-image", "wrong-data", "symlink"))
+    assert (" create " in commands) == (
+        failure not in ("preflight", "missing-image", "wrong-data", "symlink", "concurrent")
+    )
     started = failure in ("", "start", "port", "health", "existing", "late-foreign")
     assert (" start " in commands) == started
     assert ("container stop abc" in commands) == (
-        failure in ("start", "port", "health", "existing", "network", "foreign", "late-foreign", "inspect")
+        failure in ("start", "port", "health", "existing", "network", "foreign", "late-foreign", "inspect", "attached")
     )
     assert " stop backend" not in commands
