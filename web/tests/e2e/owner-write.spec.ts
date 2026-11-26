@@ -152,7 +152,11 @@ test("a suspended editor drops its draft after another tab replaces the session"
   const editor = page.getByRole("textbox",{name:"Markdown body"});
   const draft = "Unsaved text from the former session.";
   await editor.fill(draft);
-  await expect(page.getByRole("button",{name:"Save changes",exact:true})).toBeEnabled();
+  const save = page.getByRole("button",{name:"Save changes",exact:true});
+  await expect(save).toBeEnabled();
+  await save.focus();
+  const bounds = await save.boundingBox();
+  if (!bounds) throw new Error("Save control has no geometry");
 
   const other = await context.newPage();
   await other.goto(demo.private_origin);
@@ -168,9 +172,24 @@ test("a suspended editor drops its draft after another tab replaces the session"
     return [logout.status, login.status];
   }, demo.password);
   expect(statuses).toEqual([204,200]);
+  let release!: () => void;
+  const hold = new Promise<void>(resolve => { release = resolve; });
+  await page.route("**/api/session", async route => {
+    await hold;
+    await route.continue().catch(() => {});
+  });
   await lifecycle.send("Page.setWebLifecycleState", {state:"active"});
   await page.bringToFront();
   await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+  try {
+    await expect(page.getByText("Checking session…",{exact:true})).toBeVisible();
+    await expect(save).toBeHidden();
+    await page.mouse.click(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2);
+    await page.keyboard.press("Enter");
+    expect(writes).toEqual([]);
+  } finally {
+    release();
+  }
   await expect(editor).toContainText("Check the client");
   await expect(editor).not.toContainText(draft);
   await expect(page.getByRole("button",{name:"Save changes",exact:true})).toBeDisabled();
