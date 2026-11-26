@@ -125,12 +125,15 @@ checkpoint. [Manual real-client checks](agent-integration.md#3-propose-in-both-c
 The next delivery sequence is Phase 5 (API and web UI), Phase 7 (curator), then Phase 6 (deployment).
 Phase 8 remains the later backlog.
 
-## 🟨 Phase 5 — HTTP API and web UI
+## ✅ Phase 5 — HTTP API and web UI
 
-Owner-approved delivery plan, dependencies, verification and adjustments: [phase-5.md](plans/phase-5.md).
-The toolchain is pinned. Local password provisioning, the durable login throttle and the browser session
-lifecycle are implemented and tested. Both sockets serve the authenticated browser API and local web
-assets alongside MCP. Typed read endpoints serve search, overview, notes, graph neighborhoods and private health. The private API supports owner edits and revision-checked Inbox review. The browser provides owner sign-in, a session-scoped overview, filtered search and a sanitized Markdown reader with section and hub navigation. The graph shows filtered global and local views with keyboard navigation and an on-demand HTML list of directed connections. On the private listener, the owner can inspect and apply Inbox proposals or edit whole notes in CodeMirror with conflict recovery.
+The owner browser API and web UI are delivered in PRs #56–#66. The private listener supports
+proposal review, revisions and owner edits. Both listeners serve scoped reads, including the
+sanitized reader, search and keyboard-accessible local and global graphs. The private health panel
+reports index checks and safe findings. Installed Chromium tests verified login, isolation, rendering
+under CSP, commit trailers and logout against the synthetic HTTPS service. The owner's manual visual
+and security reviews remain open. [Final report and screenshots](plans/phase-5.md#8-phase-5-final-report) ·
+[Open the interface in WSL](plans/phase-5.md#7-open-the-interface-from-wsl).
 
 - Use Node 26.13.1 per [ADR-0013](adr/0013-stack-and-dependency-policy.md) (Active LTS at phase start),
   pin it (`package.json` `engines`, `.nvmrc`, CI) and record it with the frontend versions in

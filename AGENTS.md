@@ -35,10 +35,12 @@ Inbox, which are validated, curated and approved before becoming notes.
   and local owner review. The [delivery record and security checkpoint](docs/plans/phase-4.md#5-final-report)
   and [manual proposal checks](docs/agent-integration.md#3-propose-in-both-clients-and-approve-locally)
   are ready for the owner.
-- **Phase 5 is in progress.** Follow the [approved plan and owner adjustments](docs/plans/phase-5.md), including the single
-  privileged WSL setup hand-off at the start of PR 2. Phase 7
-  (curator) follows Phase 5. Finish with Phase 6 (deploy), first validating Docker in WSL dev with sample
-  content, then validating hml and promoting the same image to prod on the server.
+- **Phase 5 is delivered.** The owner browser API and web UI include the overview, search, reader,
+  global/local graph, Inbox review, editor and private health panel. See the
+  [delivery report and security checkpoint](docs/plans/phase-5.md#8-phase-5-final-report)
+  and [WSL walkthrough](docs/plans/phase-5.md#7-open-the-interface-from-wsl). The owner's visual
+  and security reviews are pending. Phase 7 (curator) is next. Phase 6 (deploy) follows with Docker
+  validation in WSL dev before hml and promotion of the same image to prod on the server.
 - **Phase 2 decisions (2026-11-25):** the owner declined a MAC for token rows and accepted the
   [residual risk](docs/architecture.md#accepted-risks-owner-decision-2026-11-25). The owner approved
   `types-pyyaml` as a development dependency for strict type checking of the filesystem adapter.

@@ -208,17 +208,17 @@ else
 fi
 ```
 
-**Commands the implementation PRs must provide.** From the repository root on x86-64 WSL Ubuntu, run the following against a disposable synthetic instance. The browser binary inventory covers Linux x64; the ARM64 instructions above cover the Node and pnpm installations. The web commands and fixture launcher are planned deliverables. Keep the existing CLI and MCP entry points usable without installing Node on the service host.
+**Reproduce the local gates.** From the repository root on x86-64 WSL Ubuntu, run the following against a disposable synthetic instance. The browser binary inventory covers Linux x64; the ARM64 instructions above cover the Node and pnpm installations. The Python CLI and MCP service run without Node on the service host.
 
 ```bash
 (cd backend && uv sync --locked && uv run --locked ruff check . && uv run --locked ruff format --check . &&
   uv run --locked mypy && uv run --locked lint-imports --no-cache && uv run --locked pytest --cov)
 (cd web && pnpm install --frozen-lockfile && pnpm run typecheck && pnpm run build &&
-  pnpm exec playwright install chromium && pnpm run test:component && pnpm run test:e2e)
+  pnpm exec playwright install chromium && pnpm run test:toolchain && pnpm run test:component && pnpm run test:e2e)
 (cd backend && uv run --locked python -m devtools.web_demo --dist ../web/dist)
 ```
 
-The demo launcher creates a temporary git/SQLite/Fernet fixture with public, internal and restricted notes, a reviewable proposal and a health finding. It prompts locally for the owner password and serves the built app and API together over dev-only loopback HTTPS, with a disposable localhost certificate and a printed fingerprint. Open the displayed URL from the WSL host browser, verify the development certificate, and sign in. PR 11 documents setup, expected observations, shutdown and cleanup. Use local fixture trust in the isolated browser test context. Docker, hml credentials and server access are unnecessary for this phase.
+The demo launcher creates a temporary git/SQLite/Fernet fixture with public, internal and restricted notes, a reviewable proposal and a health finding. It prompts locally for the owner password and serves the built app and API together over dev-only loopback HTTPS, with a disposable localhost certificate and a printed fingerprint. Open the displayed URL from the WSL host browser, verify the development certificate, and sign in. The [WSL walkthrough](#7-open-the-interface-from-wsl) describes setup, expected observations, shutdown and cleanup. Use local fixture trust in the isolated browser test context. Docker, hml credentials and server access are unnecessary for this phase.
 
 **Coverage of the acceptance run**
 
@@ -414,3 +414,109 @@ listener displays a denial for the owner workspaces.
 [Inbox](../screenshots/phase-5/10-inbox.png) · [Proposal review](../screenshots/phase-5/10-review.png) ·
 [Owner editor](../screenshots/phase-5/10-editor.png) · [Markdown preview](../screenshots/phase-5/10-preview.png) ·
 [Conflict comparison](../screenshots/phase-5/10-conflict.png)
+
+## 7. Open the interface from WSL
+
+In a Bash shell inside this application checkout on the provisioned x86-64 WSL machine, run:
+
+```bash
+cd "$(git rev-parse --show-toplevel)"
+export PATH="$HOME/.local/opt/cerebro-pnpm-12.22.0:$HOME/.local/opt/node-v26.13.1-linux-x64/bin:$PATH"
+node --version
+pnpm --version
+(cd backend && uv sync --locked)
+(cd web && pnpm install --frozen-lockfile && pnpm run build)
+(cd backend && uv run --locked python -m devtools.web_demo --dist ../web/dist)
+```
+
+The version checks should report `v26.13.1` and `12.22.0`. Enter and confirm
+a disposable password at the hidden terminal prompts. Keep the terminal open. Open the exact
+**Private browser** HTTPS address printed by the launcher in the host browser. Inspect the certificate
+in the browser and compare its SHA-256 fingerprint with the value printed in the terminal before
+accepting the certificate for this demo. Sign in with the disposable password.
+
+1. Open **Search**, find `SSH access`, open the note, and follow a section. Use the browser's translation
+   feature to inspect the prose and the unchanged `ssh -V` command.
+2. Open **Graph**. Select **Infrastructure** to explore its neighborhood, switch to two hops and return
+   to the global graph. The node list and its **Connections** control also work with the keyboard.
+3. Open **Inbox**, select the fixture proposal for `island-hub`, inspect its diff and choose
+   **Approve and apply**. Check the commit shown in the receipt.
+4. Return to the SSH note, open its editor, change a sentence, preview it and save. Open **Health**
+   to inspect the seeded link and orphan findings, then follow an affected note.
+5. Open the printed **Public listener fixture** address in another tab. Sign in separately. Confirm
+   the synthetic vault catalog is absent from the graph and the private Inbox and Health views are
+   unavailable. Sign out on each listener and reload a protected page.
+6. Press Ctrl+C in the launcher terminal. The service and TLS relays stop, and the temporary content
+   repository, credentials and state are removed. Starting the launcher again creates a fresh instance.
+
+The interactive WSL launcher was also checked with a terminal: masked password entry and confirmation,
+HTTP 200 for the private shell, a matching certificate fingerprint and exit status zero on Ctrl+C.
+The owner's visual, translation and browser-trust review remains manual.
+
+## 8. Phase 5 final report
+
+The eleven implementation steps deliver the owner web UI on the existing service. The owner approved
+the [plan in #55](https://github.com/RonaldFranklin/cerebro/pull/55) and authorized the merges,
+the pinned dependency inventory and the user-space toolchain. The dependency and browser release dates
+are recorded in §4 and the [PR 2 delivery record](#pr-2-delivery-record).
+
+### Pull requests and decisions for review
+
+| Step | Implemented and tested | Decisions for review |
+|---|---|---|
+| [1 · #56](https://github.com/RonaldFranklin/cerebro/pull/56) | Authorization, WSL setup and browser security ADR | One privileged hand-off at the beginning of PR 2, preauthorized compatible TypeScript fallback and screenshots in each UI PR. Authenticate against the verified credential generation, including on reset. Keep both test ports on trusted loopback; separate proxy trust domains require distinct hostnames. |
+| [2 · #57](https://github.com/RonaldFranklin/cerebro/pull/57) | Locked Python/web dependencies, native bundler, Chromium launch, CI | Retain TypeScript 7.0.2 after compatibility tests. Use native Linux bundling and omit the optional WASI prerelease chain. Reuse the pinned checkout action and verify the Node archive. |
+| [3 · #58](https://github.com/RonaldFranklin/cerebro/pull/58) | Owner verifier, persistent throttle and listener-bound sessions | Keep the verifier and lock in protected state outside Git. Allow one scrypt operation per instance, at most five login reservations and 64 sessions. Reuse only expired throttle slots, evict the least recently active session at capacity, and rotate only the supplied matching session. Limit passwords to 1,024 UTF-8 bytes with versioned scrypt parameters. |
+| [4 · #59](https://github.com/RonaldFranklin/cerebro/pull/59) | API, MCP and static shell on both listeners | Configure exact external HTTPS origins and the optional distribution directory. Preserve Host across the trusted proxy. Require a login marker and per-session mutation CSRF header. Allow only known SPA routes and hashed asset types; put the style nonce in the HTML shell. |
+| [5 · #60](https://github.com/RonaldFranklin/cerebro/pull/60) | Typed read API, graph metadata and filtered topology | Reject repeated filters, accept strict history flags and cap the encoded query at 8 KiB. Derive options from visible nodes. Traverse matching intermediates; removing the center empties its neighborhood. Only a complete, unredacted private read yields an edit precondition. |
+| [6 · #61](https://github.com/RonaldFranklin/cerebro/pull/61) | Private Inbox and edit API, optimistic concurrency, git commits | PUT requires the full private hash and editable fields. The use case sets dates. Compare stale submissions with the current note, cap diffs and expose both full sides. Approve the displayed target and apply/resume the inspected revision. Return safe validation fields and fixed history warnings. |
+| [7 · #62](https://github.com/RonaldFranklin/cerebro/pull/62) | Keyboard login, overview and session lifecycle | Use the browser History API and regular links. Isolate caches and abortable requests by session and hide protected views during revalidation. Use a terminal password or automation stdin, certificate-pinned Chromium and an isolated component fixture. Use local assets and system font fallbacks. |
+| [8 · #63](https://github.com/RonaldFranklin/cerebro/pull/63) | Search and sanitized reader with sections and hub membership | Store search criteria in session memory. Fetch result sections on demand, derive options from the visible graph and carry history through navigation. Share the sanitized Markdown renderer, use alt text for images, and preserve technical tokens during translation. |
+| [9 · #64](https://github.com/RonaldFranklin/cerebro/pull/64) | Global/local Sigma graph, worker, accessible topology | Retain graph selection in session memory. Filter the global response locally and compute restricted paths through the neighborhood API. Only numeric topology goes to the worker. Use a stable palette with labels and a keyboard list. Give the private sample hub its own area. |
+| [10 · #65](https://github.com/RonaldFranklin/cerebro/pull/65) | Inbox review, amendment and application; CodeMirror owner editing | Pin the inspected preview and explicitly reload on changes or uncertain writes. Resume approved items from metadata. Require the full private edit hash, respect the reader's history scope for completion and previews, keep drafts in memory, and require a separate save after comparing a conflicting current revision. |
+| [11 · #66](https://github.com/RonaldFranklin/cerebro/pull/66) | Private health panel, installed-service acceptance, WSL runbook and hand-off | Report index checks from HealthReport, show safe finding identifiers, and use listener-visible notes for links. Reuse the disposable HTTPS fixtures for browser acceptance and keep the owner's security and visual review open. |
+
+### Playwright screenshots
+
+| UI step | Captured screens |
+|---|---|
+| 7 | [Sign-in](../screenshots/phase-5/07-login.png) · [Overview](../screenshots/phase-5/07-overview.png) |
+| 8 | [Search](../screenshots/phase-5/08-search.png) · [Reader](../screenshots/phase-5/08-reader.png) |
+| 9 | [Global graph](../screenshots/phase-5/09-graph.png) · [Local graph](../screenshots/phase-5/09-neighborhood.png) |
+| 10 | [Inbox](../screenshots/phase-5/10-inbox.png) · [Review](../screenshots/phase-5/10-review.png) · [Editor](../screenshots/phase-5/10-editor.png) · [Preview](../screenshots/phase-5/10-preview.png) · [Conflict](../screenshots/phase-5/10-conflict.png) |
+| 11 | [Health](../screenshots/phase-5/11-health.png) |
+
+### Verification
+
+The backend gate uses the locked environment, Ruff checks and formatting, strict mypy, import-linter,
+pytest with ResourceWarning enforcement, and domain/application branch coverage. The web gate uses a
+frozen pnpm install, native toolchain checks, strict TypeScript, Vite production build, component
+tests in Chromium and installed-service HTTPS tests. The measured results were 2,379 backend tests,
+99.32% combined domain/application line-and-branch coverage (90% gate), 51 browser component tests
+and nine installed-service E2E tests. Frontend verification uses browser assertions; a frontend
+coverage percentage was not collected. See §5 for commands. Browser checks cover session
+expiry/replacement, both listener ceilings, keyboard use, Markdown/translation boundaries, graph
+topology with and without WebGL, real worker execution, CodeMirror geometry, CSP and conflict recovery.
+
+The installed browser suite approves the inspected proposal, compares its receipt to the fixture's
+actual git HEAD and reads the proposal trailers. An owner edit follows in a separate commit with owner
+trailers. The same suite checks logout and protected reload, rejects public writes, and checks private
+markers are absent from public API responses and rendered pages.
+
+### Security checkpoint for the owner
+
+- The listener socket fixes the sensitivity ceiling. Authentication binds the session to its listener,
+  origin and verifier generation. Exact Origin/Host checks, secure HttpOnly Strict cookies, CSRF headers
+  and login throttling protect the owner API. Proxies crossing trust boundaries need distinct browser
+  hostnames because cookies are scoped by hostname across ports.
+- Every owner change passes through its application use case. The browser supplies the inspected
+  proposal revision or full private content hash; stale approvals and saves require another review.
+  A sensitivity increase can leave the earlier version in git history. The write response displays
+  the corresponding warning. Review existing repository and backup access before using real notes.
+- Notes and proposals are untrusted display content. The client escapes raw HTML, sanitizes the output
+  and runs local scripts and workers under CSP. The fixtures use synthetic data and isolated TLS;
+  static screenshots and automated tests do not establish the safety of an actual deployment.
+- **Owner review pending.** Complete the [manual browser walkthrough](#7-open-the-interface-from-wsl),
+  including translation and both listeners, and review [ADR-0019](../adr/0019-owner-browser-api.md).
+  Phase 3 still awaits the owner's real-client checks and Phase 4 retains its recorded security
+  checkpoint. Phase 7 is next; Phase 6 follows, beginning with Docker validation on WSL.
