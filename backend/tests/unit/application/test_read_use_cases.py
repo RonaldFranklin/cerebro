@@ -597,6 +597,18 @@ class TestWikilinkRedaction:
         internal = GetOverview(w.notes, w.search).execute(GetOverviewRequest(), ctx(INTERNAL))
         assert "[[server-ssh-access]]" in internal.core[0].body
 
+    def test_the_overview_keeps_links_to_readable_history_but_serves_only_current_core(self) -> None:
+        w = standard_world()
+        w.add(id=NID("old-vault"), sensitivity=RESTRICTED, status=Status.ARCHIVED, priority=Priority.P3)
+        w.add(id=NID("core-old"), type=CORE, priority=Priority.P0, hub=None, status=Status.ARCHIVED)
+        w.add(
+            id=NID("core-links"), type=CORE, priority=Priority.P0, hub=None, body="See [[old-proxy]] [[old-vault]].\n"
+        )
+        overview = GetOverview(w.notes, w.search).execute(GetOverviewRequest(), ctx(INTERNAL))
+        bodies = {note.id.value: note.body for note in overview.core}
+        assert "core-old" not in bodies
+        assert bodies["core-links"] == f"See [[old-proxy]] {REDACTED_LINK}.\n"
+
     def test_the_marker_is_not_a_valid_note_id(self) -> None:
         from cerebro.domain.links import extract_wikilinks
 

@@ -126,7 +126,8 @@ Structure and rule details enforced by the domain:
   included, and code blocks are covered too. Links to `superseded` or `archived` notes within the ceiling are kept,
   so a note that points to history stays complete and updatable. Brackets that are not note ids are left alone.
   `hub`, `related` and `superseded_by` of the `NoteView` are filtered by the same rule, and hub `members` to visible
-  targets. `GetOverview` redacts the P0 bodies it serves in the same way. This protects against data that predates
+  targets. `GetOverview` redacts the P0 bodies it serves in the same way, keeping links to readable history, while it
+  still serves only current P0 notes. This protects against data that predates
   the rule or was edited outside Cérebro. The marker's text is not a valid note id, so it is never a link.
 - Escaped or entity forms (`\[\[x]]`, `&#91;&#91;x]]`) are plain text, not links: neither the rules nor redaction treat
   them as such, and the UI must not render them as links.
