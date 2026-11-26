@@ -69,7 +69,9 @@ Other notes remain writable, and server errors release the write quota reservati
 
 Pre-deploy maintenance preserves dirty content checkouts under the state directory before startup, writes and rebuilds.
 
-## ⬜ Phase 6 — Deploy (hml, prod)
+## 🟨 Phase 6 — Deploy (hml, prod)
+
+[Approved plan and local validation record](plans/phase-6.md). Server installation is a separate owner checkpoint.
 
 - First validate the Docker image and Compose configuration in WSL dev with synthetic content. Check
   startup, health and persistence across a container restart before deploying to the server.
@@ -82,8 +84,7 @@ Pre-deploy maintenance preserves dirty content checkouts under the state directo
 
 **Carried over from the 2026-11-26 audit (open, resolve in this phase):**
 
-- **Docker bind and exposure.** The listeners accept only a loopback `--host`, and the accepting local port identifies
-  the listener and so its ceiling, so how a container reaches them must be designed. The deployment must publish each port as `127.0.0.1:P:P` (same number on both
+- **Docker bind and exposure.** The HTTP server has explicit container mode ([ADR-0027](adr/0027-container-loopback-publication.md)); the accepting port still identifies the listener and its ceiling. The deployment must publish each port as `127.0.0.1:P:P` (same number on both
   sides) and include a test of what is exposed.
 - **Backup.** `VersionControl.push` has no caller, so nothing pushes the content repository. Cérebro's git commands
   disable automatic garbage collection (`gc.auto=0`) and nothing else runs `git gc`.

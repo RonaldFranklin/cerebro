@@ -222,6 +222,18 @@ def test_stdio_sdk_contract_and_offline(tmp_path: Path) -> None:
     assert not result.stderr
 
 
+def test_container_server_selects_only_ipv4_wildcard(monkeypatch: pytest.MonkeyPatch) -> None:
+    from cerebro.bootstrap.mcp import _arguments
+
+    monkeypatch.setattr(sys, "argv", [SERVER, "--container"])
+    assert _arguments(stdio=False).host == "0.0.0.0"
+    with pytest.raises(SystemExit):
+        _arguments(stdio=True)
+    monkeypatch.setattr(sys, "argv", [SERVER, "--host", "127.0.0.1", "--container"])
+    with pytest.raises(SystemExit):
+        _arguments(stdio=False)
+
+
 @pytest.mark.parametrize("args", [("--host", "0.0.0.0"), ("--public-port", "7654", "--private-port", "7654")])
 def test_invalid_socket_configuration_rejected_before_wiring(args: tuple[str, ...]) -> None:
     result = subprocess.run([SERVER, *args], capture_output=True, timeout=5)

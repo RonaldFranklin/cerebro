@@ -1,6 +1,6 @@
 # ADR-0017: Owner CLI and read-only MCP transports
 
-- **Status:** accepted, amended by [ADR-0020](0020-direct-agent-writes.md) (`cerebro_write` and `cerebro_write_guide` replace `cerebro_propose`)
+- **Status:** accepted, amended by [ADR-0020](0020-direct-agent-writes.md) (`cerebro_write` and `cerebro_write_guide` replace `cerebro_propose`); container binding amended by [ADR-0027](0027-container-loopback-publication.md)
 - **Date:** 2026-11-25
 
 ## Context

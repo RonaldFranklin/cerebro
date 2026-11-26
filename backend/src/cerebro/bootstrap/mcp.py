@@ -76,7 +76,16 @@ def _local_origin(port: int) -> str:
 
 def _arguments(*, stdio: bool) -> argparse.Namespace:
     parser = ArgumentParser(prog="cerebro-mcp-stdio" if stdio else "cerebro-mcp", allow_abbrev=False)
-    parser.add_argument("--host", type=_loopback, default="127.0.0.1", help="numeric loopback address")
+    binding = parser.add_mutually_exclusive_group()
+    binding.add_argument("--host", type=_loopback, default="127.0.0.1", help="numeric loopback address")
+    if not stdio:
+        binding.add_argument(
+            "--container",
+            dest="host",
+            action="store_const",
+            const="0.0.0.0",
+            help="bind all IPv4 container interfaces; publish ports on host loopback only",
+        )
     parser.add_argument("--private-port", type=_port, default=8765)
     if not stdio:
         parser.add_argument("--config", type=Path)
