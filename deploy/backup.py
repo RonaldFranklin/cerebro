@@ -1,0 +1,135 @@
+"""Back up one deployed environment from the Linux host. Run as the service file owner."""
+
+import argparse
+import fcntl
+import json
+import os
+import re
+import shutil
+import sqlite3
+import stat
+import subprocess
+import sys
+import tempfile
+from contextlib import closing
+from datetime import datetime, timezone
+from pathlib import Path
+
+
+def git(*args: str, cwd: Path) -> str:
+    # The backup transport uses only its own temporary repository and HTTPS credentials from gh.
+    env = {key: value for key, value in os.environ.items() if not key.startswith("GIT_")}
+    env.update(
+        GIT_CONFIG_NOSYSTEM="1", GIT_CONFIG_GLOBAL=os.devnull, GIT_TERMINAL_PROMPT="0", GIT_NO_REPLACE_OBJECTS="1"
+    )
+    return subprocess.check_output(["git", *args], cwd=cwd, env=env, text=True).strip()
+
+
+def sync(path: Path) -> None:
+    fd = os.open(path, os.O_RDONLY)
+    try:
+        os.fsync(fd)
+    finally:
+        os.close(fd)
+
+
+def backup(content: Path, state: Path, destination: Path, repository: str, branch: str) -> Path:
+    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9-]*/cerebro-content", repository):
+        raise ValueError("expected OWNER/cerebro-content")
+    if destination.is_relative_to(content) or destination.is_relative_to(state):
+        raise ValueError("choose a backup directory outside content and state")
+    if not stat.S_ISDIR((content / ".git").lstat().st_mode):
+        raise ValueError("expected the content checkout")
+    metadata = json.loads(
+        subprocess.check_output(
+            ["gh", "repo", "view", f"github.com/{repository}", "--json", "nameWithOwner,visibility"],
+            text=True,
+        )
+    )
+    if metadata.get("visibility") != "PRIVATE" or metadata["nameWithOwner"].casefold() != repository.casefold():
+        raise ValueError("GitHub did not confirm the requested private repository")
+    source = state / "state.sqlite"
+    verifier = state / "owner.verifier"
+    if not all(stat.S_ISREG(p.lstat().st_mode) for p in (source, verifier)):
+        raise ValueError("expected regular state.sqlite and owner.verifier files")
+    destination.mkdir(mode=0o700, parents=True, exist_ok=True)
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S.%fZ")
+    with tempfile.TemporaryDirectory(dir=destination, prefix=".pending-") as staging:
+        work = Path(staging)
+        snapshot = work / "snapshot"
+        snapshot.mkdir(mode=0o700)
+        # The same lock serializes service writes. Release it before contacting the remote.
+        with (state / "writer.lock").open("rb") as lock:
+            fcntl.flock(lock, fcntl.LOCK_SH)
+            revision = git("rev-parse", "--verify", "HEAD^{commit}", cwd=content)
+            with (
+                closing(sqlite3.connect(source.as_uri() + "?mode=ro", uri=True)) as live,
+                closing(sqlite3.connect(snapshot / "state.sqlite")) as saved,
+            ):
+                live.backup(saved)
+                saved.execute("PRAGMA journal_mode=DELETE")
+                if saved.execute("PRAGMA quick_check").fetchall() != [("ok",)]:
+                    raise ValueError("SQLite backup failed quick_check")
+            shutil.copyfile(verifier, snapshot / "owner.verifier", follow_symlinks=False)
+            (snapshot / "content-revision").write_text(revision + "\n", encoding="ascii")
+        for file in snapshot.iterdir():
+            sync(file)
+        sync(snapshot)
+        # Avoid reading remotes, push URL rewrites and hooks from the content checkout. Borrow committed
+        # objects while pushing the recorded revision. Nothing copies the working tree or .git metadata.
+        transport = work / "transport.git"
+        algorithm = git("rev-parse", "--show-object-format", cwd=content)
+        git("init", "--bare", "--quiet", "--template=", f"--object-format={algorithm}", str(transport), cwd=work)
+        (transport / "objects/info/alternates").write_bytes(os.fsencode(content / ".git/objects") + b"\n")
+        if git(
+            "rev-list",
+            "-1",
+            "--full-history",
+            revision,
+            "--",
+            ":(glob)**/index.sqlite",
+            ":(glob)**/index.sqlite-*",
+            ":(glob)**/quarantine-*/**",
+            cwd=transport,
+        ):
+            raise ValueError("content history includes a local-only backup exclusion")
+        git(
+            "-c",
+            "http.followRedirects=false",
+            "-c",
+            "credential.helper=!gh auth git-credential",
+            "push",
+            "--no-follow-tags",
+            "--no-verify",
+            f"https://github.com/{repository}.git",
+            f"{revision}:refs/heads/{branch}",
+            cwd=transport,
+        )
+        completed = destination / (stamp + "-" + work.name.removeprefix(".pending-"))
+        snapshot.rename(completed)
+        sync(destination)
+        return completed
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--content", required=True, type=Path)
+    parser.add_argument("--state", required=True, type=Path)
+    parser.add_argument("--destination", required=True, type=Path)
+    parser.add_argument("--repository", required=True, help="GitHub OWNER/cerebro-content")
+    parser.add_argument("--branch", required=True, choices=("hml", "prod"))
+    args = parser.parse_args()
+    os.umask(0o077)
+    try:
+        snapshot = backup(
+            args.content.resolve(), args.state.resolve(), args.destination.resolve(), args.repository, args.branch
+        )
+    except (OSError, sqlite3.Error, subprocess.CalledProcessError, ValueError, KeyError) as error:
+        print(f"Backup failed: {error}", file=sys.stderr)
+        return 1
+    print(snapshot)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

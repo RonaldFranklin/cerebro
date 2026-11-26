@@ -1,0 +1,68 @@
+# Back up an environment
+
+Run this on the Docker host as the account that owns the deployed content and state files. The host needs
+Python 3.10 or newer with SQLite, Git, and a GitHub CLI login with write access to the private content repository.
+The service container needs no GitHub credentials. Populate these variables from the environment's installation
+record. The same private repository holds independent `hml` and `prod` branches.
+
+```sh
+APP_DIR='<absolute-application-checkout>'
+CONTENT_DIR='<absolute-content-checkout>'
+STATE_DIR='<absolute-state-directory>'
+BACKUP_DIR='<absolute-private-backup-directory-for-this-environment>'
+GITHUB_OWNER='<github-owner>'
+ENVIRONMENT='hml'  # use prod for production
+
+install -d -m 0700 "$BACKUP_DIR"
+python3 "$APP_DIR/deploy/backup.py" --content "$CONTENT_DIR" --state "$STATE_DIR" \
+  --destination "$BACKUP_DIR" --repository "$GITHUB_OWNER/cerebro-content" --branch "$ENVIRONMENT"
+```
+
+The command prints a new snapshot directory only after GitHub confirms private visibility and the push succeeds.
+Each completed snapshot holds exactly `state.sqlite` (SQLite's online backup, including committed WAL data),
+`owner.verifier` (the password verifier), and `content-revision` (the commit to restore). Start the service and
+provision the owner's password before the first backup. Keep backups private and keep the Fernet key in the
+owner's separate offline custody. The verifier is sensitive; retain the owner's password in the password manager.
+
+The push sends the recorded commit and its ancestors to the chosen environment branch. Missing credentials,
+public repositories, excluded files in commit history, and divergent branches fail the job. A failed job leaves
+earlier completed snapshots available. Inspect failures with the owner before retrying. Git pushes never include
+untracked checkout or Git metadata. The state backup reads an explicit list of files. Keep all `quarantine-*`
+directories, quarantine scratch data, and the derived `index.sqlite` out of any external filesystem backup.
+
+## Schedule
+
+Replace the placeholders with absolute paths and install one line per environment using the backup account's
+`crontab -e`. Ensure this account's cron PATH includes its verified `git` and `gh` executables. The example starts
+at 18:10 server local time, limits runtime to 30 minutes, and does not catch up missed executions after boot.
+
+```cron
+PATH=/usr/local/bin:/usr/bin:/bin
+10 18 * * * timeout --kill-after=1m 30m python3 "<absolute-application-checkout>/deploy/backup.py" --content "<absolute-content-checkout>" --state "<absolute-state-directory>" --destination "<absolute-private-backup-directory>" --repository "<github-owner>/cerebro-content" --branch hml
+```
+
+The service disables automatic Git garbage collection during note writes. Schedule ordinary Git maintenance
+separately under the content owner, away from the shutdown interval. Keep Git's normal grace period.
+
+```cron
+30 17 * * 6 timeout --kill-after=1m 30m git -C "<absolute-content-checkout>" -c gc.autoDetach=false gc --auto
+```
+
+## Verify a restore
+
+Use an empty private directory and an authenticated host Git client (`gh auth setup-git --hostname github.com`).
+Point `SNAPSHOT` at a completed directory printed by the command above and set `RESTORE_DIR` to a fresh path.
+
+```sh
+umask 077
+mkdir -m 0700 "$RESTORE_DIR" &&
+git clone --branch "$ENVIRONMENT" --single-branch "https://github.com/$GITHUB_OWNER/cerebro-content.git" "$RESTORE_DIR/content" &&
+git -C "$RESTORE_DIR/content" switch -c restore-check "$(cat "$SNAPSHOT/content-revision")" &&
+mkdir -m 0700 "$RESTORE_DIR/state" &&
+install -m 0600 "$SNAPSHOT/state.sqlite" "$SNAPSHOT/owner.verifier" "$RESTORE_DIR/state/" &&
+python3 -c 'import sqlite3,sys; db=sqlite3.connect(sys.argv[1]); sys.exit(db.execute("PRAGMA quick_check").fetchall() != [("ok",)])' "$RESTORE_DIR/state/state.sqlite"
+```
+
+Stop on a nonzero exit. Use the restored files in an isolated hml instance with the corresponding escrowed key,
+a new empty index directory and distinct loopback ports. Verify authenticated login and representative note reads
+before considering a production recovery.
