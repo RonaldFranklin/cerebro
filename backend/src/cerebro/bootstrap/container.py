@@ -2,8 +2,9 @@
 
 Only this package may import adapters and use cases together. Inbound adapters never receive the ``Container``:
 the entry point hands them individual use cases from ``Container.use_cases`` (use cases and DTOs only). The adapter
-attributes of ``Container`` (``notes``, ``search``, ...) exist for tests and operations. The container does not
-enforce a clean content working tree; the filesystem adapter refuses writes on a dirty one.
+attributes of ``Container`` (``notes``, ``search``, ...) exist for tests and operations. The filesystem adapter serves
+only committed note content: a note file that differs from ``HEAD`` fails the reads that touch it (and every rebuild),
+so no index is ever recorded as built from ``HEAD`` with uncommitted content. Nothing is discarded automatically.
 
 **Writer lock (ADR-0002).** Reading ``head()``, ``apply`` and advancing the index revision must be serialised,
 otherwise a concurrent commit between them could make an index look fresh and hide a failed index update (see

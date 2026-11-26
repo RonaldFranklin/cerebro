@@ -10,6 +10,13 @@ folder, the same id in two folders, and any file that is neither a plaintext nor
 report every bad file at once instead of skipping any (a silently dropped note would corrupt the indexes).
 Non-``.md`` files and dotfiles are ignored.
 
+Only committed note content is served: ``get`` and the listings refuse (``NoteFileError``, reason
+``UNCOMMITTED_REASON``, naming every such path) a note file that differs from ``HEAD`` in the index or the working tree
+(staged, edited, deleted, untracked or ignored), so an index rebuilt from ``list_notes`` and recorded as built from
+``head()`` never holds uncommitted content (an abandoned edit lowering a sensitivity, an orphan left by an interrupted
+create, a note left staged by a crash). Nothing is discarded automatically: the owner commits or restores the file.
+Other files of the repository (``schema/``, ``README``) are not checked by reads.
+
 Restricted notes (ADR-0008) are stored with ``encode_restricted``: a three-key plaintext header and a Fernet token of
 the whole note file. On read the header id, the file stem and the inner ``id`` must agree and the inner sensitivity
 must be ``restricted``. A plaintext file that declares ``sensitivity: restricted`` is **refused** (someone replaced
@@ -25,8 +32,9 @@ are restored through ``GitRepo.discard_changes`` (a draft that already sat at a 
 sanitized ``NoteWriteError`` is raised. An update that changes nothing is refused (git has nothing to commit).
 Reads of whole listings take a shared lock so they never see half of an ``apply``.
 
-``apply`` refuses to run on unclean state (``NoteWriteError``): anything staged, a note to update that is untracked or
-differs from ``HEAD``, a note to create whose path exists or is known to git. The commit uses ``--only`` with the
+``apply`` refuses to run on unclean state (``NoteWriteError``): a ``.git/index.lock`` (a running or interrupted git
+command), anything staged (the paths are named), a note to update that is untracked or differs from ``HEAD``, a note
+to create whose path exists or is known to git. The commit uses ``--only`` with the
 planned paths, so nothing else can ever be committed. If a failure happens after the commit exists (``HEAD`` moved),
 nothing is rolled back: ``apply`` returns the revision when ``HEAD`` is a commit with our message whose parent is the
 previous ``HEAD``, and raises ``NoteWriteError`` (state unknown) when ``HEAD`` moved to anything else.
@@ -35,10 +43,10 @@ hour are deleted at the start of each ``apply``.
 
 Residual risks: writers outside this class that change the tree between the clean-state check and the write are
 overwritten (the lock covers only our writers); a killed ``git`` can leave a stale ``.git/index.lock`` that makes later
-applies fail until the owner removes it; ``get`` takes no lock; ``list_*`` read the working tree while ``head()``
-reports ``HEAD`` (keep the
-tree clean); replacing an encrypted file by a plaintext one declaring ``internal`` is indistinguishable from a normal
-note; listing a folder reads its entries by path (an attacker would need write access to the repository directory).
+applies fail until the owner removes it (the error says so); ``get`` takes no lock; a file edited by hand between the
+clean-tree check and its read can still be served once; replacing an encrypted file by a plaintext one declaring
+``internal`` is indistinguishable from a normal note; listing a folder reads its entries by path (an attacker would need
+write access to the repository directory).
 """
 
 import os
@@ -80,6 +88,14 @@ STALE_TEMP_SECONDS: Final = 3600.0
 _TEMP_PATTERN: Final = r"\.[a-z0-9-]+\.md\.[0-9a-f]{16}\.tmp"
 _PLAIN_MODE: Final = 0o644
 _RESTRICTED_MODE: Final = 0o600
+UNCOMMITTED_REASON: Final = (
+    "differs from the last commit (staged, edited, deleted or never committed): commit it, or discard it with"
+    " git restore --staged --worktree (delete the file if it was never committed)"
+)
+_INDEX_LOCK_HINT: Final = (
+    "if no git command is running in the content repository, a stale .git/index.lock left by an interrupted git"
+    " command blocks commits: remove that file"
+)
 
 
 def folder_for(note: Note) -> str:
@@ -159,11 +175,24 @@ class FilesystemNoteRepository:
             return None
         if len(found) > 1:
             raise NoteFileError(found[0], "the same note id exists in several folders")
-        return self._read(found[0])
+        note = self._read(found[0])
+        if self._uncommitted(found):
+            raise NoteFileError(found[0], UNCOMMITTED_REASON)
+        return note
 
     def list_notes(self) -> tuple[Note, ...]:
         with file_lock(self._lock_path, exclusive=False, timeout=self._lock_timeout):
-            return self._load_all()
+            uncommitted = [(path, UNCOMMITTED_REASON) for path in self._uncommitted(FOLDERS)]
+            try:
+                notes = self._load_all()
+            except NoteFileError as exc:
+                reported = {path for path, _ in exc.problems}
+                raise NoteFileError.from_problems(
+                    [*exc.problems, *(p for p in uncommitted if p[0] not in reported)]
+                ) from None
+            if uncommitted:
+                raise NoteFileError.from_problems(uncommitted)
+            return notes
 
     def list_refs(self) -> tuple[NoteRef, ...]:
         return tuple(NoteRef.from_note(note) for note in self.list_notes())
@@ -199,6 +228,22 @@ class FilesystemNoteRepository:
         except GitError, NoteFileError, InvalidValueError:
             pass
         raise NoteWriteError("invalid create record in content history")
+
+    def _uncommitted(self, pathspecs: Sequence[str]) -> list[str]:
+        """Note files the listings would read that differ from ``HEAD``: only committed content is ever served, so
+        an index rebuilt from these files can be recorded as built from ``head()``. Other files are not checked."""
+        try:
+            paths = self._git.uncommitted_paths(pathspecs)
+        except GitError:
+            raise NoteFileError(pathspecs[0], "cannot compare the note files with the last commit") from None
+        return [
+            path
+            for path in paths
+            if (parts := path.split("/"))
+            and len(parts) == 2
+            and parts[1].endswith(".md")
+            and not parts[1].startswith(".")
+        ]
 
     def _existing_paths(self, note_id: NoteId) -> list[str]:
         for folder in FOLDERS:
@@ -341,9 +386,15 @@ class FilesystemNoteRepository:
         being created may exist in the index or in ``HEAD`` (a file deleted by hand and recreated, for instance).
         """
         planned = [item.relative for item in prepared]
+        if self._lock_hint():
+            raise NoteWriteError(f"nothing was written{self._lock_hint()}")
         try:
-            if self._git.has_staged_changes():
-                raise NoteWriteError("the git index has staged changes: commit or reset them first")
+            if staged := self._git.staged_paths():
+                shown = ", ".join(ascii(path) for path in staged[:20])
+                raise NoteWriteError(
+                    f"the git index has staged changes ({shown}): commit them, or unstage them with"
+                    " git restore --staged (an interrupted write leaves its note staged)"
+                )
             before = self._git.snapshot_existing(planned)
             for item in prepared:
                 if item.change.expected_hash is None:
@@ -379,7 +430,9 @@ class FilesystemNoteRepository:
             if now == head_before:  # nothing was committed: restore the planned paths
                 self._rollback(created, modified, before, failure)
                 if isinstance(failure, OSError | GitError):
-                    raise NoteWriteError("the change could not be written or committed; nothing was kept") from None
+                    raise NoteWriteError(
+                        f"the change could not be written or committed; nothing was kept{self._lock_hint()}"
+                    ) from None
                 raise
             if now is not None and self._is_our_commit(now, head_before, rendered):
                 if isinstance(failure, Exception):
@@ -408,8 +461,11 @@ class FilesystemNoteRepository:
             if not isinstance(failure, Exception):
                 raise failure from None  # an interrupt is never replaced by a different error
             raise NoteWriteError(
-                "the change failed and the rollback was incomplete: inspect the content repository"
+                f"the change failed and the rollback was incomplete: inspect the content repository{self._lock_hint()}"
             ) from None
+
+    def _lock_hint(self) -> str:
+        return f" ({_INDEX_LOCK_HINT})" if os.path.lexists(self._root / ".git" / "index.lock") else ""
 
     def _restore_mode(self, relative: str) -> None:
         """``git restore`` recreates files with the umask's mode: encrypted files go back to 0600."""
