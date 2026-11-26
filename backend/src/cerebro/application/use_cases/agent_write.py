@@ -2,6 +2,7 @@
 
 import re
 import unicodedata
+from collections.abc import Iterator
 from dataclasses import replace
 from datetime import date
 
@@ -31,8 +32,11 @@ _CREATE_PLACEHOLDER = NoteId("create")
 _REQUEST_ID = re.compile(r"[A-Za-z0-9_-]{1,64}")
 _SETTABLE = frozenset(FIELD_ORDER) - {"id", "created", "updated"}
 _UNAVAILABLE = WriteFinding("target_unavailable", "target", "Search for a writable note and read it in full.")
-_REFERENCE = WriteFinding("broken_link", "references", "Remove unavailable references or select a visible note.")
 _CONFLICT = WriteFinding("request_conflict", "request_id", "Use a new request id for a different create.")
+_LINK_FORMAT = (
+    "Use ids from cerebro_search in hub, related, superseded_by and [[note-id]] links. "
+    'Any [[note-id]] counts, even in code (in TOML write [["name"]]).'
+)
 _CORE = "Core and P0 notes need a token with the core scope. Use P1 for a hub or P2/P3 for a regular note."
 
 
@@ -113,8 +117,9 @@ class AgentWrite:
         if key is not None and created is None:
             note_id = self._new_id(candidate.title)
             candidate = replace(candidate, id=note_id)
-        if not self._references_visible(candidate, ctx):
-            raise WriteRejected(_REFERENCE)
+        unavailable = self._unavailable_references(candidate, ctx)
+        if unavailable:
+            raise WriteRejected(*unavailable[:12])
         if created is not None:
             # Compare with the note as the original commit stored it, ignoring service timestamps (ADR-0024).
             if replace(candidate, created=date.min, updated=date.min) != replace(
@@ -158,16 +163,22 @@ class AgentWrite:
                 return note_id
         raise WriteRejected(WriteFinding("id_unavailable", "request", "Retry the create with the same request id."))
 
-    def _references_visible(self, note: Note, ctx: AccessContext) -> bool:
-        refs = set(note.related)
-        refs.update(ref for ref in (note.hub, note.superseded_by) if ref is not None)
-        for text in (note.body, note.title, note.summary):
-            refs.update(loose_link_targets(text))
-        return all(ref == note.id or visible_id(self._notes, ref, ctx, include_history=True) for ref in refs)
+    def _unavailable_references(self, note: Note, ctx: AccessContext) -> list[WriteFinding]:
+        """One finding per reference to a note that is missing or hidden. It is built from the submitted note
+        alone (field and position), so both cases read exactly the same."""
+        visible: dict[NoteId, bool] = {note.id: True}
+        findings: dict[tuple[str, NoteId], WriteFinding] = {}  # the first position of each target in a field
+        for field, position, ref in _references(note):
+            if ref not in visible:
+                visible[ref] = visible_id(self._notes, ref, ctx, include_history=True) is not None
+            if not visible[ref]:
+                hint = f"{position}: no readable note has this id. {_LINK_FORMAT}"
+                findings.setdefault((field, ref), WriteFinding("broken_link", field, hint))
+        return list(findings.values())
 
     def _visible_target(self, note_id: NoteId, ctx: AccessContext) -> Note:
         note = self._notes.get(note_id)
-        if note is None or not ctx.ceiling.allows(note.sensitivity) or not self._references_visible(note, ctx):
+        if note is None or not ctx.ceiling.allows(note.sensitivity) or self._unavailable_references(note, ctx):
             raise WriteRejected(_UNAVAILABLE)
         return note
 
@@ -202,6 +213,21 @@ class AgentWrite:
             # revisions against HEAD and rebuilds them under this same writer lock.
             pass
         return revision
+
+
+def _references(note: Note) -> Iterator[tuple[str, str, NoteId]]:
+    """``(field, position, target)`` of every reference, including each ``[[...]]`` that redaction treats as one."""
+    if note.hub is not None:
+        yield "hub", "The hub id", note.hub
+    for number, ref in enumerate(note.related, 1):
+        yield "related", f"Related entry #{number}", ref
+    if note.superseded_by is not None:
+        yield "superseded_by", "The superseded_by id", note.superseded_by
+    for field, text in (("title", note.title), ("summary", note.summary), ("body", note.body)):
+        # Split on "\n" only: a link cannot contain one, but may contain other line separators.
+        for number, line in enumerate(text.split("\n"), 1):
+            for ref in loose_link_targets(line):
+                yield field, f"Line {number} of {field}", ref
 
 
 def _require_core_scope(note: Note, ctx: AccessContext, field: str) -> None:

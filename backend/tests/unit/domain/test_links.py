@@ -102,6 +102,11 @@ def test_loose_link_targets_cover_code_and_alias_forms() -> None:
     assert [t.value for t in loose_link_targets(body)] == ["a", "b", "c", "d"]
 
 
+def test_a_quoted_toml_table_is_not_a_link() -> None:
+    """The write guide offers this form to authors whose TOML needs an array of tables."""
+    assert loose_link_targets('```toml\n[["bin"]]\n```') == ()
+
+
 def test_overlong_slug_is_plain_text_in_all_link_forms() -> None:
     long_slug = "x" * 81
     body = f"[[{long_slug}]] and `[[{long_slug}|alias]]`"

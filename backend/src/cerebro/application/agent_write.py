@@ -50,7 +50,9 @@ _HINTS = {
     ViolationCode.SUPERSEDED_BY_CYCLE: "Select a successor outside this chain.",
     ViolationCode.SECRET_DETECTED: "Remove the secret or replace it with a reference to your secret manager.",
     ViolationCode.UNKNOWN_FIELD: "Use only the documented frontmatter fields.",
-    ViolationCode.INVALID_FIELD: "Check the field type, format and permitted values in the guide.",
+    ViolationCode.UNKNOWN_TYPE: "Use one of the types listed by cerebro_write_guide.",
+    ViolationCode.UNKNOWN_AREA: "Use one of the areas listed by cerebro_write_guide.",
+    ViolationCode.HUB_REQUIRED: "Set hub to a visible note of type hub; if there is none, create that hub first.",
 }
 
 

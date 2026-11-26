@@ -48,6 +48,46 @@ def test_discovery_and_invocation_use_the_same_grant(scope: Scope, container: Co
         assert tools.call(name, args, lambda: ctx).is_error == (scope is not Scope.WRITE)
 
 
+def test_write_guide_carries_the_vocabulary_of_the_content_repository(container: Container) -> None:
+    result = tools_for(container).call("cerebro_write_guide", {}, lambda: WRITER)
+    assert not result.is_error
+    output = result.structured_content
+    assert output is not None
+    assert set(output) == {"guide", "areas", "types"}
+    assert output["areas"] == sorted(area.value for area in container.vocabulary.areas)
+    assert output["types"] == sorted(kind.value for kind in container.vocabulary.types)
+    assert {"core", "hub", "guide"} <= set(output["types"])
+
+
+def test_input_schemas_avoid_constructs_that_clients_reject(container: Container) -> None:
+    for tool in tools_for(container).list_tools(WRITER).tools:
+        assert not tool.input_schema.keys() & {"oneOf", "anyOf", "allOf"}, tool.name
+        pending: list[object] = list(tool.input_schema["properties"].values())
+        while pending:
+            schema = pending.pop()
+            assert schema is not False, tool.name
+            if isinstance(schema, dict):
+                pending.extend(schema.get("properties", {}).values())
+
+
+@pytest.mark.parametrize(
+    ("args", "field"),
+    [
+        ({key: value for key, value in CREATE.items() if key != "request_id"}, "request_id"),
+        ({**CREATE, "base_hash": "0" * 64}, "request"),
+        ({**CREATE, "operation": "update"}, "request"),
+        ({"operation": "update", "frontmatter": {}, "body": "x"}, "base_hash"),
+    ],
+)
+def test_operation_specific_arguments_are_enforced_without_schema_branches(
+    args: dict[str, object], field: str, container: Container
+) -> None:
+    result = tools_for(container).call("cerebro_write", args, lambda: WRITER)
+    assert result.is_error
+    assert result.structured_content is not None
+    assert result.structured_content["findings"][0]["field"] == field
+
+
 @pytest.mark.parametrize(
     ("extra", "field"),
     [

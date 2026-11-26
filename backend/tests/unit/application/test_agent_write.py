@@ -5,9 +5,11 @@ from datetime import timedelta
 import pytest
 
 from cerebro.application.agent_write import AgentWriteRequest, WriteRejected
+from cerebro.application.dto import GetVocabularyRequest
 from cerebro.application.errors import PermissionDenied
 from cerebro.application.ports.notes import NoteChange
 from cerebro.application.use_cases.agent_write import AgentWrite
+from cerebro.application.use_cases.get_vocabulary import GetVocabulary
 from cerebro.domain.access import Scope
 from cerebro.domain.content_hash import content_hash
 from cerebro.domain.enums import Priority, Sensitivity
@@ -112,6 +114,76 @@ def test_hidden_and_missing_link_feedback(body: str) -> None:
         outputs.append(err.value.findings)
     assert outputs[0] == outputs[1]
     assert outputs[0][0].code == "broken_link"
+    assert outputs[0][0].field == "body"
+
+
+@pytest.mark.parametrize(
+    ("changes", "body", "field", "position"),
+    [
+        ({"hub": "{}"}, "Text.", "hub", "hub"),
+        ({"related": ["server-ssh-access", "{}"]}, "Text.", "related", "related entry #2"),
+        ({"status": "superseded", "superseded_by": "{}"}, "Text.", "superseded_by", "superseded_by"),
+        ({}, "Intro.\n\n```toml\n[[{}]]\n```", "body", "line 4 of body"),
+        ({}, "First.\u2028Still first [[\u2028{}]]", "body", "line 1 of body"),
+    ],
+)
+def test_unavailable_references_name_field_and_position(
+    changes: dict[str, object], body: str, field: str, position: str
+) -> None:
+    kit = Kit()
+    ctx = replace(agent_ctx(scopes=frozenset({Scope.WRITE})), token_id="token-one")
+    outputs = []
+    for ref in ("vault-layout", "never-written"):
+        filled = {
+            key: [item.format(ref) for item in value] if isinstance(value, list) else str(value).format(ref)
+            for key, value in changes.items()
+        }
+        with pytest.raises(WriteRejected) as err:
+            writer(kit).execute(replace(request(**filled), body=body.format(ref)), ctx)
+        outputs.append(err.value.findings)
+    assert outputs[0] == outputs[1]
+    (finding,) = outputs[0]
+    assert (finding.code, finding.field) == ("broken_link", field)
+    assert position in finding.hint.lower()
+    assert "[[note-id]]" in finding.hint
+    assert "vault-layout" not in finding.hint
+
+
+@pytest.mark.parametrize(
+    ("changes", "code", "field", "expected"),
+    [
+        ({"review_by": "next June"}, "invalid_field", "review_by", "YYYY-MM-DD"),
+        ({"priority": "urgent"}, "invalid_field", "priority", "P0, P1, P2, P3"),
+        ({"type": "memo"}, "unknown_type", "type", "cerebro_write_guide"),
+        ({"area": "cooking"}, "unknown_area", "area", "cerebro_write_guide"),
+        ({"hub": None}, "hub_required", "hub", "type hub"),
+    ],
+)
+def test_field_hints_say_what_is_accepted(changes: dict[str, object], code: str, field: str, expected: str) -> None:
+    ctx = replace(agent_ctx(scopes=frozenset({Scope.WRITE})), token_id="token-one")
+    with pytest.raises(WriteRejected) as err:
+        writer(Kit()).execute(request(**changes), ctx)
+    (finding,) = err.value.findings
+    assert (finding.code, finding.field) == (code, field)
+    assert expected in finding.hint
+    assert str(changes[field]) not in finding.hint
+
+
+def test_lowering_sensitivity_hint_says_to_keep_it() -> None:
+    kit = Kit()
+    ctx = replace(agent_ctx(scopes=frozenset({Scope.WRITE})), token_id="token-one")
+    with pytest.raises(WriteRejected) as err:
+        writer(kit).execute(update_of("server-ssh-access", kit, sensitivity="public"), ctx)
+    finding = next(f for f in err.value.findings if f.field == "sensitivity" and f.code == "invalid_field")
+    assert "cannot lower" in finding.hint
+    assert "keep" in finding.hint
+
+
+def test_vocabulary_is_served_only_to_writers() -> None:
+    case = GetVocabulary(VOCABULARY)
+    assert case.execute(GetVocabularyRequest(), agent_ctx(scopes=frozenset({Scope.WRITE}))) == VOCABULARY
+    with pytest.raises(PermissionDenied):
+        case.execute(GetVocabularyRequest(), agent_ctx())
 
 
 def test_invalid_calls_consume_quota_and_read_tokens_cannot_write() -> None:

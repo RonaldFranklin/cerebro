@@ -340,8 +340,11 @@ Validation applies the controlled vocabulary, schema, hard word and overview bud
 rules and secret scan to the entire candidate. Each token allows 60 admitted write attempts per rolling hour by default. Configure the limit
 with `writes_per_hour` in TOML or the `CEREBRO_WRITES_PER_HOUR` environment override. The count spans sessions,
 processes and restarts to stop repeated invalid requests as well as runaway successful writes.
-Failures return bounded field names or positions, safe codes and correction hints. The service never echoes
-a submitted secret or identifies an inaccessible note. A rejected or stale write produces no note, git
+Failures return bounded field names, safe codes and correction hints. An unavailable reference names its field
+and position in the submitted note (related entry or text line), identically for hidden and missing targets;
+every `[[note-id]]` counts, code included. The service never echoes a submitted secret or identifies an
+inaccessible note. The write guide response also lists the repository's `areas` and `types`, as loaded for
+validation; it holds schema names only and requires the `write` scope. A rejected or stale write produces no note, git
 commit or pending item. Owner edits use the owner's access context and the existing owner severity policy.
 
 The content hash is the SHA-256 hex digest of the UTF-8 JSON object

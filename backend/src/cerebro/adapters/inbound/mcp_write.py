@@ -36,28 +36,25 @@ _FRONTMATTER = {
 
 WRITE_TOOL = types.Tool(
     name="cerebro_write",
-    description="Create or update a validated note. Consult cerebro_write_guide before writing.",
+    description=(
+        "Create (with request_id) or update (with target and base_hash) a validated note. "
+        "Consult cerebro_write_guide before writing."
+    ),
     input_schema={
         "type": "object",
         "properties": {
             "operation": {"type": "string", "enum": ["create", "update"]},
             "frontmatter": _FRONTMATTER,
             "body": _text(48 * 1024),
-            "request_id": {"type": "string", "pattern": "^[A-Za-z0-9_-]{1,64}$"},
-            "target": _ID,
-            "base_hash": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+            "request_id": {"type": "string", "pattern": "^[A-Za-z0-9_-]{1,64}$", "description": "Create only."},
+            "target": {**_ID, "description": "Update only: the note id."},
+            "base_hash": {
+                "type": "string",
+                "pattern": "^[a-f0-9]{64}$",
+                "description": "Update only: from a full read.",
+            },
         },
         "required": ["operation", "frontmatter", "body"],
-        "oneOf": [
-            {
-                "properties": {"operation": {"const": "create"}, "target": False, "base_hash": False},
-                "required": ["request_id"],
-            },
-            {
-                "properties": {"operation": {"const": "update"}, "request_id": False},
-                "required": ["target", "base_hash"],
-            },
-        ],
         "additionalProperties": False,
     },
 )

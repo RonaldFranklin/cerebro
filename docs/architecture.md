@@ -156,7 +156,8 @@ body (whole or one section) whose target the reader cannot see, or that does not
   bounded, redacted error with a correction the agent can make.
 - `OwnerEditNote` keeps the owner's validated edit path. Both paths warn when raising a note to
   restricted leaves an earlier plaintext revision in git.
-- `cerebro_write_guide` serves the versioned English writing instructions. See the
+- `cerebro_write_guide` serves the versioned English writing instructions together with the allowed areas and
+  types (`GetVocabulary`, `write` scope). See the
   [write decision](adr/0020-direct-agent-writes.md) and [domain contract](domain-model.md#7-agent-writes).
 
 **Maintenance**
