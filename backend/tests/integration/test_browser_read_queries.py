@@ -1,12 +1,14 @@
 """Invalid filters have fixed errors and never reach the use cases."""
 
+import asyncio
 from collections.abc import Iterator
 from typing import Never
 
 import pytest
 from starlette.testclient import TestClient
+from starlette.types import Message, Receive, Scope, Send
 
-from cerebro.adapters.inbound.browser_api import browser_api
+from cerebro.adapters.inbound.browser_api import BrowserBodyLimit, browser_api
 from cerebro.adapters.inbound.browser_reads import BrowserReads, install_browser_reads
 from cerebro.application.browser import BrowserAuth, BrowserBinding
 from cerebro.domain.access import AccessCeiling
@@ -61,5 +63,29 @@ def api() -> Iterator[TestClient]:
 )
 def test_invalid_input_is_generic(api: TestClient, path: str) -> None:
     response = api.get(path)
+    assert response.status_code == 422
+    assert response.json() == {"error": "Invalid request."}
+
+
+def test_streamed_get_body_rejected_at_first_nonempty_frame() -> None:
+    async def unexpected_app(scope: Scope, receive: Receive, send: Send) -> None:
+        pytest.fail("GET with a body must never reach the router")
+
+    received = iter([b"", b"first chunk"])
+    sent: list[Message] = []
+
+    async def receive() -> Message:
+        return {"type": "http.request", "body": next(received), "more_body": True}
+
+    async def send(message: Message) -> None:
+        sent.append(message)
+
+    scope: Scope = {"type": "http", "method": "GET", "headers": []}
+    asyncio.run(BrowserBodyLimit(unexpected_app)(scope, receive, send))
+    assert sent[0]["status"] == 413
+
+
+def test_get_body_has_fixed_api_error(api: TestClient) -> None:
+    response = api.request("GET", "/api/search", content=b"unexpected")
     assert response.status_code == 422
     assert response.json() == {"error": "Invalid request."}

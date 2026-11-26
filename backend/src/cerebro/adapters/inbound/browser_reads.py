@@ -126,12 +126,12 @@ def _graph_view(graph: GraphView, filters: Graph) -> models.GraphResponse:
 
 
 def install_browser_reads(app: FastAPI, cases: BrowserReads) -> None:
-    async def read_envelope(request: Request) -> None:
+    async def unique_fields(request: Request) -> None:
         params = request.query_params
-        if len(params.multi_items()) != len(params) or await request.body():
-            raise InvalidValueError("request", "unexpected or repeated field")
+        if len(params.multi_items()) != len(params):
+            raise InvalidValueError("request", "repeated field")
 
-    router = APIRouter(prefix="/api", dependencies=[Depends(read_envelope)])
+    router = APIRouter(prefix="/api", dependencies=[Depends(unique_fields)])
 
     @app.exception_handler(NoteNotFound)
     @app.exception_handler(SectionNotFound)

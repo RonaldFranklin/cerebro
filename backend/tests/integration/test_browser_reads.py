@@ -105,7 +105,10 @@ def test_search_history_and_exact_filters(service: Service) -> None:
         "limit": "1",
     }
     assert [row["id"] for row in client.get("/api/search", params=params).json()["results"]] == [SSH_ID.value]
-    assert client.get("/api/search", params={"q": "", "type": "config"}).json()["results"] == []
+    empty = client.get("/api/search", params={"q": "", "type": "config"})
+    omitted = client.get("/api/search", params={"type": "config"})
+    assert empty.status_code == omitted.status_code == 200
+    assert empty.json() == omitted.json() == {"results": []}
     history = client.get("/api/search", params={"type": "config", "history": "true"})
     assert [row["id"] for row in history.json()["results"]] == [OLD_ID.value]
     old = f"/api/notes/{OLD_ID.value}"

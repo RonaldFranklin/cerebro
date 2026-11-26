@@ -289,7 +289,7 @@ public listener, bounded requests and the SDK lifespan.
 ### PR 5 delivery record
 
 All six GET endpoints require the browser session. Query fields are optional, single-valued and
-case-sensitive. Unknown and repeated fields produce 422. The default excludes history. Set
+case-sensitive. GET bodies are rejected at the first nonempty frame. Unknown and repeated fields produce 422. The default excludes history. Set
 `history=true` to include it. The 8 KiB encoded query ceiling is checked before parameter parsing.
 
 | Endpoint | Query | Result |
