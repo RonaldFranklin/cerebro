@@ -220,7 +220,7 @@ class TestAccessContext:
 
 class TestScope:
     def test_minimal_set(self) -> None:
-        assert {s.value for s in Scope} == {"read", "propose", "write"}
+        assert {s.value for s in Scope} == {"read", "propose", "write", "core"}
 
     def test_parse(self) -> None:
         assert Scope.parse("read") is Scope.READ

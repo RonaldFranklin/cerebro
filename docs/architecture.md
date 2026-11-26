@@ -145,6 +145,8 @@ body (whole or one section) whose target the reader cannot see, or that does not
 - An authenticated agent with `write` calls `cerebro_write` to create or update a note. The application
   counts attempts per token and checks the candidate under the writer lock. It enforces the effective ceiling,
   frontmatter schema, budgets, link rules, secret scan and content-hash precondition before committing.
+  Core and P0 notes, the overview's global rules, additionally need the `core` scope on the stored version
+  and on the candidate ([ADR-0022](adr/0022-core-scope.md)).
   The repository records the agent from authentication. The MCP adapter returns a commit receipt or a
   bounded, redacted error with a correction the agent can make.
 - `OwnerEditNote` keeps the owner's validated edit path. Both paths warn when raising a note to
@@ -227,7 +229,7 @@ not coordinated with other processes using the file: rolling deploys with differ
 
 - **Token rows are not authenticated.** `state.sqlite` stores token rows (ceiling, scopes, revocation) in clear and
   unsigned; only the file mode (0600) and the directory (0700) protect them. Anyone who can write the file can raise
-  a ceiling or clear a revocation. The owner declined a per-row MAC and accepted this risk.
+  a ceiling, add a scope (including `core`) or clear a revocation. The owner declined a per-row MAC and accepted this risk.
 - **No rollback or replay protection for proposal rows.** The sealed payload binds the proposal id, but not its
   revision: restoring a whole older row (for example from a backup) passes every check.
 - **Historical proposal payloads.** Backups and WAL snapshots from before Phase 4 may contain sealed submissions

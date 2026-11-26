@@ -18,6 +18,7 @@ from cerebro.application.ports.write_attempts import WriteAttemptStore
 from cerebro.domain.access import AccessContext, Agent, Scope
 from cerebro.domain.commit_message import AgentWriteCommit, create_request_key
 from cerebro.domain.content_hash import content_hash, is_content_hash
+from cerebro.domain.enums import Priority
 from cerebro.domain.errors import ContentConflict, InvalidValueError
 from cerebro.domain.frontmatter import FIELD_ORDER, parse_note
 from cerebro.domain.links import loose_link_targets
@@ -32,6 +33,7 @@ _SETTABLE = frozenset(FIELD_ORDER) - {"id", "created", "updated"}
 _UNAVAILABLE = WriteFinding("target_unavailable", "target", "Search for a writable note and read it in full.")
 _REFERENCE = WriteFinding("broken_link", "references", "Remove unavailable references or select a visible note.")
 _CONFLICT = WriteFinding("request_conflict", "request_id", "Use a new request id for a different create.")
+_CORE = "Core and P0 notes need a token with the core scope. Use P1 for a hub or P2/P3 for a regular note."
 
 
 class AgentWrite:
@@ -83,7 +85,7 @@ class AgentWrite:
             key = create_request_key(ctx.token_id, request.request_id)
             receipt = self._notes.find_create(key)
             if receipt is not None:
-                self._visible_target(receipt.note_id, ctx)
+                _require_core_scope(self._visible_target(receipt.note_id, ctx), ctx, "target")
             note_id = receipt.note_id if receipt else _CREATE_PLACEHOLDER
         elif request.operation == "update":
             if request.request_id is not None or not is_content_hash(request.base_hash):
@@ -93,6 +95,7 @@ class AgentWrite:
             except InvalidValueError:
                 raise WriteRejected(_UNAVAILABLE) from None
             base = self._visible_target(note_id, ctx)
+            _require_core_scope(base, ctx, "target")
             if content_hash(base) != request.base_hash:
                 raise self._stale()
         else:
@@ -106,6 +109,7 @@ class AgentWrite:
             raise
         if not ctx.ceiling.allows(candidate.sensitivity):
             raise WriteRejected(WriteFinding("outside_ceiling", "sensitivity", "Choose an authorized sensitivity."))
+        _require_core_scope(candidate, ctx, "priority")
         if key is not None and receipt is None:
             note_id = self._new_id(candidate.title)
             candidate = replace(candidate, id=note_id)
@@ -200,6 +204,14 @@ class AgentWrite:
             # revisions against HEAD and rebuilds them under this same writer lock.
             pass
         return revision
+
+
+def _require_core_scope(note: Note, ctx: AccessContext, field: str) -> None:
+    """Core and P0 notes form the overview's global rules: changing, archiving or superseding one, creating one
+    or promoting a note to one needs ``core`` on top of ``write``. Called on the stored version and on the
+    candidate, so a replay is authorized like the original request. Only visible notes reach this check."""
+    if (note.type == CORE or note.priority is Priority.P0) and not ctx.can(Scope.CORE):
+        raise WriteRejected(WriteFinding("core_scope_required", field, _CORE))
 
 
 def _check_text(value: object, field: str, max_bytes: int) -> None:

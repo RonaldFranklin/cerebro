@@ -88,10 +88,23 @@ class Scope(StrEnum):
     READ = "read"
     PROPOSE = "propose"
     WRITE = "write"
+    CORE = "core"
+    """Extends ``write`` to core (P0) notes, the global rules every agent receives. Meaningless without ``write``."""
 
     @classmethod
     def parse(cls, value: str) -> Self:
         return _parse(cls, value, "scope")
+
+
+def validate_credential_scopes(scopes: object) -> frozenset[Scope]:
+    """A plain copy of a credential's ``scopes``: a non-empty frozenset of ``Scope`` where ``core`` comes with
+    ``write``. Granting ``core`` alone would authorize nothing, so it is refused rather than silently ignored."""
+    if not isinstance(scopes, frozenset) or not scopes or not all(isinstance(s, Scope) for s in scopes):
+        raise InvalidValueError("scopes", "expected a non-empty frozenset of Scope")
+    plain = frozenset(scopes)  # a frozenset subclass could override ``__contains__``
+    if Scope.CORE in plain and Scope.WRITE not in plain:
+        raise InvalidValueError("scopes", "core requires write")
+    return plain
 
 
 _TOKEN_ID: Final = re.compile(r"[A-Za-z0-9_-]{1,64}")
