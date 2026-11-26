@@ -139,7 +139,9 @@ uv run lint-imports                             # import contracts
 ```
 
 CI (`.github/workflows/ci.yml`) runs the same checks with `uv sync --locked`, so a stale `uv.lock` fails the
-build. Web commands (`pnpm …`) are added in Phase 5.
+build. From `web/`, run `pnpm install --frozen-lockfile`, `pnpm run typecheck`, `pnpm run build`,
+`pnpm run test:component` and `pnpm run test:e2e`. Browser tests use the pinned Chromium from
+`pnpm exec playwright install chromium` and E2E uses the locked backend installation.
 
 ## 7. Repository map (target)
 

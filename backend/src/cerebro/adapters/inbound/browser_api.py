@@ -11,7 +11,7 @@ from starlette.responses import JSONResponse, Response
 from starlette.types import ASGIApp, Receive, Scope, Send
 
 from cerebro.adapters.inbound.input_limits import MAX_INPUT_BYTES
-from cerebro.application.browser import AuthenticationFailed, BrowserAuth, BrowserBinding, CsrfRejected
+from cerebro.application.browser import AuthenticationFailed, BrowserAuth, BrowserBinding, CsrfRejected, SessionInfo
 from cerebro.domain.access import AccessCeiling, AccessContext
 from cerebro.domain.enums import Sensitivity
 
@@ -94,8 +94,12 @@ def browser_api(auth: BrowserAuth, binding: BrowserBinding, ceiling: AccessCeili
     app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None, redirect_slashes=False)
     cookie_name = _COOKIE_NAMES[binding.listener]
 
-    def session_data(csrf: str) -> dict[str, str]:
-        return {"csrf_token": csrf, "ceiling": ceiling.level.value}
+    def session_data(session: SessionInfo) -> dict[str, str | int]:
+        return {
+            "csrf_token": session.csrf_token,
+            "ceiling": ceiling.level.value,
+            "absolute_remaining_seconds": session.absolute_remaining_seconds,
+        }
 
     @app.middleware("http")
     async def authenticate(request: Request, call_next: RequestResponseEndpoint) -> Response:
@@ -117,7 +121,7 @@ def browser_api(auth: BrowserAuth, binding: BrowserBinding, ceiling: AccessCeili
                 csrf = _header(request, "x-csrf-token")
                 if _header(request, "origin") != binding.origin or not csrf:
                     return _error(403, "Access denied.")
-            request.state.csrf_token = await asyncio.to_thread(auth.session, binding, session_id, csrf=csrf)
+            request.state.session_info = await asyncio.to_thread(auth.session, binding, session_id, csrf=csrf)
             request.state.ctx = AccessContext.for_owner(ceiling)
             request.state.session_id = session_id
             inbox = path == "/api/inbox" or path.startswith("/api/inbox/")
@@ -175,19 +179,19 @@ def browser_api(auth: BrowserAuth, binding: BrowserBinding, ceiling: AccessCeili
         except ValueError, RecursionError:
             return _error(422, "Invalid request.")
         issued = await asyncio.to_thread(auth.login, binding, password, request.state.previous)
-        response = JSONResponse(session_data(issued.csrf_token))
+        response = JSONResponse(session_data(issued))
         response.set_cookie(cookie_name, issued.session_id, path="/", httponly=True, secure=True, samesite="strict")
         return response
 
     @app.get("/api/session")
     async def session(request: Request) -> Response:
-        return JSONResponse(session_data(request.state.csrf_token))
+        return JSONResponse(session_data(request.state.session_info))
 
     @app.post("/api/logout")
     async def logout(request: Request) -> Response:
         if await request.body():
             return _error(422, "Invalid request.")
-        await asyncio.to_thread(auth.logout, binding, request.state.session_id, request.state.csrf_token)
+        await asyncio.to_thread(auth.logout, binding, request.state.session_id, request.state.session_info.csrf_token)
         response = Response(status_code=204)
         response.delete_cookie(cookie_name, path="/", httponly=True, secure=True, samesite="strict")
         return response

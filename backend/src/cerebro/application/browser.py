@@ -31,9 +31,14 @@ class BrowserBinding:
 
 
 @dataclass(frozen=True, slots=True, repr=False)
-class IssuedSession:
-    session_id: str
+class SessionInfo:
     csrf_token: str
+    absolute_remaining_seconds: int
+
+
+@dataclass(frozen=True, slots=True, repr=False)
+class IssuedSession(SessionInfo):
+    session_id: str
 
 
 @dataclass(slots=True)
@@ -100,14 +105,19 @@ class BrowserAuth:
                         del rows[old]
             if len(rows) >= MAX_SESSIONS:
                 del rows[min(rows, key=lambda key: rows[key].last_used)]
-            new = IssuedSession(self._ids.new_token_secret(), self._ids.new_token_secret())
+            new = IssuedSession(
+                session_id=self._ids.new_token_secret(),
+                csrf_token=self._ids.new_token_secret(),
+                absolute_remaining_seconds=int(ABSOLUTE_LIFETIME.total_seconds()),
+            )
             rows[_digest(new.session_id)] = StoredSession(binding, generation, now, now, new.csrf_token)
             return new
 
-    def session(self, binding: BrowserBinding, session_id: str, *, csrf: str | None = None) -> str:
+    def session(self, binding: BrowserBinding, session_id: str, *, csrf: str | None = None) -> SessionInfo:
         with self._sessions.locked() as rows:
             row = self._authenticated(rows, binding, session_id, csrf)
-            return row.csrf_token
+            remaining = ABSOLUTE_LIFETIME - (row.last_used - row.created)
+            return SessionInfo(row.csrf_token, int(remaining.total_seconds()))
 
     def logout(self, binding: BrowserBinding, session_id: str, csrf: str) -> None:
         if not csrf:

@@ -37,3 +37,7 @@ Thumbs.db
 
 # Local dev instance data
 var/
+
+# Local browser test outputs
+web/test-results/
+web/playwright-report/

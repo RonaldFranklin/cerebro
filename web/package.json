@@ -32,6 +32,10 @@
     "node": "26.13.1"
   },
   "scripts": {
-    "test:toolchain": "tsc -p tests/toolchain && vite build tests/toolchain && node tests/toolchain/verify.ts"
+    "test:toolchain": "tsc -p tests/toolchain && vite build tests/toolchain && node tests/toolchain/verify.ts",
+    "typecheck": "tsc --noEmit",
+    "build": "vite build",
+    "test:component": "playwright test --config playwright.config.ts",
+    "test:e2e": "playwright test --config tests/e2e/playwright.config.ts"
   }
 }

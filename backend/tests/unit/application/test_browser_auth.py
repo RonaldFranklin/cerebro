@@ -47,7 +47,7 @@ def test_rotation_binding_and_logout(setup: Setup) -> None:
     new = auth.login(PRIVATE, b"fixture", first.session_id)
     with pytest.raises(AuthenticationFailed):
         auth.session(PRIVATE, first.session_id)
-    assert auth.session(PRIVATE, new.session_id) == new.csrf_token
+    assert auth.session(PRIVATE, new.session_id).csrf_token == new.csrf_token
     with pytest.raises(AuthenticationFailed):
         auth.logout(PRIVATE, new.session_id, "wrong")
     auth.logout(PRIVATE, new.session_id, new.csrf_token)
@@ -106,7 +106,7 @@ def test_bounded_store_and_restart(setup: Setup) -> None:
         assert len(rows) == MAX_SESSIONS
     with pytest.raises(AuthenticationFailed):
         auth.session(PRIVATE, first.session_id)
-    assert auth.session(PRIVATE, latest.session_id) == latest.csrf_token
+    assert auth.session(PRIVATE, latest.session_id).csrf_token == latest.csrf_token
     restart = BrowserAuth(credentials, FakeLoginAttempts(), MemorySessions(), clock, ids)
     with pytest.raises(AuthenticationFailed):
         restart.session(PRIVATE, latest.session_id)

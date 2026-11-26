@@ -1,6 +1,7 @@
 """Session and input boundaries of one browser API listener."""
 
 from collections.abc import Iterator
+from datetime import timedelta
 
 import pytest
 from fastapi import Request
@@ -21,10 +22,15 @@ COOKIE = "__Host-cerebro_private"
 
 
 @pytest.fixture
-def auth() -> BrowserAuth:
+def clock() -> FixedClock:
+    return FixedClock()
+
+
+@pytest.fixture
+def auth(clock: FixedClock) -> BrowserAuth:
     credentials = FakeOwnerCredentials()
     credentials.provision(b"example fixture")
-    return BrowserAuth(credentials, FakeLoginAttempts(), FakeSessions(), FixedClock(), SequentialIdGenerator())
+    return BrowserAuth(credentials, FakeLoginAttempts(), FakeSessions(), clock, SequentialIdGenerator())
 
 
 @pytest.fixture
@@ -132,3 +138,18 @@ def test_sessions_are_bound_to_the_issuing_listener(client: TestClient, auth: Br
         assert public.get("/api/session", headers={"Cookie": both}).json()["ceiling"] == "internal"
         assert client.get("/api/session", headers={"Cookie": both}).json()["ceiling"] == "restricted"
         assert client.get("/api/session", headers={"Cookie": both + f"; {COOKIE}=other"}).status_code == 401
+
+
+def test_restored_session_reports_remaining_absolute_lifetime(client: TestClient, clock: FixedClock) -> None:
+    login = client.post("/api/login", json={"password": "example fixture"}, headers=HEADERS)
+    assert login.json()["absolute_remaining_seconds"] == 8 * 3600
+    for _ in range(23):
+        clock.advance(timedelta(minutes=20))
+        assert client.get("/api/session").status_code == 200
+    clock.advance(timedelta(minutes=19))
+    restored = client.get("/api/session").json()
+    assert restored["absolute_remaining_seconds"] == 60
+    assert restored["csrf_token"] == login.json()["csrf_token"]
+    assert restored["ceiling"] == login.json()["ceiling"]
+    clock.advance(timedelta(seconds=60))
+    assert client.get("/api/session").status_code == 401
