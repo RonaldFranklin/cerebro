@@ -1,5 +1,4 @@
 import { expect, type Page } from "@playwright/test";
-import { fileURLToPath } from "node:url";
 import { test } from "./fixture";
 
 async function signIn(page: Page, origin: string, password: string) {
@@ -31,13 +30,6 @@ test("private health findings link to their notes and stay off the public listen
   ]));
   await expect(page.locator('a[href="/notes/island-hub?history=true"]').first()).toBeVisible();
   await expect(page.locator('a[href="/notes/fixture-vault-catalog?history=true"]').first()).toBeVisible();
-  if (process.env.CAPTURE_SCREENSHOTS === "1") {
-    await page.evaluate(() => document.fonts.ready);
-    await page.screenshot({
-      path:fileURLToPath(new URL("../../../docs/screenshots/phase-5/11-health.png", import.meta.url)),
-      fullPage:true, animations:"disabled",
-    });
-  }
   await broken.focus();
   await page.keyboard.press("Enter");
   await expect(page.getByRole("heading",{name:"Broken link note",exact:true})).toBeVisible();
