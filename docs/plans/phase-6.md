@@ -6,7 +6,7 @@ synthetic data. The server agent executes the documented installation and checks
 | Delivery | Result |
 |---|---|
 | 1. Container image and bind policy | Multi-stage web/backend image, non-root runtime, HTTP healthcheck and [ADR-0027](../adr/0027-container-loopback-publication.md). |
-| 2. Compose | Separate hml/prod projects and storage, host-loopback publication test, local build and rollback tags. |
+| 2. Compose | Separate hml/prod projects and storage, host-loopback publication test (including rejection of host networking with no published ports), local build and rollback tags. |
 | 3. Backup | Private content push and consistent SQLite backup, excluding quarantine and the index. |
 | 4. Server runbook | Executable deployment, validation, update, rollback and removal steps. |
 | 5. Workstation clients | User-level Claude Code and Codex setup in WSL via the tailnet. |
