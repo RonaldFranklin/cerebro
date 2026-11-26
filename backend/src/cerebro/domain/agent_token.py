@@ -4,7 +4,15 @@ from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta
 from typing import Final, Self
 
-from cerebro.domain.access import AccessCeiling, AccessContext, Agent, Scope, effective_ceiling, validate_agent_name
+from cerebro.domain.access import (
+    AccessCeiling,
+    AccessContext,
+    Agent,
+    Scope,
+    effective_ceiling,
+    validate_agent_name,
+    validate_credential_scopes,
+)
 from cerebro.domain.access import validate_token_id as validate_token_id
 from cerebro.domain.errors import DomainError, InvalidValueError
 from cerebro.domain.token_hash import TokenHash
@@ -49,13 +57,7 @@ class AgentToken:
         validate_agent_name(self.agent)
         if not isinstance(self.ceiling, AccessCeiling):
             raise InvalidValueError("ceiling", "expected an AccessCeiling")
-        if (
-            not isinstance(self.scopes, frozenset)
-            or not self.scopes
-            or not all(isinstance(s, Scope) for s in self.scopes)
-        ):
-            raise InvalidValueError("scopes", "expected a non-empty frozenset of Scope")
-        object.__setattr__(self, "scopes", frozenset(self.scopes))  # plain copy, see AccessContext
+        object.__setattr__(self, "scopes", validate_credential_scopes(self.scopes))
         if type(self.token_hash) is not TokenHash:
             raise InvalidValueError("token_hash", "expected a TokenHash")
         _require_aware(self.created_at, "created_at")

@@ -11,7 +11,7 @@ from typing import Final
 
 from cerebro.application.ports.graph import GraphSlice
 from cerebro.application.ports.search import MAX_LIMIT, SearchHit
-from cerebro.domain.access import AccessCeiling, Scope, is_visible, validate_agent_name
+from cerebro.domain.access import AccessCeiling, Scope, is_visible, validate_agent_name, validate_credential_scopes
 from cerebro.domain.content_hash import content_hash
 from cerebro.domain.enums import Priority, Sensitivity, Status
 from cerebro.domain.errors import InvalidValueError
@@ -479,14 +479,9 @@ class IssueAgentTokenRequest:
         validate_agent_name(self.agent)
         if not isinstance(self.ceiling, AccessCeiling):
             raise InvalidValueError("ceiling", "expected an AccessCeiling")
-        if (
-            not isinstance(self.scopes, frozenset)
-            or not self.scopes
-            or not all(isinstance(s, Scope) for s in self.scopes)
-        ):
-            raise InvalidValueError("scopes", "expected a non-empty frozenset of Scope")
+        validate_credential_scopes(self.scopes)
         if Scope.PROPOSE in self.scopes:
-            raise InvalidValueError("scopes", "new credentials support read and write")
+            raise InvalidValueError("scopes", "new credentials support read, write and core")
         expires = self.expires_at
         if expires is not None and (not isinstance(expires, datetime) or expires.tzinfo is None):
             raise InvalidValueError("expires_at", "expected a timezone-aware datetime")

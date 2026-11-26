@@ -185,7 +185,14 @@ class TestIssueAgentToken:
         assert tk.store.all() == ()
 
     @pytest.mark.parametrize(
-        "scopes", [frozenset[Scope](), {Scope.READ}, frozenset({"read"}), frozenset({Scope.READ, Scope.PROPOSE})]
+        "scopes",
+        [
+            frozenset[Scope](),
+            {Scope.READ},
+            frozenset({"read"}),
+            frozenset({Scope.READ, Scope.PROPOSE}),
+            frozenset({Scope.READ, Scope.CORE}),
+        ],
     )
     def test_scopes_are_validated(self, tk: TokenKit, scopes: Any) -> None:
         with pytest.raises(InvalidValueError):

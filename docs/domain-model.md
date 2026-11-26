@@ -197,8 +197,9 @@ effective_ceiling = min(listener_ceiling, token_ceiling)
 - **Fail closed:** `effective_ceiling(listener, token)` has no defaults; wrongly typed ceilings raise, and
   `is_visible` / `AccessCeiling.allows` / `AccessContext.can` deny any value of an unexpected type.
 - **Principals and scopes:** `AccessContext(principal, ceiling, scopes)` is built once per request, with
-  `ceiling` already the effective ceiling. `principal` is `Agent(name)` or `Owner`. Scopes are `read` and
-  `write`. A legacy `propose` grant authorizes no direct writes. The **owner has every scope** but is still limited by the **listener** ceiling (there is no token);
+  `ceiling` already the effective ceiling. `principal` is `Agent(name)` or `Owner`. Scopes are `read`,
+  `write` and `core`. `core` extends `write` to core and P0 notes and is refused on a credential without
+  `write` ([ADR-0022](adr/0022-core-scope.md)). A legacy `propose` grant authorizes no direct writes. The **owner has every scope** but is still limited by the **listener** ceiling (there is no token);
   owner-only actions (owner edit, change history, maintenance) require the `Owner` principal, not a scope. An agent only
   has the scopes of its token. Agent names are lowercase (`claude-code@workstation`, at most 64 characters);
   `owner` (with or without a host part) is reserved so an agent can never appear as the owner in trailers.
@@ -301,6 +302,13 @@ tracks delivery. The [Phase 4 report](plans/phase-4.md) records the earlier prop
 | Create | Authenticated agent with explicit `write` scope, valid note within ceiling | One new note with a service-generated id derived from the title. |
 | Update | Visible, fully readable note and the `base_hash` of the version the agent read | One replacement of the same note, retaining its id and creation date. A stale hash requires a fresh read and reconciliation. |
 
+Core and P0 notes are the global rules the overview serves to every agent. An agent without the `core`
+scope gets `core_scope_required` when the stored version **or** the candidate has type `core` or priority
+`P0`: it cannot create one, edit, archive, supersede or demote one, or promote a note to one. A create
+replay is checked against the candidate and the stored note in the same way. Hubs (P1) stay open to every
+`write` token. With `core`, the category rule (a note keeps its core, hub or regular type) and the combined
+1,500-word P0 budget still apply.
+
 On create, the service converts the title to an ASCII kebab-case stem of up to 60 characters, using
 `note` if the stem is empty. It appends a hyphen and four random characters from `a-z` and `0-9`,
 and retries collisions internally. Existing ids stay valid. Changing a title preserves the id.
@@ -336,7 +344,7 @@ applies an old proposal or issues a write grant.
 ## 8. Agent tokens
 
 - One token per agent (e.g. `claude-code@workstation`, `codex@workstation`).
-- Attributes: id, agent name, newly issued scopes (`read`, `write`, at least one), ceiling, created, optional expiry,
+- Attributes: id, agent name, newly issued scopes (`read`, `write`, `core`; at least one, and `core` only with `write`), ceiling, created, optional expiry,
   optional revocation time, token hash. (`last_used` is operational data kept by the token store, not part of the
   domain entity.)
 - A token is valid when it is not revoked and `now < expires_at`; `now` is always passed explicitly, never read
