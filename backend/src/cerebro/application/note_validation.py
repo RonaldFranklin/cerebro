@@ -1,8 +1,7 @@
 """Shared validation of candidate notes against the content repository."""
 
-from cerebro.application.access import visible_id
 from cerebro.application.ports.notes import NoteRepository
-from cerebro.domain.access import AccessContext
+from cerebro.domain.access import AccessContext, is_visible
 from cerebro.domain.budgets import core_budget_findings, word_count
 from cerebro.domain.cross_note import cross_note_findings, inbound_link_sensitivity_findings
 from cerebro.domain.enums import Priority
@@ -47,10 +46,10 @@ def validate_candidate(
                 message="an agent cannot lower the sensitivity of an existing note",
             )
         )
-    report = validate_note(
-        note,
-        vocabulary,
-        policy,
-        known_id=lambda note_id: visible_id(notes, note_id, ctx, include_history=True) is not None,
-    )
+    # Same rule as ``visible_id`` (history included), over the snapshot already read: no lookup per scanned token.
+    # The candidate's own entry does not matter: the scan always exempts the note's own id.
+    readable = {
+        i for i, r in snapshot.items() if is_visible(r.sensitivity, r.status, ctx.ceiling, include_history=True)
+    }
+    report = validate_note(note, vocabulary, policy, known_id=readable.__contains__)
     return report + policy.report(findings)

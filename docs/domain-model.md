@@ -292,7 +292,11 @@ token formats shorter than 32 characters, **hex-only keys** (many API keys are 3
 caught only inside a `key=`-style assignment) and a large share of random tokens drawn only from lowercase letters
 and digits (about half of such 32-character tokens, about one in seven at 40 characters, fall below the entropy
 threshold). It flags long random-looking identifiers that are not secrets, such as base64 digests (`sha256-...`
-integrity hashes) and SSH public keys; the owner then rewords the note. An agent must omit secret values before submitting a note.
+integrity hashes) and SSH public keys; the owner then rewords the note. The note-id exemption covers only a token
+that is exactly an id: an id glued to `/`, `=`, `+` or `_` (for example `notes/<id>` or `id=<id>`) forms a longer
+token and can still be flagged. Because the note's own id is exempt, a secret split across title words (each too
+short to flag) reappears hyphenated in a generated id without being flagged there; the title scan has the same blind
+spot. An agent must omit secret values before submitting a note.
 
 ## 7. Agent writes
 
