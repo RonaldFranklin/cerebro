@@ -11,6 +11,7 @@ from cerebro.adapters.inbound.browser_write_views import validation_view, warnin
 from cerebro.adapters.inbound.input_limits import MAX_FIELD_BYTES, MAX_INPUT_BYTES
 from cerebro.application.dto import OwnerEditNoteRequest, OwnerEditNoteResult
 from cerebro.application.use_case import ContextUseCase
+from cerebro.domain.errors import ContentConflict, InvalidValueError
 from cerebro.domain.frontmatter import parse_note
 from cerebro.domain.note import MAX_NOTE_ID_LENGTH
 from cerebro.domain.report import Severity, ValidationReport, Violation, ViolationCode
@@ -57,6 +58,14 @@ class Edit(_Closed):
 def install_browser_edit(
     app: FastAPI, owner_edit_note: ContextUseCase[OwnerEditNoteRequest, OwnerEditNoteResult]
 ) -> None:
+    @app.exception_handler(ContentConflict)
+    async def conflict(request: Request, error: ContentConflict) -> JSONResponse:
+        return JSONResponse({"error": "Conflict. Reload before retrying."}, 409)
+
+    @app.exception_handler(InvalidValueError)
+    async def invalid_value(request: Request, error: InvalidValueError) -> JSONResponse:
+        return JSONResponse({"error": "Invalid request."}, 422)
+
     @app.put("/api/notes/{note_id}")
     def edit(request: Request, note_id: str, payload: Edit) -> JSONResponse:
         raw = payload.note.model_dump(exclude={"body"})

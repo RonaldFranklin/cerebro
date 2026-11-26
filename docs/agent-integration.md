@@ -108,6 +108,11 @@ run_codex() {
     -c 'mcp_servers.cerebro.bearer_token_env_var="CEREBRO_MCP_TOKEN"' \
     -c 'mcp_servers.cerebro.default_tools_approval_mode="approve"' "$1"
 }
+```
+
+Run the read check after defining both functions.
+
+```bash
 check='Use only Cérebro MCP tools. Call cerebro_overview, then cerebro_search with query SSH.
 Call cerebro_read with id server-ssh-access and section SSH. Call cerebro_neighbors with that id and depth 2.
 Finally call cerebro_read separately on vault-layout and absent-note. Report the returned core id, search hit,
@@ -131,7 +136,7 @@ Each prompt asks the client to consult the guide before writing. The working fix
 ```bash
 (
   cli=("$bin/cerebro" --config "$config")
-  repo="$session/instance/content"
+  repo="$(dirname -- "$config")/content"
   claude_secret="$("${cli[@]}" token issue claude-writer --scope read --scope write --ceiling internal)"
   codex_secret="$("${cli[@]}" token issue codex-writer --scope read --scope write --ceiling internal)"
   before="$(git -C "$repo" rev-parse HEAD)"
@@ -181,3 +186,26 @@ Record the two offline messages and the first successful read after restart for 
 listener cannot send a protocol response. The prompt tells the real agent how to report that connection failure.
 The stdio development bridge can return the fixed offline error directly. Its command is
 `cerebro-mcp-stdio --private-port PORT` with the token in `CEREBRO_MCP_TOKEN` in the bridge environment.
+
+## Inspect the same client writes in Recent changes
+
+Use this variant to see both clients' commits in the browser. Start the [WSL web demo](plans/phase-5.md#7-open-the-interface-from-wsl) and keep its terminal open. Open the printed private browser URL, compare the certificate fingerprint and sign in. In a second WSL terminal, from the application repository root, prepare a temporary client workspace:
+
+```bash
+bash --noprofile --norc
+set -euo pipefail
+set +x
+umask 077
+for key in ${!CEREBRO_@}; do unset "$key"; done
+bin="$(git rev-parse --show-toplevel)/backend/.venv/bin"
+session="$(mktemp -d)"
+trap 'cd /; rm -rf -- "$session"' EXIT
+mkdir "$session/client"
+cd "$session/client"
+read -rp 'Fixture configuration path printed by web_demo: ' config
+read -rp 'Private MCP in WSL URL printed by web_demo: ' CEREBRO_DEV_URL
+export CEREBRO_DEV_URL
+export NO_PROXY="127.0.0.1,localhost" no_proxy="127.0.0.1,localhost"
+```
+
+Run the **first Bash block of step 2** (client configuration and functions), then **step 3** (issue write grants and perform the two writes). Use a fresh demo for each run. In the private browser, open **Recent changes**. The two newest entries should name `codex-writer` and `claude-writer`, show their timestamps and link to the same note. Open each diff and compare it with the Git output from step 3. The create shows the initial note; the update adds “and verify”. Follow the note link to read the current version. Exit the second shell, then press Ctrl+C in the demo terminal to remove the fixture and its credentials.

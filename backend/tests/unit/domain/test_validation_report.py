@@ -1,8 +1,8 @@
 import pytest
 
 from cerebro.domain.report import (
+    AGENT_WRITE_POLICY,
     OWNER_EDIT_POLICY,
-    PROPOSAL_POLICY,
     Finding,
     Severity,
     SeverityPolicy,
@@ -71,11 +71,11 @@ class TestSeverityPolicy:
         assert report.violations[0].field == "related"
         assert report.violations[0].message == "dup"
 
-    @pytest.mark.parametrize("policy", [PROPOSAL_POLICY, OWNER_EDIT_POLICY])
+    @pytest.mark.parametrize("policy", [AGENT_WRITE_POLICY, OWNER_EDIT_POLICY])
     def test_soft_limit_and_duplicate_related_only_warn_on_every_path(self, policy: SeverityPolicy) -> None:
         assert policy.severity(ViolationCode.BODY_OVER_SOFT_LIMIT) is Severity.WARNING
         assert policy.severity(ViolationCode.DUPLICATE_RELATED) is Severity.WARNING
         assert policy.severity(ViolationCode.BODY_OVER_HARD_LIMIT) is Severity.ERROR
 
     def test_empty_findings_give_an_ok_report(self) -> None:
-        assert PROPOSAL_POLICY.report([]).violations == ()
+        assert AGENT_WRITE_POLICY.report([]).violations == ()

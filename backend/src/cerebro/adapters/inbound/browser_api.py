@@ -124,9 +124,9 @@ def browser_api(auth: BrowserAuth, binding: BrowserBinding, ceiling: AccessCeili
             request.state.session_info = await asyncio.to_thread(auth.session, binding, session_id, csrf=csrf)
             request.state.ctx = AccessContext.for_owner(ceiling)
             request.state.session_id = session_id
-            inbox = path == "/api/inbox" or path.startswith("/api/inbox/")
             note_write = path.startswith("/api/notes/") and request.method == "PUT"
-            if inbox or note_write:
+            history = path == "/api/changes" or path.startswith("/api/changes/")
+            if note_write or history:
                 if binding.listener != "private" or ceiling.level is not Sensitivity.RESTRICTED:
                     return _error(403, "Access denied.")
                 if request.scope["query_string"]:
@@ -156,7 +156,7 @@ def browser_api(auth: BrowserAuth, binding: BrowserBinding, ceiling: AccessCeili
                 return response
             return _error(401, "Authentication required.")
         except Exception:
-            # No credentials, note fields or proposal contents may reach server error logs.
+            # No credentials, note fields may reach server error logs.
             return _error(503, "Service unavailable.")
         if response.status_code == 413:
             if request.method in {"GET", "HEAD"}:

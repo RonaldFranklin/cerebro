@@ -13,6 +13,7 @@ import "./app.css";
 const GraphScreen = lazy(() => import("./GraphScreen"));
 
 const EditorScreen = lazy(() => import("./Editor").then(module => ({default: module.EditorScreen})));
+const RecentChangesScreen = lazy(() => import("./RecentChanges").then(module => ({default: module.RecentChangesScreen})));
 const HealthScreen = lazy(() => import("./Health").then(module => ({default: module.HealthScreen})));
 
 function Status({children, action, label}: {children: ReactNode; action?: () => void; label?: string}) {
@@ -28,7 +29,7 @@ function Home({api}: {api: ApiClient}) {
   return <OverviewScreen data={result.data}/>;
 }
 
-const routeTitles: Record<string,string> = {"/graph":"Graph", "/search":"Search", "/health":"Health"};
+const routeTitles: Record<string,string> = {"/graph":"Graph", "/search":"Search", "/health":"Health", "/changes":"Recent changes"};
 
 function address() { return location.pathname + location.search + location.hash; }
 
@@ -76,12 +77,13 @@ function App() {
     case "active": {
       const home = path === "/" || path === "/login";
       const title = routeTitles[path] ?? (path.startsWith("/notes/") ? "Note reader" : path.startsWith("/editor/") ? "Owner editor" : "Page unavailable");
-      const denied = state.session.ceiling !== "restricted" && (path === "/health" || path.startsWith("/editor/"));
+      const denied = state.session.ceiling !== "restricted" && (path === "/changes" || path === "/health" || path.startsWith("/editor/"));
       return <QueryClientProvider key={state.generation} client={state.queries}>
         {state.checking && <Status>Checking session…</Status>}
         <div hidden={state.checking}><Shell path={home ? "/" : path} ceiling={state.session.ceiling} onNavigate={navigate} onLogout={manager.signOut}>
           {denied ? <section className="pending-view"><h1>{title}</h1><p>This view requires the private listener.</p>
             <a href="/">Back to overview</a></section> : home ? <Home api={state.api}/> :
+            path === "/changes" ? <Suspense fallback={<p role="status">Loading recent changes…</p>}><RecentChangesScreen api={state.api}/></Suspense> :
             path === "/health" ? <Suspense fallback={<p role="status">Loading health report…</p>}><HealthScreen api={state.api}/></Suspense> :
             path.startsWith("/editor/") ? <Suspense fallback={<p role="status">Loading editor…</p>}><EditorScreen
               key={path} api={state.api} id={path.slice("/editor/".length)} history={url.searchParams.get("history") === "true"}/></Suspense> :

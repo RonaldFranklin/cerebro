@@ -174,6 +174,7 @@ class GitRepo:
             "GIT_TERMINAL_PROMPT": "0",
             "GIT_LITERAL_PATHSPECS": "1",
             "GIT_OPTIONAL_LOCKS": "0",
+            "GIT_NO_REPLACE_OBJECTS": "1",
         }
         for name in passthrough:
             if name in os.environ:
@@ -385,6 +386,75 @@ class GitRepo:
         if commit_id is None:  # pragma: no cover - a successful commit always creates HEAD
             raise GitError("commit left no HEAD")
         return commit_id
+
+    def recent_revisions(self, limit: int) -> tuple[str, ...]:
+        if not 1 <= limit <= 64:
+            raise GitError("invalid history window")
+        if not self.head():
+            return ()
+        _, output = self._run(["rev-list", "--first-parent", f"--max-count={limit}", "HEAD", "--"])
+        revisions = tuple(output.splitlines())
+        for revision in revisions:
+            self._require_object_id(revision)
+        return revisions
+
+    @staticmethod
+    def _require_object_id(revision: str) -> None:
+        if not re.fullmatch(r"(?:[0-9a-f]{40}|[0-9a-f]{64})", revision):
+            raise GitError("invalid object id")
+
+    def history_commit(self, revision: str) -> tuple[str, str, str, str] | None:
+        """Parent, committer time, message and affected path for a bounded, single-file commit."""
+        self._require_object_id(revision)
+        _, size = self._run(["cat-file", "-s", revision])
+        if int(size) > 8192:
+            return None
+        _, raw = self._run(["show", "-s", "--no-notes", "--no-patch", "--format=%P%x00%cI%x00%B", revision, "--"])
+        parents, timestamp, message = raw.split("\x00", 2)
+        if parents:
+            if " " in parents:
+                return None
+            self._require_object_id(parents)
+        _, changes = self._run(
+            [
+                "diff-tree",
+                "--root",
+                "-r",
+                "--no-renames",
+                "--no-ext-diff",
+                "--no-textconv",
+                "--no-commit-id",
+                "--name-only",
+                "-z",
+                revision,
+                "--",
+            ]
+        )
+        paths = changes.rstrip("\x00").split("\x00")
+        if len(paths) != 1:
+            return None
+        return parents, timestamp, message.rstrip("\n"), paths[0]
+
+    def historical_blob(self, revision: str, paths: Sequence[str], limit: int) -> tuple[str, bytes] | None:
+        self._require_object_id(revision)
+        if not paths or any(not re.fullmatch(r"(?:core|notes|hubs)/[a-z0-9-]{1,80}\.md", path) for path in paths):
+            raise GitError("invalid historical note path")
+        _, tree = self._run(["ls-tree", "-l", "-z", revision, "--", *paths])
+        if not tree:
+            return None
+        entries = tree.rstrip("\x00").split("\x00")
+        if len(entries) != 1:
+            raise GitError("ambiguous historical note")
+        header, _, path = entries[0].partition("\t")
+        mode, kind, oid, size = header.split()
+        if mode not in ("100644", "100755") or kind != "blob" or path not in paths or int(size) > limit:
+            raise GitError("unreadable historical note")
+        self._require_object_id(oid)
+        _, content = self._run(["cat-file", "blob", oid])
+        data = content.encode("utf-8", errors="surrogateescape")
+        if len(data) != int(size):
+            raise GitError("historical blob size mismatch")
+        return path, data
 
     def describe_commit(self, revision: str) -> tuple[tuple[str, ...], str]:
         """``(parent ids, message)`` of a commit; the message without its trailing newline."""

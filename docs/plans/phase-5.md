@@ -439,12 +439,12 @@ accepting the certificate for this demo. Sign in with the disposable password.
    feature to inspect the prose and the unchanged `ssh -V` command.
 2. Open **Graph**. Select **Infrastructure** to explore its neighborhood, switch to two hops and return
    to the global graph. The node list and its **Connections** control also work with the keyboard.
-3. Open **Inbox**, select the fixture proposal for `island-hub`, inspect its diff and choose
-   **Approve and apply**. Check the commit shown in the receipt.
+3. On current main, open **Recent changes**, select the update by `fixture-agent`, inspect its diff,
+   and follow the link to `island-hub`. The Phase 5 release used Inbox approval at this step.
 4. Return to the SSH note, open its editor, change a sentence, preview it and save. Open **Health**
    to inspect the seeded link and orphan findings, then follow an affected note.
 5. Open the printed **Public listener fixture** address in another tab. Sign in separately. Confirm
-   the synthetic vault catalog is absent from the graph and the private Inbox and Health views are
+   the synthetic vault catalog is absent from the graph and the private Recent changes and Health views are
    unavailable. Sign out on each listener and reload a protected page.
 6. Press Ctrl+C in the launcher terminal. The service and TLS relays stop, and the temporary content
    repository, credentials and state are removed. Starting the launcher again creates a fresh instance.

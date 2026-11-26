@@ -3,8 +3,6 @@ from cerebro.application.errors import (
     ApplicationError,
     NoteNotFound,
     PermissionDenied,
-    ProposalConflict,
-    ProposalNotFound,
     TokenNotFound,
 )
 from cerebro.domain.note import NoteId
@@ -13,17 +11,15 @@ from cerebro.domain.note import NoteId
 def test_errors_carry_their_context_and_share_a_base() -> None:
     errors = [
         NoteNotFound(NoteId("a-note")),
-        ProposalNotFound("p1"),
-        ProposalConflict("p1"),
         TokenNotFound("t1"),
-        AlreadyExists("proposal", "p1"),
-        PermissionDenied("propose"),
+        AlreadyExists("token", "t1"),
+        PermissionDenied("write"),
     ]
     assert all(isinstance(e, ApplicationError) for e in errors)
     assert NoteNotFound(NoteId("a-note")).note_id == NoteId("a-note")
     assert "a-note" not in str(NoteNotFound(NoteId("a-note")))
-    assert PermissionDenied("propose").action == "propose"
-    assert AlreadyExists("proposal", "p1").key == "p1"
+    assert PermissionDenied("write").action == "write"
+    assert AlreadyExists("token", "t1").key == "t1"
 
 
 def test_note_not_found_message_is_the_same_whatever_the_reason() -> None:

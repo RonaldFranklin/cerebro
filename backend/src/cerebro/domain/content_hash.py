@@ -44,7 +44,7 @@ def content_hash(note: Note) -> str:
 def ensure_unchanged(expected_hash: str, current: Note) -> None:
     """Raise ``ContentConflict`` unless ``current`` still has ``expected_hash``.
 
-    Used by ``ApplyProposal`` (``base_hash`` of an update proposal) and ``OwnerEditNote`` (hash the editor loaded).
+    Owner edits compare the expected hash from the editor with the complete stored note.
     """
     actual = content_hash(current)
     if actual != expected_hash:

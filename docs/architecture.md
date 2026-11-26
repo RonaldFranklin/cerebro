@@ -103,11 +103,13 @@ backend/
 | `VersionControl` | `push` to the backup remote. Commits are made by `NoteRepository.apply`, so a write and its commit cannot diverge | git CLI |
 | `Cipher` | encrypt/decrypt restricted note payloads (used by the filesystem adapter only); `DecryptionError` on tampering | Fernet |
 | `TokenStore` | `add`, `get`, `find_by_hash` (also returns revoked tokens), `save`, `all`; tokens are stored hashed | SQLite |
+| `WriteAttemptStore` | Atomically reserve a rolling-hour slot for an authenticated token; a refusal leaves state unchanged | SQLite; in-memory fake |
+| `ChangeHistory` | Return recent first-parent revisions, attribution and note versions for private owner history | Git/filesystem; in-memory fake |
 | `Clock`, `IdGenerator` | `now()`; note ids, token ids and token secrets, for deterministic tests | system / fixed fakes |
 
-The direct-write path needs durable per-token attempt accounting across restarts and concurrent calls.
-Recent changes reads bounded commit history through an outbound port. Application use cases control which
-actor, date, note and diff reach the browser, including visibility checks on both revisions and current state.
+Recent changes scans at most 32 first-parent revisions and shows up to 20 attributable note changes.
+The application checks current and historical visibility before returning the actor, timestamp, note and
+unified diff. Diff projections are bounded and indicate truncation. Git retains the complete history.
 
 Ports know nothing about access: use cases apply the ceiling and raise `NoteNotFound` for hidden notes exactly as
 for missing ones, while the two indexes filter by the mandatory ceiling argument. Application exceptions live in

@@ -10,7 +10,6 @@ from starlette.testclient import TestClient
 
 from cerebro.adapters.inbound.browser_api import browser_api
 from cerebro.adapters.inbound.browser_edit import install_browser_edit
-from cerebro.adapters.inbound.browser_inbox import install_browser_write_errors
 from cerebro.adapters.inbound.browser_reads import BrowserReads, install_browser_reads
 from cerebro.application.browser import BrowserBinding
 from cerebro.bootstrap.browser import owner_credentials
@@ -59,7 +58,6 @@ def editor(tmp_path: Path, request: pytest.FixtureRequest) -> Iterator[tuple[Tes
             health_report=cases.health_report,
         ),
     )
-    install_browser_write_errors(app)
     install_browser_edit(app, cases.owner_edit_note)
     with TestClient(app, base_url=origin) as client:
         response = client.post(
@@ -166,3 +164,13 @@ def test_editor_counts_metadata_in_utf8_bytes(editor: tuple[TestClient, Path]) -
     exact = {**inspected["note"], "lang": "é" * 128}
     assert client.put(PATH, json={**inspected, "note": exact}).status_code == 200
     assert client.get(PATH).json()["lang"] == exact["lang"]
+
+
+def test_legacy_inbox_has_no_routes_even_for_the_authenticated_owner(editor: tuple[TestClient, Path]) -> None:
+    client, repo = editor
+    before = git(repo, "rev-parse", "HEAD")
+    assert client.get("/api/inbox").status_code == 404
+    assert client.get("/api/inbox/old-id").status_code == 404
+    for action in ("amend", "approve", "reject", "resume"):
+        assert client.post(f"/api/inbox/old-id/{action}", json={"revision": 1}).status_code == 404
+    assert git(repo, "rev-parse", "HEAD") == before

@@ -7,11 +7,9 @@ import pytest
 from cerebro.application.ports import (
     Cipher,
     Clock,
-    Curator,
     GraphIndex,
     IdGenerator,
     NoteRepository,
-    ProposalStore,
     SearchIndex,
     TokenStore,
     VersionControl,
@@ -21,14 +19,12 @@ from tests.contract.search_contract import GraphIndexContract, SearchIndexContra
 from tests.contract.stores_contract import (
     CipherContract,
     ClockContract,
-    CuratorContract,
     IdGeneratorContract,
-    ProposalStoreContract,
     TokenStoreContract,
 )
 from tests.fakes.notes import InMemoryNoteRepository
 from tests.fakes.search import InMemoryGraphIndex, InMemorySearchIndex
-from tests.fakes.stores import FakeCurator, InMemoryProposalStore, InMemoryTokenStore
+from tests.fakes.stores import InMemoryTokenStore
 from tests.fakes.system import FixedClock, RecordingVersionControl, ReversingCipher, SequentialIdGenerator
 
 
@@ -50,22 +46,10 @@ class TestInMemoryGraphIndex(GraphIndexContract):
         return InMemoryGraphIndex()
 
 
-class TestInMemoryProposalStore(ProposalStoreContract):
-    @pytest.fixture
-    def store(self) -> ProposalStore:
-        return InMemoryProposalStore()
-
-
 class TestInMemoryTokenStore(TokenStoreContract):
     @pytest.fixture
     def store(self) -> TokenStore:
         return InMemoryTokenStore()
-
-
-class TestFakeCurator(CuratorContract):
-    @pytest.fixture
-    def curator(self) -> Curator:
-        return FakeCurator()
 
 
 class TestReversingCipher(CipherContract):
@@ -97,22 +81,8 @@ def test_fixed_clock_moves_only_when_told() -> None:
 
 def test_sequential_ids_are_deterministic() -> None:
     first, second = SequentialIdGenerator(), SequentialIdGenerator()
-    assert first.new_proposal_id() == second.new_proposal_id() == "proposal-0001"
+    assert first.new_edit_id() == second.new_edit_id() == "edit-0001"
     assert first.new_token_secret() == second.new_token_secret()
-
-
-def test_fake_curator_records_requests_and_uses_the_scripted_decision() -> None:
-    from cerebro.application.ports import CurationRequest
-    from cerebro.domain.decision import Decision, DecisionKind
-    from cerebro.domain.note import NoteId
-    from tests.contract.stores_contract import make_proposal
-
-    curator = FakeCurator(Decision.create(NoteId("new-note")), name="scripted")
-    request = CurationRequest(proposal=make_proposal())
-    assert curator.curate(request).kind is DecisionKind.CREATE
-    assert curator.name == "scripted"
-    assert curator.requests == [request]
-    assert FakeCurator().curate(request).kind is DecisionKind.NEEDS_OWNER
 
 
 def test_recording_version_control_counts_pushes() -> None:

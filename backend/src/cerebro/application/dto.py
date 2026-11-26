@@ -7,18 +7,16 @@ note is read on purpose: they are never the ``Note`` entity, so a field added to
 from dataclasses import dataclass, field, replace
 from datetime import date, datetime
 from enum import StrEnum
-from typing import Final, Literal
+from typing import Final
 
 from cerebro.application.ports.graph import GraphSlice
 from cerebro.application.ports.search import MAX_LIMIT, SearchHit
 from cerebro.domain.access import AccessCeiling, Scope, is_visible, validate_agent_name
 from cerebro.domain.content_hash import content_hash
-from cerebro.domain.decision import Decision
 from cerebro.domain.enums import Priority, Sensitivity, Status
 from cerebro.domain.errors import InvalidValueError
 from cerebro.domain.links import LinkKind
 from cerebro.domain.note import Note, NoteId
-from cerebro.domain.proposal import MAX_TEXT_LENGTH, ProposalKind, ProposalStatus, ProposedContent
 from cerebro.domain.report import Severity, ValidationReport, ViolationCode
 from cerebro.domain.vocabulary import Area, NoteType
 
@@ -345,173 +343,6 @@ class GetGraphRequest:
         _require_bool(self.include_history, "include_history")
 
 
-# --- write path: proposals ------------------------------------------------------------------------------------
-
-
-@dataclass(frozen=True, slots=True, kw_only=True)
-class SubmitProposalRequest:
-    """What an agent sends. There is deliberately **no agent / source field**: ``source.agent`` is the name of the
-    token, taken from the access context, so a payload cannot claim to come from someone else.
-    """
-
-    kind: ProposalKind
-    content: ProposedContent
-    target: NoteId | None = None
-    base_hash: str | None = None
-    source_session: str | None = None
-    source_context: str | None = None
-
-    def __post_init__(self) -> None:
-        if not isinstance(self.kind, ProposalKind):
-            raise InvalidValueError("kind", "expected a ProposalKind")
-        if not isinstance(self.content, ProposedContent):
-            raise InvalidValueError("content", "expected ProposedContent")
-        if self.target is not None and not isinstance(self.target, NoteId):
-            raise InvalidValueError("target", "expected a NoteId")
-        for name, value in (
-            ("base_hash", self.base_hash),
-            ("source_session", self.source_session),
-            ("source_context", self.source_context),
-        ):
-            if value is not None and not isinstance(value, str):
-                raise InvalidValueError(name, "expected a string")
-        for name, value in (("source_session", self.source_session), ("source_context", self.source_context)):
-            if value is not None and len(value) > MAX_TEXT_LENGTH:
-                raise InvalidValueError(name, f"longer than {MAX_TEXT_LENGTH} characters")
-
-
-@dataclass(frozen=True, slots=True, kw_only=True)
-class AdmissionResult:
-    proposal_id: str
-    valid: bool
-
-
-@dataclass(frozen=True, slots=True, kw_only=True)
-class AmendProposalRequest:
-    proposal_id: str
-    expected_revision: int
-    body: str
-
-    def __post_init__(self) -> None:
-        if type(self.expected_revision) is not int or self.expected_revision < 0:
-            raise InvalidValueError("revision", "expected a nonnegative integer")
-
-
-@dataclass(frozen=True, slots=True, kw_only=True)
-class AmendmentResult:
-    proposal_id: str
-    revision: int
-
-
-@dataclass(frozen=True, slots=True, kw_only=True)
-class ProposalOutcome:
-    """Where a proposal stands after a step of the write path. Never carries the proposed content."""
-
-    proposal_id: str
-    status: ProposalStatus
-    validation: ValidationReport | None = None
-    decision: Decision | None = None
-    conflict: bool = False
-    revision: int | None = None
-
-
-@dataclass(frozen=True, slots=True, kw_only=True)
-class ProposalIdRequest:
-    """Apply optionally requires the approved revision inspected by the owner."""
-
-    proposal_id: str
-    expected_revision: int | None = None
-
-    def __post_init__(self) -> None:
-        if self.expected_revision is not None and (
-            type(self.expected_revision) is not int or self.expected_revision < 0
-        ):
-            raise InvalidValueError("expected_revision", "expected a nonnegative integer")
-        if not isinstance(self.proposal_id, str) or not self.proposal_id:
-            raise InvalidValueError("proposal_id", "expected a non-empty string")
-
-
-@dataclass(frozen=True, slots=True, kw_only=True)
-class ListProposalsRequest:
-    proposal_id: str | None = None
-
-
-@dataclass(frozen=True, slots=True, kw_only=True)
-class InboxItem:
-    id: str
-    kind: ProposalKind
-    status: ProposalStatus
-    revision: int
-    source_agent: str
-    target: NoteId | None
-    conflict: bool
-
-
-@dataclass(frozen=True, slots=True, kw_only=True)
-class InboxPreview:
-    decision: Decision | None
-    candidate: NoteView | None
-    base: NoteView | None
-    base_label: Literal["empty", "base", "current"]
-    stale_base: bool
-    validation: ValidationReport | None
-    historical_validation: ValidationReport | None
-
-
-@dataclass(frozen=True, slots=True, kw_only=True)
-class InboxResult:
-    items: tuple[InboxItem, ...]
-    preview: InboxPreview | None = None
-
-
-class ReviewAction(StrEnum):
-    APPROVE = "approve"
-    REJECT = "reject"
-
-
-@dataclass(frozen=True, slots=True, kw_only=True)
-class ReviewProposalRequest:
-    """The owner's verdict. ``override`` replaces the curator's decision first (e.g. to name the id of a note to
-    create when the curator was the ``NullCurator``). ``reason`` is required to reject.
-    """
-
-    proposal_id: str
-    action: ReviewAction
-    reason: str | None = None
-    override: Decision | None = None
-    expected_revision: int | None = None
-    require_fresh_base: bool = False
-
-    def __post_init__(self) -> None:
-        _require_bool(self.require_fresh_base, "require_fresh_base")
-        if self.expected_revision is not None and (
-            type(self.expected_revision) is not int or self.expected_revision < 0
-        ):
-            raise InvalidValueError("expected_revision", "expected a nonnegative integer")
-        if not isinstance(self.proposal_id, str) or not self.proposal_id:
-            raise InvalidValueError("proposal_id", "expected a non-empty string")
-        if not isinstance(self.action, ReviewAction):
-            raise InvalidValueError("action", "expected a ReviewAction")
-        if self.reason is not None and not isinstance(self.reason, str):
-            raise InvalidValueError("reason", "expected a string")
-        if self.override is not None and not isinstance(self.override, Decision):
-            raise InvalidValueError("override", "expected a Decision")
-        if self.action is ReviewAction.REJECT and (self.reason is None or not self.reason.strip()):
-            raise InvalidValueError("reason", "required to reject")
-        if self.action is ReviewAction.REJECT and self.override is not None:
-            raise InvalidValueError("override", "not allowed when rejecting")
-
-
-class ApplyOutcome(StrEnum):
-    APPLIED = "applied"
-    ALREADY_APPLIED = "already_applied"
-    """A retry found the change already in the content repository; nothing was written."""
-    CONFLICT = "conflict"
-    """The target changed since ``base_hash``; the proposal went back to the owner, nothing was written."""
-    INVALID = "invalid"
-    """Re-validation right before writing found errors; the proposal went back to the owner, nothing was written."""
-
-
 class ApplyWarningCode(StrEnum):
     PREVIOUS_VERSION_IN_HISTORY = "previous_version_in_history"
     """An existing note became ``restricted``: its earlier, less sensitive version stays readable in git history."""
@@ -540,17 +371,6 @@ def sensitivity_raise_warnings(previous: Sensitivity | None, new: Sensitivity) -
             ),
         )
     return ()
-
-
-@dataclass(frozen=True, slots=True, kw_only=True)
-class ApplyProposalResult:
-    proposal_id: str
-    status: ProposalStatus
-    outcome: ApplyOutcome
-    note_id: NoteId | None = None
-    revision: str | None = None
-    validation: ValidationReport | None = None
-    warnings: tuple[ApplyWarning, ...] = ()
 
 
 # --- write path: owner edits ----------------------------------------------------------------------------------
@@ -599,7 +419,7 @@ class RebuildIndexResult:
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class HealthReportRequest:
-    """No parameters: the report always covers every note, proposal and index."""
+    """No parameters: the report always covers every note and index."""
 
 
 class HealthCode(StrEnum):
@@ -607,8 +427,6 @@ class HealthCode(StrEnum):
 
     ORPHAN_NOTE = "orphan_note"
     REVIEW_OVERDUE = "review_overdue"
-    STALE_PROPOSAL = "stale_proposal"
-    ORPHAN_PROPOSAL = "orphan_proposal"
     SEARCH_INDEX_STALE = "search_index_stale"
     GRAPH_INDEX_STALE = "graph_index_stale"
     INDEX_STALE = "index_stale"
@@ -616,7 +434,7 @@ class HealthCode(StrEnum):
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class HealthIssue:
-    """One problem. ``subject`` is a note id, a proposal id or the name of an index. ``message`` never contains
+    """One problem. ``subject`` is a note id or the name of an index. ``message`` never contains
     note text or a secret value (secret findings keep the detector, the field and the line only).
     """
 
@@ -631,7 +449,6 @@ class HealthIssue:
 class HealthReportResult:
     issues: tuple[HealthIssue, ...]
     notes_checked: int
-    proposals_checked: int
     search_index_checked: bool
     """False when the repository has more notes than one search page can list: only the graph index was compared."""
 

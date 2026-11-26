@@ -12,8 +12,8 @@ from cerebro.domain.enums import Priority
 from cerebro.domain.frontmatter import parse_note
 from cerebro.domain.note import NoteId
 from cerebro.domain.report import (
+    AGENT_WRITE_POLICY,
     OWNER_EDIT_POLICY,
-    PROPOSAL_POLICY,
     Finding,
     Severity,
     ValidationReport,
@@ -210,7 +210,7 @@ def test_findings_never_contain_the_secret(secret: str) -> None:
         for text in (finding.message, repr(finding), str(finding), finding.field or ""):
             assert secret not in text
             assert secret[4:] not in text  # not even most of it
-    report = validate_note(note, VOCABULARY, PROPOSAL_POLICY)
+    report = validate_note(note, VOCABULARY, AGENT_WRITE_POLICY)
     assert secret not in repr(report)
     assert secret[4:] not in repr(report)
 
@@ -239,13 +239,13 @@ def test_the_truncation_finding_has_a_line_but_no_detector() -> None:
 
 
 def test_the_policy_keeps_detector_and_line_but_drops_the_preview() -> None:
-    (violation,) = PROPOSAL_POLICY.report(scan_text(TOKENS["github classic"], field="body")).violations
+    (violation,) = AGENT_WRITE_POLICY.report(scan_text(TOKENS["github classic"], field="body")).violations
     assert violation.detector is not None
     assert violation.line == 1
     assert not hasattr(violation, "preview")
 
 
-@pytest.mark.parametrize("policy", [PROPOSAL_POLICY, OWNER_EDIT_POLICY])
+@pytest.mark.parametrize("policy", [AGENT_WRITE_POLICY, OWNER_EDIT_POLICY])
 def test_secret_is_an_error_under_both_policies(policy: object) -> None:
     from cerebro.domain.report import SeverityPolicy
 
@@ -257,7 +257,7 @@ def test_secret_is_an_error_under_both_policies(policy: object) -> None:
 
 
 def test_validate_note_reports_secrets_together_with_other_problems() -> None:
-    report = validate_note(make_note(priority=Priority.P0, body=TOKENS["aws"]), VOCABULARY, PROPOSAL_POLICY)
+    report = validate_note(make_note(priority=Priority.P0, body=TOKENS["aws"]), VOCABULARY, AGENT_WRITE_POLICY)
     assert {ViolationCode.SECRET_DETECTED, ViolationCode.PRIORITY_TYPE_MISMATCH} <= report.codes
 
 

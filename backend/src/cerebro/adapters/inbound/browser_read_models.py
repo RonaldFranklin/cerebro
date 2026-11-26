@@ -84,6 +84,5 @@ class HealthIssue(TypedDict):
 class HealthResponse(TypedDict):
     ok: bool
     notes_checked: int
-    proposals_checked: int
     search_index_checked: bool
     issues: list[HealthIssue]

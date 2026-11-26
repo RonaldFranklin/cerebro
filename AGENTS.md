@@ -17,7 +17,7 @@ create/update operations with authenticated attribution in Git.
 
 1. `docs/vision.md` — goals, non-goals, success criteria.
 2. `docs/architecture.md` — hexagonal layout, layers, ports, runtime topology.
-3. `docs/domain-model.md` — note schema, priorities, sensitivity, statuses, proposals.
+3. `docs/domain-model.md` — note schema, priorities, sensitivity, statuses and direct writes.
 4. `docs/roadmap.md` — phases and acceptance criteria. **Work only on the current phase.**
 5. `docs/adr/` — accepted decisions. Do not contradict an ADR; propose a new ADR that supersedes it instead.
 
@@ -31,18 +31,16 @@ create/update operations with authenticated attribution in Git.
 - **Phase 3 is approved.** The owner CLI and four authenticated MCP read tools are implemented and tested.
   [Delivery record](docs/plans/phase-3.md) · [owner's manual client checks](docs/agent-integration.md).
 - **Phase 3 checkpoint:** only the owner's manual Claude Code and Codex tests remain.
-- **Phase 4 is delivered.** The fifth MCP tool submits agent proposals for quota-controlled validation, curation
-  and local owner review. The [delivery record and security checkpoint](docs/plans/phase-4.md#5-final-report)
-  and [manual proposal checks](https://github.com/RonaldFranklin/cerebro/blob/e7264b869085e156140239e692b2c1a310650674/docs/agent-integration.md#3-propose-in-both-clients-and-approve-locally)
-  are ready for the owner.
-- **Phase 5 is delivered.** The owner browser API and web UI include the overview, search, reader,
-  global/local graph, Inbox review, editor and private health panel. See the
-  [delivery report and security checkpoint](docs/plans/phase-5.md#8-phase-5-final-report)
-  and [WSL walkthrough](docs/plans/phase-5.md#7-open-the-interface-from-wsl). The owner's visual
-  and security reviews are pending. Phase 7 (direct agent writes) is in progress. The owner authorized its
-  [plan](docs/plans/phase-7.md) and merges, including the ADR and security changes, after independent
-  review and green CI through the merge script. Phase 6 (deploy) follows with Docker
-  validation in WSL dev before hml and promotion of the same image to prod on the server.
+- **Phase 4 delivered the historical Inbox.** Phase 7 retired its submission and approval paths.
+  Earlier sealed records and backups are preserved. The owner's [Phase 4 checkpoint](docs/plans/phase-4.md#5-final-report)
+  refers to that release.
+- **Phase 5 is approved.** The browser UI serves the overview, search, reader, graph, editor and health.
+  The owner's manual checkpoints for Phases 3, 4 and 5 await their results.
+  [Phase 5 report](docs/plans/phase-5.md#8-phase-5-final-report) · [WSL demo](docs/plans/phase-5.md#7-open-the-interface-from-wsl)
+- **Phase 7 delivers direct agent writes.** The MCP tools `cerebro_write` and `cerebro_write_guide` require
+  an explicit write grant. Private owner sessions inspect note changes in **Recent changes**.
+  [Phase 7 report](docs/plans/phase-7.md#delivery-report) · [real-client walkthrough](docs/agent-integration.md).
+  Phase 6 (deploy) is next, beginning with Docker validation in WSL before hml and promotion of the same image to prod.
 - **Phase 2 decisions (2026-11-25):** the owner declined a MAC for token rows and accepted the
   [residual risk](docs/architecture.md#accepted-risks-owner-decision-2026-11-25). The owner approved
   `types-pyyaml` as a development dependency for strict type checking of the filesystem adapter.

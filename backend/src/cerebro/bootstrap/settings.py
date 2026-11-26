@@ -8,7 +8,6 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from cerebro.adapters.outbound.git import GitError, GitIdentity, validate_branch, validate_remote
-from cerebro.domain.proposal import ProposalLimits
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -24,7 +23,6 @@ class Settings:
     git_name: str
     git_email: str
     writes_per_hour: int = 20
-    proposal_limits: ProposalLimits = field(default_factory=ProposalLimits)
     git_remote: str | None = field(default=None, repr=False)
     """Backup remote for ``VersionControl.push``; ``None`` disables publishing. Hidden from ``repr``: a remote
     URL may carry credentials."""
@@ -38,6 +36,7 @@ class ConfigurationError(Exception):
 
 
 _CONFIG_KEYS = frozenset({"content_dir", "state_dir", "key_file", "git_name", "git_email", "git_remote", "git_branch"})
+# Accept valid retired quota keys in existing TOML configurations during upgrade.
 _LIMIT_KEYS = frozenset({"proposals_per_hour", "proposals_pending", "writes_per_hour"})
 _MAX_CONFIG_BYTES = 65536
 
@@ -102,13 +101,8 @@ def load_settings(file: Path | None, environment: Mapping[str, str]) -> Settings
             raise ConfigurationError("quota settings must be positive integers")
         return number
 
-    defaults = ProposalLimits()
     configuration = Settings(
         writes_per_hour=limit("writes_per_hour", 20),
-        proposal_limits=ProposalLimits(
-            per_hour=limit("proposals_per_hour", defaults.per_hour),
-            pending=limit("proposals_pending", defaults.pending),
-        ),
         content_repo=path("content_dir"),
         state_dir=path("state_dir"),
         key_file=path("key_file"),

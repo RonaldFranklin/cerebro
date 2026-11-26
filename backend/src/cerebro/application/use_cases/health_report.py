@@ -1,7 +1,6 @@
 """``HealthReport``: everything wrong with the knowledge base, for the owner."""
 
 from collections.abc import Iterable, Mapping
-from datetime import datetime, timedelta
 
 from cerebro.application.access import require_owner
 from cerebro.application.dto import HealthCode, HealthIssue, HealthReportRequest, HealthReportResult
@@ -9,7 +8,6 @@ from cerebro.application.errors import PermissionDenied
 from cerebro.application.index_state import index_is_stale
 from cerebro.application.ports.graph import GraphIndex
 from cerebro.application.ports.notes import NoteRepository
-from cerebro.application.ports.proposals import ProposalStore
 from cerebro.application.ports.search import MAX_LIMIT, SearchIndex, SearchQuery
 from cerebro.application.ports.system import Clock
 from cerebro.domain.access import AccessCeiling, AccessContext
@@ -23,9 +21,6 @@ from cerebro.domain.secrets import secret_message
 from cerebro.domain.validation import validate_note
 from cerebro.domain.vocabulary import Vocabulary
 
-STALE_PROPOSAL_AFTER = timedelta(days=30)
-"""A proposal still waiting (not applied or rejected) this long after its last change is reported."""
-
 FULL_VIEW = AccessCeiling(Sensitivity.RESTRICTED)
 
 
@@ -35,9 +30,8 @@ class HealthReport:
 
     It runs the **same domain rules** as the write paths over every stored note, with the owner-edit severity
     policy (broken links warn): per-note rules, budgets, cross-note rules (broken links, hubs, ``superseded_by``
-    cycles, hub chains), the combined P0 budget. It adds orphan notes and overdue ``review_by`` dates, stale and
-    orphaned proposals, and compares both indexes with the repository, by recorded revision and note by note (a stale
-    index is an error: run ``RebuildIndex``).
+    cycles, hub chains), the combined P0 budget. It adds orphan notes and overdue ``review_by`` dates, then checks both
+    index revisions and individual entries against the content repository. A stale index requires ``RebuildIndex``.
 
     Secrets in existing notes are reported as ``secret_detected`` with the field, detector and line only,
     described from the findings' structured fields (the scanner's message text is never used), so the
@@ -47,14 +41,12 @@ class HealthReport:
     def __init__(
         self,
         notes: NoteRepository,
-        proposals: ProposalStore,
         search: SearchIndex,
         graph: GraphIndex,
         clock: Clock,
         vocabulary: Vocabulary,
     ) -> None:
         self._notes = notes
-        self._proposals = proposals
         self._search = search
         self._graph = graph
         self._clock = clock
@@ -89,14 +81,11 @@ class HealthReport:
             for n in notes
             if n.is_current and n.review_by is not None and n.review_by < now.date()
         )
-        issues.extend(self._proposal_issues(notes, now))
         search_checked = len(notes) <= MAX_LIMIT
         issues.extend(self._index_issues(notes, search_checked=search_checked))
-        proposals = self._proposals.find()
         return HealthReportResult(
             issues=tuple(issues),
             notes_checked=len(notes),
-            proposals_checked=len(proposals),
             search_index_checked=search_checked,
         )
 
@@ -117,28 +106,6 @@ class HealthReport:
             )
         words = {n.id: word_count(n.body) for n in notes if n.priority is Priority.P0 and n.is_current}
         yield from (_finding_issue("core-budget", f) for f in core_budget_findings(words))
-
-    def _proposal_issues(self, notes: tuple[Note, ...], now: datetime) -> Iterable[HealthIssue]:
-        existing = {n.id for n in notes}
-        for proposal in self._proposals.find():
-            if proposal.status.is_terminal:
-                continue
-            if proposal.target is not None and proposal.target not in existing:
-                yield HealthIssue(
-                    subject=proposal.id,
-                    code=HealthCode.ORPHAN_PROPOSAL,
-                    severity=Severity.WARNING,
-                    field="target",
-                    message="targets a note that does not exist",
-                )
-            if now - proposal.updated_at > STALE_PROPOSAL_AFTER:
-                yield HealthIssue(
-                    subject=proposal.id,
-                    code=HealthCode.STALE_PROPOSAL,
-                    severity=Severity.WARNING,
-                    field=None,
-                    message=f"still {proposal.status.value} after more than {STALE_PROPOSAL_AFTER.days} days",
-                )
 
     def _index_issues(self, notes: tuple[Note, ...], *, search_checked: bool) -> Iterable[HealthIssue]:
         if index_is_stale(self._notes, self._search, self._graph):

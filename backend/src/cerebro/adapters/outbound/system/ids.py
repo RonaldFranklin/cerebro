@@ -8,7 +8,7 @@ _UUID7_LOCK = threading.Lock()
 
 
 class SystemIdGenerator:
-    """Proposal ids are UUIDv7 (48-bit millisecond timestamp first, then a counter and random bits), rendered as
+    """Owner edit ids are UUIDv7 (48-bit millisecond timestamp first, then a counter and random bits), rendered as
     32 lowercase hex characters: time-sortable as plain strings and inside the 1-64 character id alphabet.
 
     CPython 3.14's ``uuid.uuid7()`` keeps a process-wide counter, so ids created in the same millisecond still
@@ -16,14 +16,12 @@ class SystemIdGenerator:
     threads (the counter state of ``uuid7`` is not documented as thread-safe). Across processes, order within the
     same millisecond is not guaranteed.
 
-    The id embeds the creation time (to the millisecond) deliberately: it makes ids sortable, and the proposal
-    already stores ``created_at``, so nothing new is disclosed.
     """
 
     def new_note_id(self) -> str:
         return secrets.token_hex(16)
 
-    def new_proposal_id(self) -> str:
+    def new_edit_id(self) -> str:
         with _UUID7_LOCK:
             return uuid.uuid7().hex
 

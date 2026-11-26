@@ -131,7 +131,7 @@ def validate_curator_name(name: object) -> str:
 
 @dataclass(frozen=True, slots=True)
 class Agent:
-    """An AI agent identified by its token name. The name becomes ``source.agent`` on proposals."""
+    """An AI agent identified by its token name. Direct writes identify the authenticated agent in Git."""
 
     name: str
 

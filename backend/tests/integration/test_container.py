@@ -4,45 +4,29 @@ import shutil
 import stat
 import threading
 import time
-from collections.abc import Sequence
 from dataclasses import replace
 from pathlib import Path
 
 import pytest
 
 from cerebro.adapters.outbound.filesystem import WriterBusyError
-from cerebro.application.dto import (
-    ApplyOutcome,
-    ProposalIdRequest,
-    RebuildIndexRequest,
-    ReviewAction,
-    ReviewProposalRequest,
-    SubmitProposalRequest,
-)
 from cerebro.application.index_state import index_is_stale
-from cerebro.application.ports import NoteChange, SearchQuery
-from cerebro.bootstrap.container import Container, Serialized, StateDirectoryError, WriterLock, build_container
-from cerebro.domain.access import AccessCeiling, AccessContext, Agent, Scope
-from cerebro.domain.commit_message import AgentWriteCommit, CommitMessage
-from cerebro.domain.enums import Priority, Sensitivity
-from cerebro.domain.note import Note, NoteId
-from cerebro.domain.proposal import ProposalKind, ProposedContent
-from cerebro.domain.vocabulary import Area, NoteType
+from cerebro.application.ports import SearchQuery
+from cerebro.bootstrap.container import Serialized, StateDirectoryError, WriterLock, build_container
+from cerebro.domain.access import AccessCeiling, AccessContext
+from cerebro.domain.enums import Sensitivity
+from cerebro.domain.note import NoteId
+from cerebro.domain.vocabulary import NoteType
 from tests.integration.content_kit import (
     HUB_ID,
     SampleRepo,
     make_sample_repo,
 )
-from tests.unit.domain.builders import VALID_SUMMARY, make_note
+from tests.unit.domain.builders import make_note
 
 pytestmark = pytest.mark.skipif(shutil.which("git") is None, reason="the git executable is not installed")
 
 OWNER = AccessContext.for_owner(AccessCeiling(Sensitivity.RESTRICTED))
-AGENT = AccessContext(
-    principal=Agent("claude-code"),
-    ceiling=AccessCeiling(Sensitivity.INTERNAL),
-    scopes=frozenset({Scope.READ, Scope.PROPOSE}),
-)
 
 
 @pytest.fixture
@@ -70,12 +54,7 @@ class TestWiring:
             "read_note",
             "get_neighbors",
             "get_graph",
-            "submit_proposal",
-            "amend_proposal",
-            "validate_proposal",
-            "curate_proposal",
-            "review_proposal",
-            "apply_proposal",
+            "agent_write",
             "owner_edit_note",
             "rebuild_index",
             "health_report",
@@ -206,71 +185,3 @@ class TestWriterLock:
         lock = WriterLock(tmp_path / "w.lock", timeout=0.1)
         with lock.held(), pytest.raises(WriterBusyError), lock.held():
             pass
-
-    def test_a_failed_index_update_is_never_hidden_by_a_concurrent_apply(self, sample: SampleRepo) -> None:
-        container = build_container(sample.settings)
-        container.start()
-        real_upsert = container.search.upsert
-        real_apply = container.notes.apply
-        failing_id = NoteId("note-that-fails")
-
-        def slow_apply(changes: Sequence[NoteChange], message: CommitMessage | AgentWriteCommit) -> str:
-            # Unserialised, B reads the old head while A is still before its commit, then commits after A.
-            time.sleep(0.2 if changes[0].note.id == failing_id else 0.4)
-            return real_apply(changes, message)
-
-        def flaky_upsert(note: Note) -> None:
-            if note.id == failing_id:
-                raise RuntimeError("index unavailable")
-            real_upsert(note)
-
-        container.notes.apply = slow_apply  # type: ignore[method-assign]
-        container.search.upsert = flaky_upsert  # type: ignore[method-assign]
-        failing = approved(container, "Note that fails")
-        healthy = approved(container, "Healthy note")
-        errors: list[BaseException] = []
-        unexpected: list[BaseException] = []
-
-        def run(proposal_id: str) -> None:
-            try:
-                result = container.use_cases.apply_proposal.execute(ProposalIdRequest(proposal_id=proposal_id), OWNER)
-                assert result.outcome is ApplyOutcome.APPLIED
-            except RuntimeError as error:
-                errors.append(error)
-            except BaseException as error:
-                unexpected.append(error)
-
-        threads = [threading.Thread(target=run, args=(failing,)), threading.Thread(target=run, args=(healthy,))]
-        threads[0].start()
-        time.sleep(0.05)
-        threads[1].start()
-        for thread in threads:
-            thread.join()
-        assert unexpected == []
-        assert len(errors) == 1
-        assert index_is_stale(container.notes, container.search, container.graph)
-        container.search.upsert = real_upsert  # type: ignore[method-assign]
-        container.use_cases.rebuild_index.execute(RebuildIndexRequest(), OWNER)
-        assert not index_is_stale(container.notes, container.search, container.graph)
-
-
-def approved(container: Container, title: str) -> str:
-    content = ProposedContent(
-        title=title,
-        body=f"# {title}\n\nContent of {title}.\n",
-        area=Area("infrastructure"),
-        type=NoteType("guide"),
-        priority=Priority.P2,
-        sensitivity=Sensitivity.PUBLIC,
-        summary=VALID_SUMMARY,
-        hub=HUB_ID,
-        rationale="needed",
-    )
-    cases = container.use_cases
-    outcome = cases.submit_proposal.execute(
-        SubmitProposalRequest(kind=ProposalKind.CREATE, content=content), replace(AGENT, token_id="test-token")
-    )
-    pid = outcome.proposal_id
-    assert outcome.valid
-    cases.review_proposal.execute(ReviewProposalRequest(proposal_id=pid, action=ReviewAction.APPROVE), OWNER)
-    return pid

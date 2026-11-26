@@ -3,7 +3,7 @@
 Rules never raise and never decide severity: they return ``Finding``s (code, field, message). A
 ``SeverityPolicy`` chosen by the write path turns findings into a ``ValidationReport`` where each
 ``Violation`` is an ``error`` (blocks the change) or a ``warning`` (reported, does not block). The same
-rule can therefore be an error for agent proposals and a warning for owner edits (e.g. broken links).
+rule can therefore be an error for agent writes and a warning for owner edits (e.g. broken links).
 """
 
 from collections.abc import Iterable
@@ -146,8 +146,8 @@ _ALWAYS_WARNINGS: Final = frozenset(
     {ViolationCode.BODY_OVER_SOFT_LIMIT, ViolationCode.DUPLICATE_RELATED, ViolationCode.POSSIBLE_DUPLICATE}
 )
 
-PROPOSAL_POLICY: Final = SeverityPolicy(name="proposal", warnings=_ALWAYS_WARNINGS)
-"""Agent proposals: strict."""
+AGENT_WRITE_POLICY: Final = SeverityPolicy(name="agent_write", warnings=_ALWAYS_WARNINGS)
+"""Agent writes use strict link validation."""
 
 OWNER_EDIT_POLICY: Final = SeverityPolicy(name="owner_edit", warnings=_ALWAYS_WARNINGS | {ViolationCode.BROKEN_LINK})
 """Owner edits and health reports: broken links only warn (the owner may link to a note not written yet).

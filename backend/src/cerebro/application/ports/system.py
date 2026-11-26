@@ -15,12 +15,12 @@ class IdGenerator(Protocol):
         """An unpredictable, unique kebab-case identifier for an agent-created note."""
         ...
 
-    def new_proposal_id(self) -> str:
-        """A unique, time-sortable proposal id (1-64 characters of letters, digits, ``_`` or ``-``)."""
+    def new_edit_id(self) -> str:
+        """A unique, time-sortable owner edit id (1-64 characters of letters, digits, ``_`` or ``-``)."""
         ...
 
     def new_token_id(self) -> str:
-        """A unique token id (same alphabet as proposal ids)."""
+        """A unique token id (same alphabet as owner edit ids)."""
         ...
 
     def new_token_secret(self) -> str:

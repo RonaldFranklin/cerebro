@@ -97,6 +97,38 @@ def _is_encrypted(data: bytes) -> bool:
     return len(lines) >= 4 and lines[0] == b"---" and lines[3].startswith(b"encryption:")
 
 
+def decode_note_file(relative: str, data: bytes, cipher: Cipher) -> Note:
+    folder, _, name = relative.partition("/")
+    stem = name.removesuffix(".md")
+    try:
+        if _is_encrypted(data):
+            header_id, plaintext = decode_restricted(data, cipher)
+            if header_id.value != stem:
+                raise NoteFileError(relative, "the encrypted header id differs from the file name")
+            note = parse_note_bytes(plaintext)
+            if note.id != header_id:
+                raise NoteFileError(relative, "the id inside the encrypted payload differs from the header")
+            if note.sensitivity is not Sensitivity.RESTRICTED:
+                raise NoteFileError(relative, "an encrypted note must declare sensitivity restricted")
+        else:
+            note = parse_note_bytes(data)
+            if note.sensitivity is Sensitivity.RESTRICTED:
+                raise NoteFileError(relative, "a plaintext file declares sensitivity restricted (refused)")
+            if note.id.value != stem:
+                raise NoteFileError(relative, "the note id differs from the file name")
+    except RestrictedFormatError:
+        raise NoteFileError(relative, "malformed restricted-note file") from None
+    except DecryptionError:
+        raise NoteFileError(
+            relative, "restricted note cannot be decrypted (wrong key, tampering or swapped id)"
+        ) from None
+    except NoteFormatError as exc:
+        raise NoteFileError(relative, exc.reason) from None
+    if folder_for(note) != folder:
+        raise NoteFileError(relative, f"a note of this type belongs in {folder_for(note)}/, not {folder}/")
+    return note
+
+
 @dataclass(frozen=True, slots=True)
 class _Prepared:
     change: NoteChange
@@ -198,38 +230,7 @@ class FilesystemNoteRepository:
             raise NoteFileError(relative, "the file disappeared while reading") from None
         except OSError:
             raise NoteFileError(relative, "cannot be read (symlink, not a regular file or too large)") from None
-        return self._decode(relative, data)
-
-    def _decode(self, relative: str, data: bytes) -> Note:
-        folder, _, name = relative.partition("/")
-        stem = name.removesuffix(".md")
-        try:
-            if _is_encrypted(data):
-                header_id, plaintext = decode_restricted(data, self._cipher)
-                if header_id.value != stem:
-                    raise NoteFileError(relative, "the encrypted header id differs from the file name")
-                note = parse_note_bytes(plaintext)
-                if note.id != header_id:
-                    raise NoteFileError(relative, "the id inside the encrypted payload differs from the header")
-                if note.sensitivity is not Sensitivity.RESTRICTED:
-                    raise NoteFileError(relative, "an encrypted note must declare sensitivity restricted")
-            else:
-                note = parse_note_bytes(data)
-                if note.sensitivity is Sensitivity.RESTRICTED:
-                    raise NoteFileError(relative, "a plaintext file declares sensitivity restricted (refused)")
-                if note.id.value != stem:
-                    raise NoteFileError(relative, "the note id differs from the file name")
-        except RestrictedFormatError:
-            raise NoteFileError(relative, "malformed restricted-note file") from None
-        except DecryptionError:
-            raise NoteFileError(
-                relative, "restricted note cannot be decrypted (wrong key, tampering or swapped id)"
-            ) from None
-        except NoteFormatError as exc:
-            raise NoteFileError(relative, exc.reason) from None
-        if folder_for(note) != folder:
-            raise NoteFileError(relative, f"a note of this type belongs in {folder_for(note)}/, not {folder}/")
-        return note
+        return decode_note_file(relative, data, self._cipher)
 
     def _load_all(self) -> tuple[Note, ...]:
         notes: dict[NoteId, Note] = {}

@@ -8,7 +8,7 @@ and every agent you use — Claude Code, Codex, ChatGPT or anything that speaks
 [MCP](https://modelcontextprotocol.io) — reads the same curated context instead of you pasting the same
 Markdown file into every new chat.
 
-> **Status:** MCP reads and validated agent writes are available. Phase 7 is in progress. See [`docs/roadmap.md`](docs/roadmap.md).
+> **Status:** Agents can read and write through MCP. The owner can inspect each attributed commit and diff in **Recent changes**. See [`docs/roadmap.md`](docs/roadmap.md).
 
 ## Why
 
@@ -52,7 +52,8 @@ Cérebro makes that context a single, structured, versioned source that agents c
 - [Architecture](docs/architecture.md)
 - [Domain model](docs/domain-model.md)
 - [Roadmap](docs/roadmap.md)
-- [Connecting agents](docs/agent-integration.md)
+- [Connecting agents and the three-line project snippet](docs/agent-integration.md#project-agentsmd-snippet)
+- [Writing guide](backend/src/cerebro/adapters/inbound/write-guide-v1.md)
 - [Architecture Decision Records](docs/adr/)
 
 ## License

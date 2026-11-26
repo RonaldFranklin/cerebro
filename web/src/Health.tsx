@@ -10,7 +10,6 @@ interface Finding {code: string; severity: Severity; field: string | null; subje
 interface HealthReport {
   ok: boolean;
   notes_checked: number;
-  proposals_checked: number;
   search_index_checked: boolean;
   issues: Finding[];
 }
@@ -22,15 +21,13 @@ const descriptions: Record<string,string> = {
   secret_detected: "Secret scanner match",
   broken_link: "Broken link",
   orphan_note: "Note has no incoming or outgoing links",
-  orphan_proposal: "Proposal target is missing",
-  stale_proposal: "Proposal awaiting action",
   review_overdue: "Note review is overdue",
   body_over_soft_limit: "Body exceeds the recommended size",
   body_over_hard_limit: "Body exceeds the maximum size",
   hub_over_budget: "Hub exceeds its word budget",
   core_over_budget: "Core notes exceed their combined word budget",
 };
-const nonNoteFindings = new Set(["orphan_proposal","stale_proposal","index_stale","core_over_budget"]);
+const nonNoteFindings = new Set(["index_stale","core_over_budget"]);
 
 function indexChecks(report: HealthReport) {
   const codes = new Set(report.issues.map(issue => issue.code));
@@ -65,7 +62,6 @@ export function HealthScreen({api}: {api:ApiClient}) {
     <section className="health-stats" aria-label="Report summary">
       <div className="health-summary"><span>Report status</span><strong data-tone={errors ? "error" : warnings ? "warning" : "ok"}>{summary}</strong></div>
       <div><span>Notes checked</span><strong>{data.notes_checked}</strong></div>
-      <div><span>Proposals checked</span><strong>{data.proposals_checked}</strong></div>
     </section>
     <section className="health-index"><h2>Index freshness</h2><dl>
       {indexChecks(data).map(check => <div key={check.name}><dt>{check.name}</dt><dd>{check.status}</dd></div>)}
