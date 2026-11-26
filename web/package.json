@@ -1,0 +1,37 @@
+{
+  "dependencies": {
+    "@codemirror/autocomplete": "6.20.4",
+    "@codemirror/commands": "6.11.1",
+    "@codemirror/lang-markdown": "6.5.2",
+    "@codemirror/state": "6.7.6",
+    "@codemirror/view": "6.43.15",
+    "@tanstack/react-query": "5.108.0",
+    "dompurify": "3.4.18",
+    "graphology": "0.26.0",
+    "graphology-layout-forceatlas2": "0.10.1",
+    "marked": "18.2.1",
+    "react": "19.3.1",
+    "react-dom": "19.3.1",
+    "sigma": "4.0.6"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.65.1",
+    "@types/node": "26.6.6",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "graphology-types": "0.24.8",
+    "typescript": "7.0.2",
+    "vite": "8.3.8"
+  },
+  "name": "cerebro-web",
+  "version": "0.0.0",
+  "private": true,
+  "packageManager": "pnpm@12.22.0",
+  "type": "module",
+  "engines": {
+    "node": "26.13.1"
+  },
+  "scripts": {
+    "test:toolchain": "tsc -p tests/toolchain && vite build tests/toolchain && node tests/toolchain/verify.ts"
+  }
+}

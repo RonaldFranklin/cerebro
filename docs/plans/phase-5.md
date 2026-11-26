@@ -4,7 +4,7 @@
 
 ## 1. Delivery sequence
 
-PR 1 records the decision in [ADR-0019](../adr/0019-owner-browser-api.md). PRs 2–11 are planned. Start each branch from current main after the preceding PR merges. The owner authorizes merges for all eleven PRs, including security and dependency changes, with independent review, findings resolved, completed green CI and scripts/merge-pr.sh. The dependency, ADR and privileged setup boundaries are recorded in §6.
+PR 1 records the decision in [ADR-0019](../adr/0019-owner-browser-api.md). PR 2 pins the approved inventory. PRs 3–11 are planned. Start each branch from current main after the preceding PR merges. The owner authorizes merges for all eleven PRs, including security and dependency changes, with independent review, findings resolved, completed green CI and scripts/merge-pr.sh. The dependency, ADR and privileged setup boundaries are recorded in §6.
 
 | PR and branch | Deliverable | Verification before merge |
 |---|---|---|
@@ -98,7 +98,7 @@ a per-response style nonce through `EditorView.cspNonce`. Browser tests must run
 <details>
 <summary>Additional npm artifact pins in the planning resolution</summary>
 
-The trial lock contains 121 distinct package versions across both pnpm lockfile documents, including
+The committed lock contains 121 distinct package versions across both pnpm lockfile documents, including
 optional native binaries for other platforms. The table above gives the direct choices. The remaining
 families below are grouped where their pinned version and publication date match. PR owners will attach
 the actual resolved lock diff and report any change from this snapshot. The browser revision packaged by
@@ -177,19 +177,38 @@ For a fresh WSL Ubuntu shell with curl, tar, xz and sha256sum, install the offic
 )
 ```
 
-Stop if verification fails. Select the installed Node in each new shell, or use the nvm selection above. Install the pinned package manager locally with the bundled npm.
+Stop if verification fails. Select the installed Node in each new shell, or use the nvm selection above. Install the native pnpm binary for glibc-based WSL Ubuntu. Verify the archive against the SHA-512 digest from the committed lock before extracting it.
 
 ```bash
 case "$(uname -m)" in x86_64) arch=x64 ;; aarch64) arch=arm64 ;; esac
 export PATH="$HOME/.local/opt/node-v26.13.1-linux-$arch/bin:$PATH"   # archive installation
 node --version                                                    # v26.13.1
 pnpm_dir="$HOME/.local/opt/cerebro-pnpm-12.22.0"
-npm install --prefix "$pnpm_dir" --before=2026-11-19T00:00:00Z --no-audit --no-fund pnpm@12.22.0
-export PATH="$pnpm_dir/node_modules/.bin:$PATH"
-pnpm --version                                                    # 12.22.0
+(
+  set -eu
+  case "$arch" in
+    x64) digest=881019018098a28c3a83468e6ca9a9aca9080463bbda62b82857ea22b63b8c874746401b37aeed70dd3381a3c4dfd50011d31cae42e12f012697e54cc5ff21f1 ;;
+    arm64) digest=d4c67719f14215c92ab8024fe9667df392eb77930fe58340eef3d91fbf56fb5415cf0979e5f54c76c00e7337469c5794e23a8cc04467935dbdff583dcd8c610f ;;
+    *) exit 1 ;;
+  esac
+  tmp="$(mktemp -d)"
+  trap 'rm -rf -- "$tmp"' EXIT
+  cd "$tmp"
+  curl -fsSLo pnpm.tgz "https://registry.npmjs.org/@pnpm/exe.linux-$arch/-/exe.linux-$arch-12.22.0.tgz"
+  printf '%s  pnpm.tgz\n' "$digest" | sha512sum -c -
+  mkdir -p "$pnpm_dir"
+  tar -xzf pnpm.tgz --strip-components=1 -C "$pnpm_dir" package/pnpm
+)
+if (( $? == 0 )); then
+  export PATH="$pnpm_dir:$PATH"
+  pnpm --version                                                  # 12.22.0
+else
+  echo 'pnpm installation failed.' >&2
+  false
+fi
 ```
 
-**Commands the implementation PRs must provide.** From the repository root in WSL, run the following against a disposable synthetic instance. The web commands and fixture launcher are planned deliverables. Keep the existing CLI and MCP entry points usable without installing Node on the service host.
+**Commands the implementation PRs must provide.** From the repository root on x86-64 WSL Ubuntu, run the following against a disposable synthetic instance. The browser binary inventory covers Linux x64; the ARM64 instructions above cover the Node and pnpm installations. The web commands and fixture launcher are planned deliverables. Keep the existing CLI and MCP entry points usable without installing Node on the service host.
 
 ```bash
 (cd backend && uv sync --locked && uv run --locked ruff check . && uv run --locked ruff format --check . &&
@@ -219,3 +238,13 @@ The owner approved PR #55, all dependencies in §4, user-space Node 26.13.1 and 
 | Each of PRs 7–11 | Capture the screens delivered by that PR with Playwright against synthetic fixtures and commit the images in `docs/screenshots/phase-5/`. Link directly to those images in that PR's description. The owner's visual review follows delivery and is independent of the CI and merge gates. |
 
 At close, document the exact WSL command to open the UI through `devtools.web_demo`, alongside the usual delivery, tests, decisions and security report.
+
+### PR 2 delivery record
+
+The owner completed the single privileged WSL hand-off. The pinned Playwright CLI reported that
+the Chromium system packages were installed. Node and pnpm were installed under the user account.
+The Linux x64 browser downloads matched the three URLs and dates in §4. The committed web lock
+matches the approved inventory, and the Python lock adds only FastAPI and annotated-doc.
+TypeScript 7 checks Vite, Playwright and CodeMirror types in strict mode. The native Vite build
+bundles a Markdown editor. Playwright opens it over fixture HTTPS and verifies editor styling under the browser CSP. On x86-64 WSL Ubuntu, run this compatibility check with
+`cd web && pnpm install --frozen-lockfile && pnpm exec playwright install chromium && pnpm run test:toolchain`.

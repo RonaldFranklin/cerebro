@@ -262,12 +262,12 @@ Full policy in [ADR-0013](adr/0013-stack-and-dependency-policy.md). Summary:
 | Git | `git` CLI via `subprocess` | no git library |
 | Crypto | `cryptography` (Fernet) | adapter only |
 | Password hashing | `hashlib.scrypt` (stdlib) | single admin user |
-| HTTP | Uvicorn for MCP, FastAPI planned for Phase 5 | adapter and bootstrap only |
+| HTTP | Uvicorn and FastAPI | adapter and bootstrap only |
 | MCP | official `mcp` Python SDK | adapter only |
 | CLI | argparse (stdlib) | local owner commands, ADR-0017 |
 | LLM | provider SDKs, one adapter each | optional, Phase 7 |
 | Quality | pytest, ruff, mypy (strict), import-linter | custom `stdlib_only` contract type in `backend/devtools/` |
-| Web | Node Active LTS (exact version chosen in Phase 5), pnpm, React, TypeScript, Vite, TanStack Query, Sigma.js, graphology, CodeMirror 6 | |
+| Web | Node 26.13.1 Active LTS, pnpm 12.22.0, React, TypeScript, Vite, TanStack Query, Sigma.js, graphology, CodeMirror 6 | |
 
 All versions are pinned exactly in lockfiles. Exact versions are the newest stable releases published at least
 7 days earlier ([ADR-0013](adr/0013-stack-and-dependency-policy.md)), and recorded here once the lockfile is
@@ -292,7 +292,18 @@ have been published at least 7 days earlier ([ADR-0013](adr/0013-stack-and-depen
 | PyYAML | 6.0.3 (runtime, `==` pinned) | frontmatter and `schema/*.yaml` through a restricted `SafeLoader` (no anchors, aliases, tags, duplicate keys; everything but `null` stays text) and a quoting `SafeDumper`; adapter only (`cerebro.adapters.outbound.filesystem`) |
 | types-PyYAML | 6.0.12.20261113 (dev, `==` pinned) | type stubs so `mypy --strict` can check the PyYAML adapter |
 | mcp | 2.3.0 (released 2026-10-02) | official SDK for tool schemas, Streamable HTTP and dev stdio support |
+| FastAPI | 0.165.0 (released 2026-11-18); annotated-doc 0.0.7 (released 2026-11-18) | HTTP API; annotated-doc is its only new transitive dependency |
 | uvicorn | 0.54.0 (released 2026-09-25) | ASGI server for MCP listeners |
 
 The Phase 3 dependency PR records the versions and upload dates of the full MCP and Uvicorn dependency trees.
-Frontend versions (Node, pnpm, packages) are added in Phase 5.
+
+### Pinned web versions
+
+Node 26.13.1 and pnpm 12.22.0 build and test the static UI. React and React DOM 19.3.1,
+TanStack React Query 5.108.0, Sigma 4.0.6, Graphology 0.26.0 and ForceAtlas2 0.10.1
+provide the UI and graph. The editor uses CodeMirror state 6.7.6, view 6.43.15, commands 6.11.1,
+lang-markdown 6.5.2 and autocomplete 6.20.4. Marked 18.2.1 and DOMPurify 3.4.18 render
+and sanitize Markdown. TypeScript 7.0.2, Vite 8.3.8 and Playwright 1.65.1 compile, bundle and
+test the frontend. The [Phase 5 inventory](plans/phase-5.md#4-dependency-proposal-and-verified-versions)
+records the type packages, transitive distributions and UTC release dates for the committed
+[web lockfile](../web/pnpm-lock.yaml).
