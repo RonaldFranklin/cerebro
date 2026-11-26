@@ -1,0 +1,212 @@
+# Phase 5 plan — HTTP API and owner web UI
+
+**Proposed for owner approval, 2026-11-25.** Deliver the six owner screens on the existing private service. Phase 7 follows this phase. Docker validation in WSL and deployment to the server belong to Phase 6. The Phase 3 manual checks and the Phase 4 security checkpoint retain their recorded status. [Roadmap](../roadmap.md) · [Architecture](../architecture.md) · [Previous delivery](phase-4.md)
+
+## 1. Delivery sequence
+
+Every row is planned. Start each branch from current main after the previous PR merges. Record owner adjustments here before implementation. Use the independent review, CI, security hand-off and merge rules in AGENTS.md §5. Approval of this document will establish the scope. Prior phase merge authorizations were phase-specific.
+
+| PR and branch | Deliverable | Verification before merge |
+|---|---|---|
+| 1 · `docs/phase-5-start` | Record approval, new dependencies, browser session and listener design in an ADR. Mark the phase in progress. | Reconcile ADRs 0001, 0005, 0009, 0010, 0011, 0012, 0013 and 0017. Trace each new port and dependency to a later PR. |
+| 2 · `phase-5/owner-auth` | Owner password provisioning, login throttling, session issuance, expiry and revocation. Inject clock and identity into application use cases. | Test-first with fakes, then real scrypt and shared store contracts. Test bad credentials, parallel attempts, rolling window, reset, logout, process restart and safe state upgrade. |
+| 3 · `phase-5/http-shell` | Mount FastAPI and the distribution assets alongside /mcp. Add session endpoints, CSRF and security headers. | Real sockets plus HTTP integration tests for login/logout, limits, CSRF, host and origin checks, cookie flags, cache policy and public/private separation. All five MCP tools and the CLI keep passing. |
+| 4 · `phase-5/read-api` | Typed search, overview, note, graph, neighborhood and health endpoints. Extend the graph projection with area and permitted sensitivity. | Compare API results against use cases and fixtures at each ceiling. Test hidden/missing equality, invisible edge endpoints, history, hub membership, filtered results and restricted-only health. |
+| 5 · `phase-5/owner-write-api` | Owner edit and Inbox list, preview/diff, amend, approve/apply, resume and reject. | Exercise preview → concurrent edit → conflict with zero overwrite, restricted-history warning, validation errors, and one git commit with trailers after successful apply. |
+| 6 · `phase-5/web-foundation` | Pin the frontend tools. Build the dark application shell, login, session handling, typed API client and test harness. Serve the production build through the backend. | Frozen install, strict TypeScript, production build, keyboard login/logout, expiry and cache clearing. Verify SPA deep links and static asset allowlist on the backend origin. |
+| 7 · `phase-5/search-reader` | Search and note reader, section navigation, sanitized Markdown and browser translation boundaries. | Browser component tests cover empty results, filtering, hub/section navigation, text semantics, blocked unsafe markup/URLs and translation attributes. |
+| 8 · `phase-5/graph` | Sigma.js global/local graph, ForceAtlas2 worker, filters, legend and keyboard-accessible node list. | Test color and size mapping, topology after filters, click → local neighbors → back. Exercise the production worker under CSP, plus fallback navigation with WebGL unavailable. |
+| 9 · `phase-5/inbox-editor` | Inbox diff and review actions, CodeMirror owner editor, visible wikilink completion, preview and conflict recovery. | Component tests cover create/update diffs, validation, accept/reject, safe resume and stale revisions. Verify a pending edit survives a conflict and can be inspected before retry. |
+| 10 · `phase-5/health-acceptance` | Health panel, installed-service browser acceptance, WSL runbook and phase report. | Run all backend and frontend gates. Inspect the fixture git commit, check CSP and invisible content, record coverage and decisions, update roadmap and AGENTS.md, then hand the security checkpoint to the owner. |
+
+## 2. Browser API and security decisions
+
+- **One origin.** Bootstrap owns the sockets and injects use cases and an immutable listener identity. Keep the private port at `restricted`, the optional public port at `internal`, both on numeric loopback by default. Serve built assets at /assets/, the application at /, JSON at /api/ and the existing bearer protocol at /mcp. Mount MCP with its existing lifespan, bearer checks and input limits. Apply cookie/CSRF middleware only to the browser endpoints. SPA fallback applies only to known browser navigation routes. Missing assets, API paths and MCP requests retain their own status codes. Serve content-addressed public assets from the build directory only, with immutable caching. Keep private data out of the bundle. Use no cross-origin credential sharing or remotely hosted assets.
+- **Authorization.** Use an owner cookie for the browser API. MCP continues to require bearer tokens and the minimum of the verified token and accepting socket ceilings. A browser session is bound to its issuing listener and configured external origin. Construct an owner context for that socket on each request. Reject session reuse on another listener, including when cookies are sent across ports on the same host. Forwarded headers, Host and request fields never choose the ceiling. At the API boundary allow only configured hosts/origins. Keep Inbox, owner writes and health on the restricted private listener. Lower-ceiling reads filter notes, links, graph nodes, counts and filter options server-side. Hidden and absent ids produce identical public responses.
+- **Login.** Provision one versioned, salted verifier outside both repositories, using a local interactive password prompt. Use stdlib hashlib.scrypt with a random salt of at least 16 bytes, N=2^17, r=8, p=1, an explicit sufficient maxmem and constant-time digest comparison. Cap password bytes before hashing and reject unsupported verifier parameters. Protect the verifier with owner-only permissions. Atomically reserve one of five attempts per rolling 15 minutes per instance before expensive verification and limit concurrent hash computations. Store the bounded attempt window in state.sqlite so restarts and concurrent listeners share the limit. Use generic failures and a bounded retry delay. Verify real timings/memory on WSL before close. [Password storage guidance](https://cheatsheetseries.owasp.org/cheatsheets/Password_Storage_Cheat_Sheet.html#scrypt)
+- **Session and CSRF.** Recommend an opaque random 256-bit session id, stored as a digest server-side in bounded process memory for the existing single service process. Expire after 30 idle minutes or 8 hours absolute. Rotate on login, revoke on logout or credential reset, and invalidate on restart. Set a host-only `__Host-cerebro_session` cookie with `Secure; HttpOnly; SameSite=Strict; Path=/`. Require HTTPS at the browser. Validate the configured exact Origin and a session-bound synchronizer token in a custom header for every authenticated state change, including logout. Supply the CSRF token in a same-origin no-store session response and compare it in constant time. For login require the configured Origin, JSON content type and a non-simple custom request header. All mutations use unsafe HTTP methods; GET/HEAD are side-effect free. Cap request streams and fields before use-case dispatch. Keep sensitive values out of logs, URLs, browser persistence and caches. Send `Cache-Control: no-store` on session/API responses. On logout/expiry purge the query cache, pending requests, graph and editor state.
+- **Content rendering.** Disable or escape raw HTML at the Markdown parser. Sanitize the final fragment with a narrow HTML/attribute allowlist and a URL policy before insertion. Allow ordinary formatting, headings, lists, tables, links and code. Block event handlers, style, embedded documents, forms, SVG, remote images and unsafe URL schemes. Generate internal wikilinks only from validated ids in visible DTOs. Use escaped text for diff and health fields. Route reader, editor preview and Inbox preview through the same renderer. Test DOM semantics and the absence of executable/network-capable nodes with inert fixtures.
+- **CSP.** Enforce the policy on the built application from the first browser PR. Start from `default-src 'none'; script-src 'self'; style-src 'self' 'nonce-<per-response>'; style-src-attr 'none'; connect-src 'self'; img-src 'self'; font-src 'self'; worker-src 'self'; frame-ancestors 'none'; base-uri 'none'; object-src 'none'; form-action 'self'`. Generate a fresh nonce for each HTML response, never cache the nonce-bearing shell, and pass it to CodeMirror's style-module nonce option. Ship CSS and the layout worker as same-origin files; call the synchronous ForceAtlas2 API *inside* that worker. Verify editor geometry, graph canvases and interaction in Chromium against the production policy. Resolve any style incompatibility in that PR before accepting the component. Set nosniff and a no-referrer policy. [ForceAtlas2 worker supervisor](https://github.com/graphology/graphology/blob/master/src/layout-forceatlas2/worker.js)
+- **Application boundary.** FastAPI handlers translate bounded input into DTOs. Keep ports, storage and git behind the composition root. Return structured errors (401 expired, 403 forbidden, 404 invisible/absent, 409 stale, 422 validation, 429 throttled). Add allowlisted fields to GraphView and its index projection where needed. Preserve MCP output contracts. Thread area through NoteRef and the rebuildable SQLite graph schema, with upgrade/rebuild coverage. Extend the private Inbox preview with approved-to-display validation, original/base state and candidate from the same inspected revision, including an explicit stale-base indication. Compare the stored proposal base hash to the live note. Label the left side as current when the original revision is unavailable, and block stale approval. For a create, compare against an empty base. Use stdlib difflib for bounded text/field differences. Keep raw rejected proposal payloads unavailable. Submit owner changes through OwnerEditNote with the inspected base hash. Inbox mutations use the inspected proposal revision; approval calls ReviewProposal followed by serialized ApplyProposal and supports safe resume. Test actual trailers and single-commit behavior.
+
+## 3. Screen acceptance
+
+Use a quiet dark palette, high-contrast text, visible keyboard focus and a consistent navigation rail that collapses on narrow screens. Show loading, empty, unavailable, denied and conflict states where the owner can act on them. Use text/shape alongside color. Keep all interface copy in English.
+
+| Screen | Owner workflow |
+|---|---|
+| Graph | Color nodes by area by default, with an optional type toggle. Scale size monotonically P0 > P1 > P2 > P3. Filter by area, type, priority, status, sensitivity and history. Show only edges connecting visible nodes. Click or keyboard-select a node for a local view (one hop, optionally two), open the reader, or return to the previous global filters. Provide an equivalent HTML list for keyboard use, translation and WebGL fallback. |
+| Reader | Render paragraphs and headings as real HTML with the note's lang. Set translate="no" on code blocks, inline code, ids, paths, commands, links and wikilinks. Mark command/path text through explicit code semantics and recognized inline tokens. Keep surrounding prose translatable. Render visible hub members separately from the introduction. |
+| Search | Search summaries, filter by metadata, opt into historical notes, and navigate to the matched note or section. Cancel superseded searches so stale results cannot replace the current query. |
+| Inbox | Inspect proposer, validation and NullCurator decision. Show changes to frontmatter and body with a before/after diff; mark new notes and stale bases. Review, amend, reject with reason, or approve the revision on screen. Show the resulting commit or conflict, and surface restricted-history warnings. |
+| Owner editor | Edit Markdown in CodeMirror 6 with structured metadata controls, visible-id wikilink autocomplete, translated-prose preview and explicit save. Show validation next to the field, preserve the draft on conflict, and reload/compare before retry. |
+| Health | Show index freshness, broken links, orphaned notes, budget and scanner findings from HealthReport, with severity and safe links. Show fixed scanner codes or line numbers without matching text. Keep the panel read-only. |
+
+## 4. Dependency proposal and verified versions
+
+Snapshot for approval on 2026-11-25. The cut-off used for the published artifact inventory was
+2026-11-18 23:59 UTC. Dates below are UTC publication dates. Keep exact manifest pins, commit both lockfiles
+and recheck age, availability and peer compatibility at the dependency PR. The Python additions resolved
+against a temporary copy of the current backend lock on Python 3.14. The npm candidates resolved together
+with strict peers, passed an isolated frozen install with lifecycle scripts disabled and loaded the Vite and TypeScript CLIs on WSL.
+These checks exercise dependency resolution. Application and browser acceptance belong to the delivery PRs.
+
+| Package | Exact version | Published | Purpose | Lighter option or constraint |
+|---|---:|---|---|---|
+| [FastAPI](https://pypi.org/project/fastapi/0.165.0/) | 0.165.0 | 2026-11-18 | Bare ASGI router, typed request handling and integration with existing Uvicorn. | Direct Starlette routing with explicit validation. |
+| [annotated-doc](https://pypi.org/project/annotated-doc/0.0.7/) | 0.0.7 | 2026-11-18 | Required by FastAPI and the only new transitive backend distribution in the trial lock. | Required with this FastAPI release. |
+| [pnpm](https://registry.npmjs.org/pnpm) | 12.22.0 | 2026-11-17 | Package manager. Frozen lock, strict peers and minimum release age. | Bundled npm with a separate lock-age check. |
+| [react](https://registry.npmjs.org/react) | 19.3.1 | 2026-10-14 | Runtime. Components and state shared across the six views. | Native DOM and events require manual component lifecycle. |
+| [react-dom](https://registry.npmjs.org/react-dom) | 19.3.1 | 2026-10-14 | Runtime. Render React components into accessible HTML. | Native DOM if React is removed. |
+| [@tanstack/react-query](https://registry.npmjs.org/@tanstack/react-query) | 5.108.0 | 2026-11-17 | Runtime. Cancel requests, cache responses and invalidate data after review or edits. Clear on sign-out. | Typed fetch wrapper with manual caching. |
+| [sigma](https://registry.npmjs.org/sigma) | 4.0.6 | 2026-11-10 | Runtime. WebGL graph and pointer picking on large graphs. | Canvas with custom hit testing and camera. |
+| [graphology](https://registry.npmjs.org/graphology) | 0.26.0 | 2025-01-26 | Runtime. Graph model used by Sigma and the layout. | Adjacency maps would need a Sigma adapter. |
+| [graphology-layout-forceatlas2](https://registry.npmjs.org/graphology-layout-forceatlas2) | 0.10.1 | 2022-10-17 | Runtime. Run layout off the UI thread with a self-hosted module worker. | Deterministic circular placement loses clustering. |
+| [@codemirror/state](https://registry.npmjs.org/@codemirror/state) | 6.7.6 | 2026-09-22 | Runtime. Edit transactions and selection state. | Native textarea with browser selection. |
+| [@codemirror/view](https://registry.npmjs.org/@codemirror/view) | 6.43.15 | 2026-10-19 | Runtime. Interactive editor, keyboard focus and selection. | Native textarea. |
+| [@codemirror/commands](https://registry.npmjs.org/@codemirror/commands) | 6.11.1 | 2026-09-15 | Runtime. Keyboard editing, undo and redo. | Native textarea history. |
+| [@codemirror/lang-markdown](https://registry.npmjs.org/@codemirror/lang-markdown) | 6.5.2 | 2026-08-04 | Runtime. Markdown syntax support. | Plain-text mode. |
+| [@codemirror/autocomplete](https://registry.npmjs.org/@codemirror/autocomplete) | 6.20.4 | 2026-10-19 | Runtime. Complete visible wikilink targets at the cursor. | Separate manual target picker. |
+| [marked](https://registry.npmjs.org/marked) | 18.2.1 | 2026-11-16 | Runtime. Parse Markdown and override raw HTML tokens at the rendering boundary. | Restricted plaintext plus links loses Markdown structure. |
+| [dompurify](https://registry.npmjs.org/dompurify) | 3.4.18 | 2026-11-14 | Runtime. Sanitize final rendered markup to an explicit HTML/attribute/protocol allowlist. | Render a restricted token tree solely with safe DOM operations. |
+| [typescript](https://registry.npmjs.org/typescript) | 7.0.2 | 2026-07-08 | Build. Strict checking of API DTOs, routes and React props. | JavaScript plus JSDoc provides less coverage. |
+| [vite](https://registry.npmjs.org/vite) | 8.3.8 | 2026-11-11 | Build. Generate static JS, CSS and worker assets with hashed filenames and TSX support. | Single bundler plus manual asset pipeline. |
+| [@types/react](https://registry.npmjs.org/@types/react) | 19.3.0 | 2026-09-09 | Build. React props, hooks and JSX types for strict TypeScript. | Required by the selected React/TS combination. |
+| [@types/react-dom](https://registry.npmjs.org/@types/react-dom) | 19.3.0 | 2026-09-09 | Build. Type the browser root and mount API. | Required for a typed React DOM entry point. |
+| [@types/node](https://registry.npmjs.org/@types/node) | 26.6.6 | 2026-10-28 | Build. Node 26 declarations for tooling and test configuration. | Use JavaScript-only config files and omit if CI type checks pass. |
+| [graphology-types](https://registry.npmjs.org/graphology-types) | 0.24.8 | 2024-11-22 | Build. Resolve the shared Graphology and ForceAtlas2 type peer explicitly. | Use a different graph model and renderer. |
+| [@playwright/test](https://registry.npmjs.org/@playwright/test) | 1.65.1 | 2026-11-13 | Test. Chromium browser assertions for isolated React components and the full application. | Node test runner handles pure functions only. |
+
+Uvicorn, Pydantic and Starlette are already in the project or its lock. Password hashing, random session
+secrets, constant-time checks, diff generation and SQLite storage use the Python standard library. Vite
+handles TSX using the automatic React JSX transform. A browser-only component fixture mounts real React
+components with deterministic inputs and request stubs under Playwright. Exclude the fixture and stubbed
+API from the production build. The full E2E test launches the installed backend serving the production
+bundle and uses a separate temporary instance.
+
+Set `minimumReleaseAge: 10080` and `strictPeerDependencies: true` in `pnpm-workspace.yaml`. Set
+`ignoredOptionalDependencies: ['@rolldown/binding-wasm32-wasi']` there too. That optional compiler
+target pulls prerelease WASM support packages. The native WSL/Linux compiler passed a frozen install.
+Use a bundled module worker that runs the synchronous ForceAtlas2 algorithm. The package's own worker
+supervisor constructs a blob URL, which conflicts with a same-origin worker policy. CodeMirror can receive
+a per-response style nonce through `EditorView.cspNonce`. Browser tests must run with the production CSP.
+[ForceAtlas2 sources](https://github.com/graphology/graphology/tree/master/src/layout-forceatlas2) ·
+[CodeMirror view reference](https://codemirror.net/docs/ref/#view.EditorView%5EcspNonce) ·
+[pnpm settings](https://pnpm.io/settings)
+
+<details>
+<summary>Additional npm artifact pins in the planning resolution</summary>
+
+The trial lock contains 121 distinct package versions across both pnpm lockfile documents, including
+optional native binaries for other platforms. The table above gives the direct choices. The remaining
+families below are grouped where their pinned version and publication date match. PR owners will attach
+the actual resolved lock diff and report any change from this snapshot. The browser revision packaged by
+`playwright-core@1.65.1` is Chromium/headless shell 1255 (159.0.8154.6), with FFmpeg revision 1013.
+[Playwright browser manifest](https://github.com/microsoft/playwright/blob/v1.65.1/packages/playwright-core/browsers.json)
+
+| Additional artifact(s) | Exact version | Published |
+|---|---:|---|
+| `@pnpm/exe.*` (15 native targets) | 12.22.0 | 2026-11-17 |
+| `@rolldown/binding-*` (15 native targets) | 1.2.19 | 2026-11-11 |
+| `@typescript/typescript-*` (20 native targets) | 7.0.2 | 2026-07-08 |
+| `lightningcss-*` (11 native targets) | 1.33.0 | 2026-07-20 |
+| `@codemirror/lang-css` | 6.3.1 | 2024-11-26 |
+| `@codemirror/lang-html` | 6.4.12 | 2026-08-04 |
+| `@codemirror/lang-javascript` | 6.2.5 | 2026-03-02 |
+| `@codemirror/language` | 6.13.1 | 2026-10-07 |
+| `@codemirror/lint` | 6.9.8 | 2026-11-13 |
+| `@codemirror/streamparser` | 6.0.0 | 2026-10-07 |
+| `@lezer/common` | 1.5.5 | 2026-10-30 |
+| `@lezer/css` | 1.3.9 | 2026-10-07 |
+| `@lezer/highlight` | 1.2.5 | 2026-09-28 |
+| `@lezer/html` | 1.3.13 | 2025-12-22 |
+| `@lezer/javascript` | 1.5.6 | 2026-10-01 |
+| `@lezer/lr` | 1.4.12 | 2026-10-30 |
+| `@lezer/markdown` | 1.8.1 | 2026-10-19 |
+| `@marijn/find-cluster-break` | 1.0.4 | 2026-08-21 |
+| `@oxc-project/types` | 0.156.0 | 2026-10-27 |
+| `@rolldown/pluginutils` | 1.1.1 | 2026-11-13 |
+| `@tanstack/query-core` | 5.108.0 | 2026-11-17 |
+| `@types/trusted-types` | 2.0.7 | 2023-11-21 |
+| `crelt` | 1.0.7 | 2026-06-27 |
+| `csstype` | 3.2.4 | 2026-11-17 |
+| `detect-libc` | 2.1.2 | 2025-10-05 |
+| `events` | 3.3.0 | 2021-02-27 |
+| `fdir` | 6.5.0 | 2025-08-14 |
+| `fsevents` | 2.3.3 | 2023-08-21 |
+| `graphology-utils` | 2.5.2 | 2022-04-07 |
+| `lightningcss` | 1.33.0 | 2026-07-20 |
+| `nanoid` | 3.3.20 | 2026-10-05 |
+| `picocolors` | 1.1.1 | 2024-10-16 |
+| `picomatch` | 4.0.7 | 2026-08-24 |
+| `playwright`, `playwright-core` | 1.65.1 | 2026-11-13 |
+| `postcss` | 8.5.33 | 2026-11-13 |
+| `rolldown` | 1.2.19 | 2026-11-11 |
+| `scheduler` | 0.28.0 | 2026-09-09 |
+| `source-map-js` | 1.2.3 | 2026-11-18 |
+| `style-mod` | 4.1.5 | 2026-11-17 |
+| `tinyglobby` | 0.2.17 | 2026-05-30 |
+| `undici-types` | 8.9.0 | 2026-07-24 |
+| `w3c-keyname` | 2.2.8 | 2023-06-07 |
+
+</details>
+
+## 5. WSL development and verification
+
+**Node selection.** Use **26.13.1 (Lithium)** on WSL Linux. The official release index dates this artifact to November 10, 2026, and the release announcement is dated November 11. Both satisfy the seven-day minimum on November 25. Pin the exact patch in .nvmrc, package.json engines and CI. Pin pnpm in packageManager. A WSL installation with nvm already available can use `nvm install 26.13.1 && nvm use 26.13.1`. [Node release schedule](https://github.com/nodejs/Release/blob/main/schedule.json) · [Node release index](https://nodejs.org/dist/index.json) · [Node release announcement](https://nodejs.org/en/blog/release/v26.13.1)
+
+For a fresh WSL Ubuntu shell with curl, tar, xz and sha256sum, install the official Linux binary under the current user's account. These checksums are for the exact release. Run the commands from Bash. [Publisher checksums](https://nodejs.org/dist/v26.13.1/SHASUMS256.txt)
+
+```bash
+(
+  set -eu
+  case "$(uname -m)" in
+    x86_64) arch=x64; digest=5c063e46bab0fbc1c17cc445d7ff129cbdcd0471be6ed83b6ab864f8143bc864 ;;
+    aarch64) arch=arm64; digest=89e1853138db51e8b82d3e98ba9c0d3f2956a28e5e55ea1b7e12d25aae92d5dd ;;
+    *) echo 'Select a supported Linux archive from the Node release index.' >&2; exit 1 ;;
+  esac
+  tmp="$(mktemp -d)"
+  trap 'rm -rf -- "$tmp"' EXIT
+  archive="node-v26.13.1-linux-$arch.tar.xz"
+  cd "$tmp"
+  curl -fsSLO "https://nodejs.org/dist/v26.13.1/$archive"
+  printf '%s  %s\n' "$digest" "$archive" | sha256sum -c -
+  mkdir -p "$HOME/.local/opt"
+  tar -xJf "$archive" -C "$HOME/.local/opt"
+)
+```
+
+Stop if verification fails. Select the installed Node in each new shell, or use the nvm selection above. Install the pinned package manager locally with the bundled npm.
+
+```bash
+case "$(uname -m)" in x86_64) arch=x64 ;; aarch64) arch=arm64 ;; esac
+export PATH="$HOME/.local/opt/node-v26.13.1-linux-$arch/bin:$PATH"   # archive installation
+node --version                                                    # v26.13.1
+pnpm_dir="$HOME/.local/opt/cerebro-pnpm-12.22.0"
+npm install --prefix "$pnpm_dir" --before=2026-11-19T00:00:00Z --no-audit --no-fund pnpm@12.22.0
+export PATH="$pnpm_dir/node_modules/.bin:$PATH"
+pnpm --version                                                    # 12.22.0
+```
+
+**Commands the implementation PRs must provide.** From the repository root in WSL, run the following against a disposable synthetic instance. The web commands and fixture launcher are planned deliverables. Keep the existing CLI and MCP entry points usable without installing Node on the service host.
+
+```bash
+(cd backend && uv sync --locked && uv run --locked ruff check . && uv run --locked ruff format --check . &&
+  uv run --locked mypy && uv run --locked lint-imports --no-cache && uv run --locked pytest --cov)
+(cd web && pnpm install --frozen-lockfile && pnpm run typecheck && pnpm run build &&
+  pnpm exec playwright install --with-deps chromium && pnpm run test:component && pnpm run test:e2e)
+(cd backend && uv run --locked python -m devtools.web_demo --dist ../web/dist)
+```
+
+The demo launcher creates a temporary git/SQLite/Fernet fixture with public, internal and restricted notes, a reviewable proposal and a health finding. It prompts locally for the owner password and serves the built app and API together over dev-only loopback HTTPS, with a disposable localhost certificate and a printed fingerprint. Open the displayed URL from the WSL host browser, verify the development certificate, and sign in. PR 10 documents setup, expected observations, shutdown and cleanup. Use local fixture trust in the isolated browser test context. Docker, hml credentials and server access are unnecessary for this phase.
+
+**Coverage of the acceptance run**
+
+- Backend gates match the existing CI, including the 90% domain/application coverage threshold, ResourceWarning enforcement, strict mypy, Ruff and import contracts. Add contracts for any new port with fake and SQLite implementations. Verify both sockets, session replay across ports, CSRF on login and authenticated mutations, password rotation, a throttled verifier, hidden/missing results, redacted logging, stale edits and git trailers.
+- Mount real React components with fixture API responses in a browser harness. Exercise graph keyboard navigation and filters, sanitized reader and translation markup, empty/error search, Inbox diff, editor conflict and health statuses. Keep the harness and its fixtures out of the release bundle.
+- Run at least one E2E in Chromium against the built distribution and real backend. Log in, find a synthetic note, open its graph neighborhood and translated-prose reader, review a diff, approve the inspected revision, save an owner edit, verify the resulting git history and sign out. Confirm reloading a protected route requests login. Run a negative session on the lower-ceiling test socket and assert restricted identifiers never occur in API responses or the DOM. Capture CSP violations for the editor, Markdown preview and graph worker. Disable traces containing cookies, passwords or note bodies.
+- Record packages and artifact ages, CI results, coverage, observed accessibility/CSP behavior, unresolved decisions and the owner security checkpoint in the final report.
+
+## 6. Owner approval
+
+Pending approval of the ordered PRs, dependency inventory, same-origin browser API and session design, six screens and verification gates. Record changes requested by the owner here before the first implementation branch.
