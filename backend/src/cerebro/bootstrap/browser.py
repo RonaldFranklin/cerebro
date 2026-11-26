@@ -15,16 +15,19 @@ def _application_checkout(path: Path) -> bool:
     return marker.is_file() and marker.resolve().is_relative_to(path)
 
 
-def owner_credentials(settings: Settings) -> OwnerCredentials:
-    directory = settings.state_dir.resolve()
-    if directory.is_relative_to(settings.content_repo.resolve()) or any(
+def private_runtime_directory(path: Path, content_repo: Path, name: str) -> Path:
+    directory = path.resolve()
+    if directory.is_relative_to(content_repo.resolve()) or any(
         _application_checkout(ancestor) for ancestor in (directory, *directory.parents)
     ):
-        raise ConfigurationError(
-            "owner credentials require a state directory outside the content and application repositories"
-        )
-    if settings.state_dir.is_symlink():
-        raise ConfigurationError("owner credentials require a regular state directory")
+        raise ConfigurationError(f"the {name} directory must be outside the content and application repositories")
+    if path.is_symlink():
+        raise ConfigurationError(f"a regular {name} directory is required")
+    return directory
+
+
+def owner_credentials(settings: Settings) -> OwnerCredentials:
+    directory = private_runtime_directory(settings.state_dir, settings.content_repo, "state")
     verifier = directory / "owner.verifier"
     if not verifier.is_file():
         directory.mkdir(mode=0o700, parents=True, exist_ok=True)

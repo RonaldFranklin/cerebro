@@ -20,6 +20,8 @@ class Settings:
     """Working directory of the (private) content repository: a git repository with ``schema/``."""
     state_dir: Path
     """Directory for ``index.sqlite``, ``state.sqlite`` and the writer lock. Created ``0700``."""
+    index_dir: Path | None = None
+    """Separate directory for the rebuildable plaintext index, defaulting to state_dir."""
     key_file: Path
     """Fernet key file (``0600``, in a ``0700`` directory), see ADR-0008."""
     git_name: str
@@ -37,7 +39,9 @@ class ConfigurationError(Exception):
     """A safe diagnostic that can be printed without disclosing configuration values."""
 
 
-_CONFIG_KEYS = frozenset({"content_dir", "state_dir", "key_file", "git_name", "git_email", "git_remote", "git_branch"})
+_CONFIG_KEYS = frozenset(
+    {"content_dir", "state_dir", "index_dir", "key_file", "git_name", "git_email", "git_remote", "git_branch"}
+)
 _LIMIT_KEYS = frozenset({"writes_per_hour"})
 _MAX_CONFIG_BYTES = 65536
 
@@ -107,6 +111,7 @@ def load_settings(file: Path | None, environment: Mapping[str, str]) -> Settings
         content_repo=path("content_dir"),
         state_dir=path("state_dir"),
         key_file=path("key_file"),
+        index_dir=path("index_dir") if "index_dir" in config or "CEREBRO_INDEX_DIR" in environment else None,
         git_name=value("git_name"),
         git_email=value("git_email"),
         git_remote=value("git_remote") if "git_remote" in config or "CEREBRO_GIT_REMOTE" in environment else None,

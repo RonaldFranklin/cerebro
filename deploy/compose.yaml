@@ -1,0 +1,44 @@
+name: cerebro-${ENVIRONMENT:?set ENVIRONMENT to hml or prod}
+
+services:
+  backend:
+    build: ..
+    image: cerebro-backend:git-${APP_SHA:?set APP_SHA to the application commit}
+    pull_policy: never
+    user: "${SERVICE_UID:-10001}:${SERVICE_GID:-10001}"
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    command: ["cerebro-mcp", "--container", "--private-origin", "${PRIVATE_ORIGIN:?set PRIVATE_ORIGIN}", "--web-dist", "/opt/cerebro/web"]
+    environment:
+      CEREBRO_PRIVATE_PORT: "${PRIVATE_PORT:?set PRIVATE_PORT}"
+      CEREBRO_CONTENT_DIR: /data/content/repo
+      CEREBRO_STATE_DIR: /data/state
+      CEREBRO_INDEX_DIR: /data/index
+      CEREBRO_KEY_FILE: /data/secrets/fernet.key
+      CEREBRO_GIT_BRANCH: "${ENVIRONMENT}"
+      CEREBRO_GIT_NAME: "${CEREBRO_GIT_NAME:?set the Git commit name}"
+      CEREBRO_GIT_EMAIL: "${CEREBRO_GIT_EMAIL:?set the Git commit email}"
+    ports:
+      - "127.0.0.1:${PRIVATE_PORT}:${PRIVATE_PORT}"
+    volumes:
+      - type: bind
+        source: ${DATA_DIR:?set DATA_DIR to the environment directory}/content
+        target: /data/content
+        bind: {create_host_path: false}
+      - type: bind
+        source: ${DATA_DIR}/state
+        target: /data/state
+        bind: {create_host_path: false}
+      - type: bind
+        source: ${DATA_DIR}/index
+        target: /data/index
+        bind: {create_host_path: false}
+      - type: bind
+        source: ${DATA_DIR}/secrets
+        target: /data/secrets
+        read_only: true
+        bind: {create_host_path: false}
