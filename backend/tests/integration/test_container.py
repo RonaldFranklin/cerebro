@@ -131,6 +131,26 @@ class TestStartupReindex:
         hits = restarted.search.search(SearchQuery(ceiling=AccessCeiling(Sensitivity.PUBLIC), text="Late addition"))
         assert [h.id for h in hits] == [NoteId("late-addition")]
 
+    def test_version_two_graph_without_area_is_rebuilt_from_content(self, sample: SampleRepo) -> None:
+        import sqlite3
+        from contextlib import closing
+
+        first = build_container(sample.settings)
+        first.start()
+        path = sample.state_dir / "index.sqlite"
+        with closing(sqlite3.connect(path)) as conn, conn:
+            conn.execute("ALTER TABLE graph_nodes DROP COLUMN area")
+            conn.execute("PRAGMA user_version = 2")
+
+        upgraded = build_container(sample.settings)
+        assert upgraded.start()
+        assert not index_is_stale(upgraded.notes, upgraded.search, upgraded.graph)
+        nodes = upgraded.graph.graph(ceiling=OWNER.ceiling, include_history=True).nodes
+        assert {(n.id, n.area, n.sensitivity) for n in nodes} == {
+            (n.id, n.area, n.sensitivity) for n in upgraded.notes.list_notes()
+        }
+        assert not build_container(sample.settings).start()
+
     def test_a_recreated_index_after_corruption_is_rebuilt(self, sample: SampleRepo) -> None:
         first = build_container(sample.settings)
         first.start()

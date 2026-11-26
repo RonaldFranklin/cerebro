@@ -65,6 +65,8 @@ def browser_api(auth: BrowserAuth, binding: BrowserBinding, ceiling: AccessCeili
 
     @app.middleware("http")
     async def authenticate(request: Request, call_next: RequestResponseEndpoint) -> Response:
+        if len(request.scope["query_string"]) > 8192:
+            return _error(422, "Invalid request.")
         path = request.scope["path"]
         if path in _SESSION_PATHS and request.scope["query_string"]:
             return _error(422, "Invalid request.")

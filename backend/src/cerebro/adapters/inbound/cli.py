@@ -8,9 +8,9 @@ from datetime import datetime
 from pathlib import Path
 from typing import Never
 
-from cerebro.adapters.inbound.cli_views import health_view, note_view
+from cerebro.adapters.inbound.cli_views import note_view
 from cerebro.adapters.inbound.input_limits import MAX_FIELD_BYTES, MAX_INPUT_BYTES, MAX_QUERY_BYTES, bounded_text
-from cerebro.adapters.inbound.read_views import search_view
+from cerebro.adapters.inbound.read_views import health_view, search_view
 from cerebro.application.dto import (
     AmendProposalRequest,
     HealthReportRequest,

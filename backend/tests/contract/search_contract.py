@@ -223,6 +223,15 @@ class GraphIndexContract:
             (e.source.value, e.target.value) for e in result.edges
         )
 
+    def test_node_area_and_sensitivity_follow_rebuild_and_update(self, graph: GraphIndex) -> None:
+        graph.rebuild([ref("a-note", area=Area("work"), sensitivity=Sensitivity.PUBLIC)])
+        (node,) = graph.graph(ceiling=PUBLIC).nodes
+        assert (node.area, node.sensitivity) == (Area("work"), Sensitivity.PUBLIC)
+        graph.upsert(ref("a-note", area=Area("home"), sensitivity=Sensitivity.INTERNAL))
+        assert graph.graph(ceiling=PUBLIC).nodes == ()
+        (node,) = graph.neighbors(NoteId("a-note"), hops=1, ceiling=INTERNAL).nodes
+        assert (node.area, node.sensitivity) == (Area("home"), Sensitivity.INTERNAL)
+
     def test_backlinks(self, graph: GraphIndex) -> None:
         self.seed(graph)
         assert edge_set(graph.backlinks(NoteId("hub-note"), ceiling=RESTRICTED)) == {
