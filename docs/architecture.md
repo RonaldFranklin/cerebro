@@ -10,7 +10,7 @@ in the operational parts of this document are listed in [Phase 6 of the roadmap]
 
 ```
                    INBOUND ADAPTERS (driving)
-     MCP server · HTTP API (FastAPI) · CLI · Scheduler
+     MCP server · HTTP API (FastAPI) · CLI
                                │ calls use cases
                                ▼
       ┌────────────────────────────────────────────────────────┐
@@ -48,7 +48,7 @@ Enforced with `import-linter` contracts in CI. The "standard library only" rule 
 `cerebro.application` is enforced by a contract of the custom `stdlib_only` type, defined in
 `backend/devtools/import_contracts.py` (static imports only; dynamic imports are not detected).
 
-## 2. Backend package layout (target)
+## 2. Backend package layout (selected modules)
 
 ```
 backend/
@@ -63,7 +63,7 @@ backend/
 │   │   ├── slug.py            # kebab-case rule shared by ids, areas and types
 │   │   ├── access.py          # AccessCeiling, visibility rules
 │   │   ├── budgets.py         # word count, per-note and combined P0 budgets
-│   │   ├── secrets_scan.py    # regex patterns that block secret-looking content
+│   │   ├── secrets.py    # regex patterns that block secret-looking content
 │   │   ├── report.py          # Violation, ViolationCode, Severity, ValidationReport
 │   │   ├── frontmatter.py     # parse_note (raw mapping -> Note | report), note_to_raw (canonical order)
 │   │   ├── validation.py      # note validation, returns violations
@@ -75,13 +75,13 @@ backend/
 │   │   └── dto.py             # plain dataclasses crossing the boundary
 │   ├── adapters/
 │   │   ├── inbound/
-│   │   │   ├── mcp/           # MCP server (streamable HTTP + stdio for dev)
-│   │   │   ├── http/          # FastAPI routers, auth, schemas (Pydantic lives here)
-│   │   │   └── cli/
+│   │   │   ├── mcp_http.py    # streamable HTTP, with mcp_stdio.py for the dev bridge
+│   │   │   ├── browser_api.py # owner browser API and authentication
+│   │   │   └── cli.py
 │   │   └── outbound/
 │   │       ├── filesystem/    # Markdown + YAML frontmatter repository
 │   │       ├── sqlite/        # FTS5 search index, graph tables, token store and write limits
-│   │       ├── git/           # git via subprocess
+│   │       ├── git.py         # git via subprocess
 │   │       └── crypto/        # Fernet cipher
 │   └── bootstrap/
 │       ├── settings.py        # configuration from env/file
@@ -206,7 +206,7 @@ Workstation                                    Server (docker compose: cerebro-<
 (future) cloud agents ── Cloudflare Tunnel ───▶│ cloudflared ──▶ public listener only      │
                          + Cloudflare Access   └──────────────────────────────────────────┘
                                                  volumes: content repo (git), state (sqlite),
-                                                          secrets (Fernet key, admin hash)
+                                                          secrets (Fernet key)
 ```
 
 - The **private listener** is exposed only through `tailscale serve` (HTTPS, tailnet only).
@@ -222,7 +222,8 @@ Workstation                                    Server (docker compose: cerebro-<
 | Notes | content repo working copy | yes (private repo) | push to private remote |
 | Search/graph index | state dir, `index.sqlite` | no | no — rebuildable |
 | Tokens and login and write limits | state dir, `state.sqlite` | no | yes (file backup) |
-| Fernet key, admin password hash | secrets dir | no | owner keeps an offline copy of the key |
+| Owner password verifier | `state_dir/owner.verifier` | no | back up separately from SQLite with private permissions |
+| Fernet key | secrets dir | no | owner keeps an offline copy of the key |
 
 Filesystem repository, operating notes (Phase 2):
 
