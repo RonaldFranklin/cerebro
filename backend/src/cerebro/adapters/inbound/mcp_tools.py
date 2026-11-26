@@ -120,7 +120,11 @@ def parse_tool(name: str, arguments: object) -> ToolRequest:
     """Validate field sizes and types before invoking authentication or a read use case."""
     args = {} if arguments is None else arguments
     tool = _TOOLS.get(name)
-    if tool is None or not isinstance(args, dict) or args.keys() - tool.input_schema["properties"].keys():
+    if tool is None or not isinstance(args, dict):
+        raise InvalidToolArguments
+    if name == WRITE_TOOL.name:
+        return write_request(args)
+    if args.keys() - tool.input_schema["properties"].keys():
         raise InvalidToolArguments
 
     def text(key: str, limit: int = MAX_FIELD_BYTES) -> str:
@@ -139,8 +143,6 @@ def parse_tool(name: str, arguments: object) -> ToolRequest:
         raise InvalidToolArguments
 
     try:
-        if name == WRITE_TOOL.name:
-            return write_request(args)
         if name == "cerebro_write_guide":
             return WriteGuideRequest()
         if name == "cerebro_overview":

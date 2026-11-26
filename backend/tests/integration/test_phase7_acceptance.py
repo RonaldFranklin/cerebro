@@ -1,6 +1,7 @@
 """Exercise immediate agent writes from the installed HTTP service and stdio bridge."""
 
 import asyncio
+import json
 import sqlite3
 from contextlib import closing
 from pathlib import Path
@@ -14,7 +15,7 @@ from mcp.client.streamable_http import streamable_http_client
 from cerebro.bootstrap.settings import load_settings
 from tests.integration.test_cli_bootstrap import invoke
 from tests.integration.test_git import raw_git
-from tests.integration.test_mcp_transports import BRIDGE, free_port, serving
+from tests.integration.test_mcp_transports import BRIDGE, call, free_port, post, serving
 
 _WRITE = "cerebro_write"
 _GUIDE = "cerebro_write_guide"
@@ -48,7 +49,7 @@ def test_sdk_create_update_and_audit_across_transports(tmp_path: Path) -> None:
     author, editor = issue("sdk-author"), issue("sdk-editor")
     marker = "synthetic-sample-to-discard"
     fake_key = "-----BEGIN " + "PRIVATE KEY-----\n" + marker + "\n-----END PRIVATE KEY-----"
-    create = {
+    create: dict[str, object] = {
         "operation": "create",
         "request_id": "sdk-create-one",
         "body": "Use a fresh project directory and confirm the status before resuming.",
@@ -60,6 +61,8 @@ def test_sdk_create_update_and_audit_across_transports(tmp_path: Path) -> None:
             "type": "guide",
             "sensitivity": "internal",
             "hub": "infrastructure",
+            "related": ["docker-conventions"],
+            "review_by": "2030-06-12",
         },
     }
 
@@ -102,11 +105,28 @@ def test_sdk_create_update_and_audit_across_transports(tmp_path: Path) -> None:
             read = await bridge.call_tool("cerebro_read", {"id": note_id})
             assert read.structured_content
             assert read.structured_content["body"] == create["body"]
+            writable = (
+                "title",
+                "type",
+                "area",
+                "priority",
+                "sensitivity",
+                "status",
+                "summary",
+                "hub",
+                "related",
+                "superseded_by",
+                "lang",
+                "review_by",
+            )
+            metadata = {field: read.structured_content[field] for field in writable}
+            assert metadata["related"] == ["docker-conventions"]
+            assert metadata["review_by"] == "2030-06-12"
             update = {
                 "operation": "update",
                 "target": note_id,
                 "base_hash": read.structured_content["base_hash"],
-                "frontmatter": create["frontmatter"],
+                "frontmatter": metadata,
                 "body": "Check the latest revision before resuming work.",
             }
             amended = await bridge.call_tool(_WRITE, update)
@@ -115,10 +135,21 @@ def test_sdk_create_update_and_audit_across_transports(tmp_path: Path) -> None:
             expected_head = amended.structured_content["revision"]
             assert expected_head == raw_git(settings.content_repo, "rev-parse", "HEAD").strip()
             assert "Written-by: sdk-editor" in raw_git(settings.content_repo, "log", "-1", "--format=%B").splitlines()
+            saved = (await bridge.call_tool("cerebro_read", {"id": note_id})).structured_content
+            assert saved
+            assert {field: saved[field] for field in writable} == metadata
             stale = await bridge.call_tool(_WRITE, update)
             assert stale.is_error
             assert stale.structured_content
             assert stale.structured_content["findings"][0]["code"] == "stale_base"
+
+            # Both transports preserve extra keys and explicit nulls through authenticated admission.
+            typo = await bridge.call_tool(_WRITE, {**update, "request_id": None})
+            assert typo.structured_content
+            assert typo.structured_content["findings"][0]["code"] == "unknown_field"
+            typo = await bridge.call_tool(_WRITE, update)
+            assert typo.structured_content
+            assert typo.structured_content["findings"][0]["code"] == "rate_limited"
 
             rejected = await direct.call_tool(_WRITE, {**create, "request_id": "discard", "body": fake_key})
             assert rejected.is_error
@@ -133,10 +164,22 @@ def test_sdk_create_update_and_audit_across_transports(tmp_path: Path) -> None:
             assert raw_git(settings.content_repo, "rev-list", "--count", f"{initial}..HEAD").strip() == "2"
 
     with serving(config, port):
+        malformed = issue("sdk-malformed")
+        for extra in ({"author": "injected"}, {"target": None}, {"base_hash": None}):
+            status, body = post(port, malformed, call(_WRITE, {**create, **extra}))
+            assert status == 200
+            finding = json.loads(body)["result"]["structuredContent"]["findings"][0]
+            assert finding["code"] == "unknown_field"
+            assert finding["field"] == "request"
+            assert "injected" not in finding["hint"]
+        status, body = post(port, malformed, call(_WRITE, create))
+        assert status == 200
+        assert json.loads(body)["result"]["structuredContent"]["findings"][0]["code"] == "rate_limited"
+        assert initial == raw_git(settings.content_repo, "rev-parse", "HEAD").strip()
         asyncio.run(run())
     with closing(sqlite3.connect(settings.state_dir / "state.sqlite")) as db:
         assert db.execute("SELECT count(*) FROM proposals").fetchone() == (0,)
-        assert db.execute("SELECT count(*) FROM write_attempts").fetchone() == (5,)
+        assert db.execute("SELECT count(*) FROM write_attempts").fetchone() == (9,)
     log = config.with_suffix(".log").read_text()
     for sensitive in (marker, author, editor, create["body"]):
         assert str(sensitive) not in log

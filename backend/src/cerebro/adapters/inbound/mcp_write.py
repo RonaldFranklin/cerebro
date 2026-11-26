@@ -66,8 +66,15 @@ WRITE_TOOL = types.Tool(
 def write_request(args: dict[str, Any]) -> AgentWriteRequest:
     # Transport frames have already been bounded. The application charges the authenticated
     # token before validating the submitted shape, UTF-8 byte budgets and note content.
+    operation = args.get("operation", "")
+    unexpected = bool(args.keys() - WRITE_TOOL.input_schema["properties"].keys())
+    if operation == "create":
+        unexpected |= "target" in args or "base_hash" in args
+    elif operation == "update":
+        unexpected |= "request_id" in args
     return AgentWriteRequest(
-        operation=args.get("operation", ""),
+        has_unexpected_fields=unexpected,
+        operation=operation,
         frontmatter=args.get("frontmatter"),
         body=args.get("body"),
         request_id=args.get("request_id"),

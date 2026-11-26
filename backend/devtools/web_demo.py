@@ -18,16 +18,16 @@ from tempfile import TemporaryDirectory
 from tests.integration.content_kit import ISLAND_ID, SSH_ID
 
 from cerebro.adapters.inbound.cli_owner import set_owner_password
+from cerebro.application.agent_write import AgentWriteRequest
 from cerebro.application.browser import ProvisionOwnerPassword
-from cerebro.application.dto import OwnerEditNoteRequest, SubmitProposalRequest
+from cerebro.application.dto import AuthenticateTokenRequest, IssueAgentTokenRequest, OwnerEditNoteRequest
 from cerebro.bootstrap.browser import owner_credentials
 from cerebro.bootstrap.container import build_container
 from cerebro.bootstrap.settings import load_settings
-from cerebro.domain.access import AccessCeiling, AccessContext, Agent, Scope
+from cerebro.domain.access import AccessCeiling, AccessContext, Scope
 from cerebro.domain.content_hash import content_hash
 from cerebro.domain.enums import Sensitivity
 from cerebro.domain.note import NoteId
-from cerebro.domain.proposal import ProposalKind, ProposedContent
 from cerebro.domain.vocabulary import Area
 from devtools.mcp_sample import create_sample
 from devtools.web_tls import certificate, tls_relay
@@ -83,25 +83,31 @@ def _populate(config: Path, *, automation: bool) -> bool:
     )
     if not edited.validation.ok:
         raise RuntimeError("Invalid fixture runbook")
-    submitted = container.use_cases.submit_proposal.execute(
-        SubmitProposalRequest(
-            kind=ProposalKind.UPDATE,
-            target=note.id,
-            base_hash=content_hash(note),
-            content=ProposedContent(
-                summary="Index of the planned infrastructure handover notes in the disposable fixture.",
-                body="## Handover\n\nCollect the infrastructure handover notes here.\n",
-            ),
-        ),
-        AccessContext(
-            principal=Agent("fixture-agent"),
-            scopes=frozenset({Scope.PROPOSE}),
-            ceiling=AccessCeiling(Sensitivity.RESTRICTED),
-            token_id="fixture-token",
-        ),
+    listener = AccessCeiling(Sensitivity.INTERNAL)
+    issued = container.use_cases.issue_agent_token.execute(
+        IssueAgentTokenRequest(agent="fixture-agent", scopes=frozenset({Scope.WRITE}), ceiling=listener),
+        AccessContext.for_owner(AccessCeiling(Sensitivity.RESTRICTED)),
     )
-    if not submitted.valid:
-        raise RuntimeError("Invalid fixture proposal")
+    agent = container.use_cases.authenticate_token.execute(
+        AuthenticateTokenRequest(secret=issued.secret, listener=listener)
+    )
+    container.use_cases.agent_write.execute(
+        AgentWriteRequest(
+            operation="update",
+            target=note.id.value,
+            base_hash=content_hash(note),
+            frontmatter={
+                "title": note.title,
+                "type": note.type.value,
+                "area": note.area.value,
+                "priority": note.priority.value,
+                "sensitivity": note.sensitivity.value,
+                "summary": "Index of the infrastructure handover notes in the disposable fixture.",
+            },
+            body="## Handover\n\nCollect the infrastructure handover notes here.\n",
+        ),
+        agent,
+    )
     return True
 
 

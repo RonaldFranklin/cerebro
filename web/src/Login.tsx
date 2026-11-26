@@ -80,7 +80,7 @@ export function Login({ onSubmit, notice }: { onSubmit: (password: string) => Pr
         <div className="intro-body">
           <Constellation />
           <h2>Knowledge<br />workspace</h2>
-          <p>Browse your notes, explore their connections, and review agent proposals.</p>
+          <p>Browse your notes and explore their connections.</p>
         </div>
       </section>
       <section className="login-panel" aria-labelledby="login-title">
