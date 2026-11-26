@@ -6,6 +6,8 @@ import sys
 import warnings
 from collections.abc import Callable
 
+from cerebro.application.errors import PasswordDurabilityError
+
 
 def set_owner_password(provision: Callable[[bytes], None]) -> int:
     try:
@@ -20,6 +22,10 @@ def set_owner_password(provision: Callable[[bytes], None]) -> int:
     if not 1 <= len(password) <= 1024 or not hmac.compare_digest(password, confirmation):
         print("cerebro: invalid password or confirmation", file=sys.stderr)
         return 1
-    provision(password)
+    try:
+        provision(password)
+    except PasswordDurabilityError as error:
+        print(f"cerebro: {error}", file=sys.stderr)
+        return 1
     print("Owner password updated.")
     return 0

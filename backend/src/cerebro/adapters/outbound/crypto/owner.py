@@ -10,6 +10,8 @@ from collections.abc import Iterator
 from contextlib import contextmanager, suppress
 from pathlib import Path
 
+from cerebro.application.errors import PasswordDurabilityError
+
 _PREFIX = b"CEREBRO-SCRYPT-V1\x00"
 _SIZE = len(_PREFIX) + 16 + 16 + 32  # generation, salt, derived key
 _MAX_PASSWORD = 1024
@@ -69,7 +71,10 @@ def _replace(directory: int, name: str, data: bytes) -> None:
             handle.flush()
             os.fsync(handle.fileno())
         os.replace(temp, name, src_dir_fd=directory, dst_dir_fd=directory)
-        os.fsync(directory)
+        try:
+            os.fsync(directory)
+        except OSError:
+            raise PasswordDurabilityError() from None
     finally:
         with suppress(FileNotFoundError):
             os.unlink(temp, dir_fd=directory)
