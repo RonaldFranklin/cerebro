@@ -113,7 +113,7 @@ test("a new focus cancels the older request and verifies the current session", a
     if (++calls === 2) {
       await new Promise<void>(resolve => { finish = resolve; });
       await route.fulfill({ status: 401, json: {} });
-    } else await route.fulfill({ json: session });
+    } else await route.fulfill(calls === 1 ? { json: session } : { status: 401, json: {} });
   });
   await page.route("**/api/overview", route => route.fulfill({ json: overview }));
   await page.goto("/");
@@ -127,8 +127,10 @@ test("a new focus cancels the older request and verifies the current session", a
   });
   await page.evaluate(() => window.dispatchEvent(new Event("focus")));
   await aborted;
+  await expect.poll(() => calls).toBe(3);
   finish();
-  await expect(note).toBeVisible();
+  await expect(page.getByLabel("Password")).toBeVisible();
+  await expect(note).toHaveCount(0);
 });
 
 test("a slow resumed-session response cannot outlive its server deadline", async ({ page }) => {
