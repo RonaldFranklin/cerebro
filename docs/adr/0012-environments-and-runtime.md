@@ -1,6 +1,6 @@
 # ADR-0012: Environments and server-only runtime
 
-- **Status:** accepted
+- **Status:** accepted, amended by [ADR-0020](0020-direct-agent-writes.md) (no curator batches to schedule)
 - **Date:** 2026-11-24
 
 ## Context

@@ -2,7 +2,7 @@
 
 The owner authorized autonomous implementation on 2026-11-25 within the roadmap and accepted ADRs, including
 merges after fresh review, resolution of findings and green CI. Phase 3 is approved. Its security checkpoint
-awaits only the owner's real-client tests. [Phase 4 scope](../roadmap.md#-phase-4--inbox)
+awaits only the owner's real-client tests. [Phase 4 scope](delivered-phases.md#-phase-4--inbox)
 
 ## 1. Pull requests
 
@@ -23,14 +23,14 @@ Status legend: ⬜ not started · 🟦 PR open · ✅ merged.
    defaults through the instance configuration. Exercise each limit independently, then release pending capacity
    by rejecting or applying a proposal. Use the existing clock, deterministic fakes, distinct tokens with the
    same agent name and real competing SQLite connections. A refusal must leave the proposal, accounting and
-   content stores untouched. [ADR-0018](../adr/0018-inbox-admission.md)
+   content stores untouched. [ADR-0018](../../adr/0018-inbox-admission.md)
 2. **Durable boundary.** Use the normal SubmitProposal → ValidateProposal → CurateProposal lifecycle in memory.
    Before any durable write, check schema, word budgets, secrets, links, duplicates and sensitivity.
    Duplicates retain the domain's warning policy. Curate valid submissions with NullCurator or the restricted
    policy branch. Test persistence by inspecting the objects presented to the durable adapter as well as its
    final rows. Validate with fixtures including a rejected body that passes the initial secret scan.
    Reconcile the Phase 2 residual-risk text in architecture and domain-model when PR 3 changes the wiring.
-   [Write path](../adr/0006-write-path-inbox-curator.md) · [Curator ceiling](../adr/0016-curator-never-sees-restricted.md)
+   [Write path](../../adr/0006-write-path-inbox-curator.md) · [Curator ceiling](../../adr/0016-curator-never-sees-restricted.md)
 3. **Manual ownership.** Keep the current revision-aware list, preview, approve, reject and resume commands.
    Add an owner-only amendment for reviewable create/update content with bounded inputs. Reject invalid edits
    without saving. Preview the revised candidate before approval. Preserve base hash, submitted identity,
@@ -42,12 +42,12 @@ Status legend: ⬜ not started · 🟦 PR open · ✅ merged.
    and a bounded related-id array. Record the numerical caps alongside the implemented schema in PR 4 and
    test exact bounds, one byte over, nested fields and Unicode. Reject malformed envelopes before use cases.
    Return only the proposal id and a validation result safe at the caller's ceiling.
-   [Tool surface](../adr/0014-mcp-tool-surface.md) · [Transport identity](../adr/0017-cli-and-mcp-transports.md)
+   [Tool surface](../../adr/0014-mcp-tool-surface.md) · [Transport identity](../../adr/0017-cli-and-mcp-transports.md)
 5. **Scope and visibility.** A propose-only token can use the fifth tool. A read-only token keeps the four
    Phase 3 tools, and a token with both scopes can use all five. The server derives source.agent from the
    token, keeps credentials and payloads out of logs, and rejects hidden targets the same way as missing
    targets. Include references in metadata and body links in visibility tests.
-   [Listener and token ceilings](../adr/0005-sensitivity-and-access-ceiling.md)
+   [Listener and token ceilings](../../adr/0005-sensitivity-and-access-ceiling.md)
 
 ## 3. Dependencies and verification
 
@@ -123,7 +123,7 @@ unchanged. [Phase 4 acceptance test](https://github.com/RonaldFranklin/cerebro/b
 
 - Review the path from authenticated token id to atomic admission, test coverage for distinct tokens with a
   shared name, concurrency and migration of backed-up state. Legacy rows lack attribution and are excluded
-  from token budgets. The accepted token-row integrity risk remains documented in [architecture](../architecture.md#accepted-risks-owner-decision-2026-11-25).
+  from token budgets. The accepted token-row integrity risk remains documented in [architecture](../../architecture.md#accepted-risks-owner-decision-2026-11-25).
 - Review the first durable write and the scrubbed rejection for sensitive or invalid content. Historical
   backups may still contain sealed payloads from earlier releases. Previously valid proposals can already be
   present in sealed backups when the owner later rejects them.

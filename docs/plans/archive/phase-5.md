@@ -1,10 +1,10 @@
 # Phase 5 plan — HTTP API and owner web UI
 
-**Approved by the owner on 2026-11-25, including the adjustments in §6.** Deliver the six owner screens on the existing private service. Phase 7 follows this phase. Docker validation in WSL and deployment to the server belong to Phase 6. The Phase 3 manual checks and the Phase 4 security checkpoint retain their recorded status. [Roadmap](../roadmap.md) · [Architecture](../architecture.md) · [Previous delivery](phase-4.md)
+**Approved by the owner on 2026-11-25, including the adjustments in §6.** Deliver the six owner screens on the existing private service. Phase 7 follows this phase. Docker validation in WSL and deployment to the server belong to Phase 6. The Phase 3 manual checks and the Phase 4 security checkpoint retain their recorded status. [Roadmap](../../roadmap.md) · [Architecture](../../architecture.md) · [Previous delivery](phase-4.md)
 
 ## 1. Delivery sequence
 
-PR 1 records the decision in [ADR-0019](../adr/0019-owner-browser-api.md). PR 2 pins the approved inventory. PR 3 implements owner authentication. PR 4 mounts the authenticated browser service. PR 5 implements browser reads. PR 6 implements private owner writes. PR 7 delivers the browser foundation. PR 8 delivers search and the note reader. PRs 9–11 are planned. Start each branch from current main after the preceding PR merges. The owner authorizes merges for all eleven PRs, including security and dependency changes, with independent review, findings resolved, completed green CI and scripts/merge-pr.sh. The dependency, ADR and privileged setup boundaries are recorded in §6.
+PR 1 records the decision in [ADR-0019](../../adr/0019-owner-browser-api.md). PR 2 pins the approved inventory. PR 3 implements owner authentication. PR 4 mounts the authenticated browser service. PR 5 implements browser reads. PR 6 implements private owner writes. PR 7 delivers the browser foundation. PR 8 delivers search and the note reader. PRs 9–11 are planned. Start each branch from current main after the preceding PR merges. The owner authorizes merges for all eleven PRs, including security and dependency changes, with independent review, findings resolved, completed green CI and scripts/merge-pr.sh. The dependency, ADR and privileged setup boundaries are recorded in §6.
 
 | PR and branch | Deliverable | Verification before merge |
 |---|---|---|
@@ -497,6 +497,6 @@ markers are absent from public API responses and rendered pages.
   and runs local scripts and workers under CSP. The fixtures use synthetic data and isolated TLS;
   automated tests do not establish the safety of an actual deployment.
 - **Owner review pending.** Complete the [manual browser walkthrough](#7-open-the-interface-from-wsl),
-  including translation and both listeners, and review [ADR-0019](../adr/0019-owner-browser-api.md).
+  including translation and both listeners, and review [ADR-0019](../../adr/0019-owner-browser-api.md).
   Phase 3 still awaits the owner's real-client checks and Phase 4 retains its recorded security
   checkpoint. Phase 7 is next; Phase 6 follows, beginning with Docker validation on WSL.

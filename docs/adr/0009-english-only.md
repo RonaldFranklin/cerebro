@@ -1,6 +1,6 @@
 # ADR-0009: English only, browser-translatable UI
 
-- **Status:** accepted
+- **Status:** accepted, amended by [ADR-0020](0020-direct-agent-writes.md) (no curator: writing agents submit English)
 - **Date:** 2026-11-24
 
 ## Context

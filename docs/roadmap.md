@@ -1,165 +1,76 @@
 # Roadmap
 
 Work one phase at a time. A phase is done only when all its acceptance criteria are met and this file and the
-"Current status" section of `AGENTS.md` are updated.
+"Current status" section of `AGENTS.md` are updated. Plans and delivery records of finished phases (criteria
+evidence, pull requests, decisions) are in [`plans/archive/`](plans/archive/), including the
+[original scope and acceptance criteria](plans/archive/delivered-phases.md).
 
 Status legend: ⬜ not started · 🟨 in progress · ✅ done
+
+## Pending owner actions
+
+Manual checkpoints:
+
+| From | What the owner still does |
+|---|---|
+| Phase 3 | Run the [manual Claude Code and Codex checks](agent-integration.md#manual-check-in-claude-code-and-codex) and decide the [security checkpoint](plans/archive/phase-3.md#security-checkpoint-for-the-owner). |
+| Phase 5 | Complete the [browser walkthrough](plans/archive/phase-5.md#7-open-the-interface-from-wsl) (translation, both listeners) and the visual and [security review](plans/archive/phase-5.md#security-checkpoint-for-the-owner). |
+| Phase 7 | Run the [real-client write walkthrough](agent-integration.md#inspect-the-same-client-writes-in-recent-changes) with Claude Code and Codex. |
+
+The Phase 4 checkpoint covered the Inbox, which [ADR-0023](adr/0023-no-legacy-compatibility.md) removed; it cannot
+be run against current code. Its [record](plans/archive/phase-4.md#security-checkpoint-for-the-owner) is kept.
+
+Open decisions:
+
+- **Core budget against lookup cost.** With a core at the full 1,500-word P0 budget, a lookup (overview, search,
+  read) costs about 3.7k tokens, above the 2-3k of the [vision](vision.md#success-criteria). The response budget test
+  uses a core of about 360 words. The 1,500-word budget stays until the owner decides which figure changes.
 
 ---
 
 ## ✅ Phase 0 — Bootstrap
 
-Set up the repository so that quality rules are enforced from the first line of code.
-
-- `backend/` with `uv`, `pyproject.toml`, `src/cerebro/{domain,application,adapters,bootstrap}` packages.
-- Choose and pin the Python version and dev tools (check latest stable releases; record them in
-  `docs/architecture.md` §7 after `uv.lock` is generated). Node is **not** chosen here: only the policy
-  (Active LTS, [ADR-0013](adr/0013-stack-and-dependency-policy.md)) is fixed; the exact version comes in Phase 5.
-- pytest, ruff (lint + format), mypy `--strict`, import-linter with the contracts from `docs/architecture.md` §1.
-- `.editorconfig`, `.gitignore`, `.env.example`.
-- GitHub Actions CI running all checks on push/PR.
-
-**Acceptance:** a trivial test passes; CI is green; adding `import yaml` in `cerebro.domain` makes
-import-linter fail.
-
-*Done 2026-11-24.* The `import yaml` criterion is checked continuously by
-`backend/tests/architecture/test_import_contracts.py`. Built-in import-linter contracts cannot express
-"standard library only", so a small custom contract type lives in `backend/devtools/import_contracts.py`.
+`backend/` skeleton with `uv`, pytest, ruff, mypy `--strict`, import-linter contracts and GitHub Actions CI. The
+"standard library only" contract is a custom type in `backend/devtools/import_contracts.py`, checked continuously by
+`backend/tests/architecture/test_import_contracts.py`. *Done 2026-11-24.*
 
 ## ✅ Phase 1 — Domain and application core
 
-Everything in `docs/domain-model.md` implemented in pure Python, plus the use cases with in-memory fakes.
-
-Delivery plan, pull request status and design decisions: [plans/phase-1.md](plans/phase-1.md).
-
-- Value objects and enums: `NoteId`, `Priority`, `Sensitivity`, `Status`, `NoteType`, `Note`, `Proposal`,
-  `Decision`, `AccessCeiling`.
-- Rules: field validation, budgets, link extraction, secret scanner, visibility by ceiling,
-  superseded handling.
-- Ports as `Protocol`s; in-memory fakes; contract test suites for each port.
-- Use cases: `GetOverview`, `SearchNotes` (fake index), `ReadNote` (incl. section), `GetNeighbors`, `GetGraph`,
-  `SubmitProposal`, `ValidateProposal`, `CurateProposal` (with `NullCurator`), `ReviewProposal`, `ApplyProposal`,
-  `OwnerEditNote`, `RebuildIndex`, `HealthReport`, `IssueAgentToken`, `RevokeAgentToken`, and `AuthenticateToken`
-  (turns a presented token secret plus the listener ceiling into an `AccessContext`; added because every inbound
-  adapter needs it).
-- Frontmatter is modeled as plain data in the domain; parsing YAML is **not** part of this phase.
-
-**Acceptance:** high coverage on domain/application (target ≥ 90%); zero third-party imports in core;
-all use cases runnable against fakes in tests.
-
-*Done 2026-11-25.* Status of each criterion: coverage of domain + application is 100 % (gate ≥ 90 % in CI); the
-`stdlib_only` import contract keeps `domain` and `application` free of third-party imports; every use case has
-tests against the in-memory fakes, including denial and no-leak tests. Delivery record:
-[plans/phase-1.md](plans/phase-1.md).
-
-**Security checkpoint: done 2026-11-25.** The owner approved the Phase 1 security review, conditioned on a batch of
-follow-up pull requests (#15-#22, merged): links may not point to higher sensitivity (and are redacted on read),
-optimistic concurrency on `ProposalStore`, no raw values in errors and a redacted `TokenHash`, an import contract
-keeping inbound adapters away from ports and outbound adapters, token clock-skew check, `curator/` names, structured
-scanner findings, and [ADR-0016](adr/0016-curator-never-sees-restricted.md) (the curator never receives restricted
-notes). Details: [plans/phase-1.md](plans/phase-1.md) section 7.
+[Domain model](domain-model.md) in pure Python, use cases against in-memory fakes and port contract tests.
+*Done 2026-11-25*; the owner approved the security checkpoint the same day.
+[Record](plans/archive/phase-1.md).
 
 ## ✅ Phase 2 — Outbound adapters
 
-- `filesystem` NoteRepository (PyYAML frontmatter, content repo layout). Load with a resolver that keeps
-  YAML 1.1 implicit booleans/numbers (`no`, `on`, `2026`, `0x1f`) as strings where the domain expects text, and
-  dump such scalars quoted; contract-test it. Checks that `id` equals the file name.
-- `sqlite` SearchIndex (FTS5) + GraphIndex + ProposalStore + TokenStore.
-- `git` VersionControl (`push`) via subprocess; the filesystem `NoteRepository.apply` records the single commit with
-  trailers, all-or-nothing. Its contract test must also read the commit back (`git log`) and assert the trailers,
-  which the shared contract cannot observe.
-- `system` adapters: UTC `Clock` and an `IdGenerator` whose `new_token_secret` is `secrets.token_urlsafe(32)`
-  (CSPRNG, >= 256 bits; the in-memory fake is deterministic and must never be used outside tests).
-- `crypto` Fernet Cipher; encrypted file format for restricted notes.
-- Each adapter passes the same contract tests as its fake.
-- Do not persist rejected raw payloads: a proposal rejected by validation keeps its findings (codes, fields,
-  sizes), never the raw submitted text (it may contain the secret the scanner just caught).
-
-**Acceptance:** `RebuildIndex` over a sample content repo (fixtures, including an encrypted note) produces a
-correct index; contract tests green for fakes and real adapters.
-
-*Done 2026-11-25.* Delivery record: [plans/phase-2.md](plans/phase-2.md). Beyond the list above, Phase 2 added a minimal
-composition root (`bootstrap`: `Settings`, `build_container`, a single writer lock, start-up reindex when the index
-revision differs from the repository `HEAD`) and the acceptance test `tests/integration/test_rebuild_acceptance.py`.
+Filesystem note repository, git, Fernet, SQLite index and state store, system adapters and a minimal composition
+root. *Done 2026-11-25.* Owner decisions: no MAC for token rows
+([accepted risk](architecture.md#accepted-risks-owner-decision-2026-11-25)); `types-pyyaml` approved as a development
+dependency. [Record](plans/archive/phase-2.md).
 
 ## ✅ Phase 3 — CLI and read-only MCP
 
-Delivery plan: [phase-3.md](plans/phase-3.md).
-
-- CLI: `init-content`, `reindex`, `search`, `read`, `health`, `token issue|list|revoke`, `inbox list|approve|reject`.
-- MCP server with the read tools from [ADR-0014](adr/0014-mcp-tool-surface.md) over streamable HTTP
-  (and stdio for local development), token auth, listener ceilings.
-- `docs/agent-integration.md` provides exact manual test commands for Claude Code and Codex with isolated configuration.
-- Size limits in every inbound adapter (request body, query, proposal fields), enforced before any use case runs.
-- `ListAgentTokens` use case (owner only; never returns secrets or hashes) for `token list`.
-- MCP `cerebro_neighbors` caps `depth` at 2.
-
-**Acceptance:** An SDK test client calls `cerebro_overview`, `cerebro_search`,
-`cerebro_read`, `cerebro_neighbors` against a dev instance containing a restricted fixture. A token with ceiling `internal` sees only
-permitted fixtures. The owner runs the real-client checks and reviews the security checkpoint.
-
-*Delivered 2026-11-25.* The SDK acceptance passed with both transports, a restart, a two-hop neighborhood
-and an internal token reading a sample repository with an encrypted restricted note. Delivery and decisions
-are in the [phase report](plans/phase-3.md#6-final-report). The [real-client checks](agent-integration.md)
-are the only remaining item in the approved Phase 3 security checkpoint.
+Owner CLI and four authenticated MCP read tools over streamable HTTP and a stdio bridge.
+*Delivered and approved 2026-11-25*; manual checks pending (above). [Record](plans/archive/phase-3.md).
 
 ## ✅ Phase 4 — Inbox
 
-Authorized on 2026-11-25. [Delivery plan](plans/phase-4.md) · [Inbox admission](adr/0018-inbox-admission.md)
-
-- `cerebro_propose` MCP tool, authenticated identity and per-token hourly and pending limits.
-- Full deterministic validation pipeline (schema, budgets, secrets, duplicates).
-- Manual approval through CLI using `NullCurator` (owner writes/edits the final note).
-
-**Acceptance:** an agent proposal flows received → validated → curated → needs_owner → approved → applied.
-Verify the stored NullCurator decision before CLI approval and inspect the resulting git commit and its trailers;
-a proposal containing a fake private key is blocked before durable payload storage, and each quota refuses excess
-submissions without writing. Exercise the installed service with an SDK client and document the two real-client checks.
-
-*Delivered 2026-11-25.* The official SDK submitted a valid proposal through the live server. The owner CLI
-approved its inspected revision and produced a single commit with all four trailers. A synthetic private key
-produced a scrubbed rejection. The acceptance test observed no state database or content changes on either
-quota refusal. The [phase report](plans/phase-4.md#5-final-report) records verification and the security
-checkpoint. [Manual real-client checks](https://github.com/RonaldFranklin/cerebro/blob/e7264b869085e156140239e692b2c1a310650674/docs/agent-integration.md#3-propose-in-both-clients-and-approve-locally).
-
-Phase 7 retired the Phase 4 operational Inbox. The earlier manual checkpoint remains tied to the archived release.
-Phase 8 remains the later backlog.
+Retired. The proposal and approval flow, *delivered 2026-11-25*, was replaced by Phase 7 and removed by
+[ADR-0023](adr/0023-no-legacy-compatibility.md). [Record](plans/archive/phase-4.md).
 
 ## ✅ Phase 5 — HTTP API and web UI
 
-The owner approved the browser API and web UI delivered in PRs #56–#66. The release supported
-proposal review, revisions and owner edits. Phase 7 replaced the Inbox with Recent changes. Both listeners serve scoped reads, including the
-sanitized reader, search and keyboard-accessible local and global graphs. The private health panel
-reports index checks and safe findings. Installed Chromium tests verified login, isolation, rendering
-under CSP, commit trailers and logout against the synthetic HTTPS service. The owner's manual visual
-and security reviews remain open. [Final report](plans/phase-5.md#8-phase-5-final-report) ·
-[Open the interface in WSL](plans/phase-5.md#7-open-the-interface-from-wsl).
-
-- Use Node 26.13.1 per [ADR-0013](adr/0013-stack-and-dependency-policy.md) (Active LTS at phase start),
-  pin it (`package.json` `engines`, `.nvmrc`, CI) and record it with the frontend versions in
-  `docs/architecture.md` §7.
-- FastAPI routers for read, graph, inbox and owner edit; single-user login (scrypt hash, secure session cookie).
-- Web UI: note reader (browser-translatable), search, graph view (Sigma.js), local graph, filters,
-  inbox review with diffs, owner editor (CodeMirror 6).
-
-**Acceptance:** the owner can browse, read, search, explore the graph, approve proposals and edit notes from
-the browser.
+Owner browser login, overview, search, sanitized reader, graph, editor and health on the same listeners as MCP
+([ADR-0019](adr/0019-owner-browser-api.md)). *Delivered and approved*; manual reviews pending (above).
+[Record](plans/archive/phase-5.md).
 
 ## ✅ Phase 7 — Direct agent writes
 
-The owner authorized implementation and merges on 2026-11-26. Agents with explicitly issued
-`write` scope create or update notes immediately after deterministic validation, with attributable
-Git commits, optimistic concurrency and per-token limits. The MCP write guide is loaded on demand.
-The private owner UI replaces the Inbox with Recent changes, including links to notes and diffs.
-
-The application, persistence, both MCP transports and the private history screen are implemented.
-The installed SDK and Chromium cover the automated acceptance. The owner can run the
-[Claude Code and Codex walkthrough](agent-integration.md#inspect-the-same-client-writes-in-recent-changes) against the same temporary instance.
-
-**Acceptance:** demonstrate create and update through MCP, safe validation and conflict recovery,
-upgrade without privilege escalation, and an owner inspecting the actor, time, note and diff.
-Document the isolated Claude Code and Codex walkthrough and report observed outcomes.
-[Plan](plans/phase-7.md) · [Decision](adr/0020-direct-agent-writes.md)
+Delivered before Phase 6. Agents with the `write` scope create and update notes after deterministic validation, with
+attributed Git commits, optimistic concurrency and per-token limits; the write guide is loaded on demand and the
+private **Recent changes** view shows actor, time, note and diff ([ADR-0020](adr/0020-direct-agent-writes.md)).
+Follow-ups: readable ids ([ADR-0021](adr/0021-readable-note-ids.md)), the `core` scope
+([ADR-0022](adr/0022-core-scope.md)), legacy removal (ADR-0023) and create replay from Git
+([ADR-0024](adr/0024-create-replay-from-git.md)). [Record](plans/archive/phase-7.md).
 
 ## ⬜ Phase 6 — Deploy (hml, prod)
 
@@ -171,6 +82,17 @@ Document the isolated Claude Code and Codex walkthrough and report observed outc
 - `tailscale serve` HTTPS in front of the private listener.
 - Backups: content repo pushed to the private remote; state dir file backup; Fernet key escrow documented.
 - Scheduled jobs never run between 00:00 and 01:00 local time (server shuts down daily at 01:00).
+
+**Carried over from the 2026-11-26 audit (open, resolve in this phase):**
+
+- **Docker bind and exposure.** The listeners accept only a loopback `--host`, and the accepting local port identifies
+  the listener and so its ceiling, so how a container reaches them must be designed. The deployment must publish each port as `127.0.0.1:P:P` (same number on both
+  sides) and include a test of what is exposed.
+- **Backup.** `VersionControl.push` has no caller, so nothing pushes the content repository. Cérebro's git commands
+  disable automatic garbage collection (`gc.auto=0`) and nothing else runs `git gc`.
+- **Operating documentation.** The README quickstart stops after key provisioning (no owner password, token issue or
+  server start). `architecture.md` places the owner password verifier in the secrets dir, but it is
+  `<state_dir>/owner.verifier`; it also names a Scheduler adapter and package paths that do not exist.
 
 **Acceptance:** hml and prod running on the server; Claude Code and Codex on the workstation use prod via
 Tailscale; restore of content + state tested on hml.

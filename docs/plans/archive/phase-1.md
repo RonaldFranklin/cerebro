@@ -1,7 +1,7 @@
 # Phase 1 plan — Domain and application core
 
 Approved by the owner on 2026-11-24.
-Scope and acceptance criteria: [roadmap](../roadmap.md#-phase-1--domain-and-application-core).
+Scope and acceptance criteria: [roadmap](delivered-phases.md#-phase-1--domain-and-application-core).
 This file records **how** the phase is delivered: one pull request per step, in order, plus the cross-cutting
 design decisions every step follows. Update the status column when a pull request is opened or merged.
 
@@ -13,7 +13,7 @@ Status legend: ⬜ not started · 🟦 PR open · ✅ merged
 |---|---|---|---|---|
 | 1 | `phase-1/value-objects` | `NoteId`, `Priority`, `Sensitivity`, `Status`, `Area`, `NoteType`, `Vocabulary` (built-in `core`/`hub`), `Note`, domain errors; pytest-cov gate (≥ 90 %) | — | ✅ #3 |
 | 2 | `phase-1/validation-and-budgets` | `parse_note` / `note_to_raw`, `validate_note`, `ValidationReport` + severity policy, word count, per-note and combined P0 budgets | D (combined budget takes per-note word counts, `Mapping[NoteId, int]`; `NoteRef` arrives in PR 3) | ✅ #4 |
-| 3 | `phase-1/links-and-sections` | wikilink extraction (`[[id]]`, `[[id#Section]]`) plus `hub` / `related` / `superseded_by`; section extraction for `ReadNote`; cross-note rules: broken links (warning for owner edits, error for proposals), missing hub, `superseded_by` cycles, **hub chains acyclic and ≤ 3 hubs deep** | A (hub chain rules, [ADR-0015](../adr/0015-hub-membership-computed-at-read-time.md)), D | ✅ #7 |
+| 3 | `phase-1/links-and-sections` | wikilink extraction (`[[id]]`, `[[id#Section]]`) plus `hub` / `related` / `superseded_by`; section extraction for `ReadNote`; cross-note rules: broken links (warning for owner edits, error for proposals), missing hub, `superseded_by` cycles, **hub chains acyclic and ≤ 3 hubs deep** | A (hub chain rules, [ADR-0015](../../adr/0015-hub-membership-computed-at-read-time.md)), D | ✅ #7 |
 | 4 | `phase-1/secret-scanner` | private keys, common token formats, `password=`-style assignments, high-entropy strings; scans **frontmatter (title, summary, …) and body**, for proposals **and** owner edits; negative tests (commit hashes, UUIDs) | D | ✅ #8 |
 | 5 | `phase-1/access` | `AccessCeiling`, `effective_ceiling(listener, token)` (no defaults), visibility filter, `include_history`, `AgentToken`; `AccessContext(principal, ceiling, scopes)` with `principal = Agent(name) \| Owner` | C | ✅ #9 |
 | 6 | `phase-1/proposals` | `Proposal`, `ProposalKind`, `ProposalStatus` and lifecycle transitions (invalid transition raises), `Decision` (reject, merge_into, create, needs_owner), `CommitMessage` with trailers; note **content hash**, `base_hash` on update proposals; update proposals carry the full body only (patch format: future ADR) | B | ✅ #10 |
@@ -25,7 +25,7 @@ Status legend: ⬜ not started · 🟦 PR open · ✅ merged
 **Phase 1 is complete** once PR 10 is merged. The human security checkpoint of section 5 (scanner, access
 ceiling, tokens) is **done** (section 7).
 
-Related docs pull request: [ADR-0015](../adr/0015-hub-membership-computed-at-read-time.md) (#2, merged) — hub
+Related docs pull request: [ADR-0015](../../adr/0015-hub-membership-computed-at-read-time.md) (#2, merged) — hub
 membership computed at read time.
 
 ## 2. Cross-cutting design decisions
@@ -64,7 +64,7 @@ membership computed at read time.
 
 | | Adjustment | Pull requests |
 |---|---|---|
-| **A** | Hubs store only their introduction (≤ 800 words); members are computed at read time from the `hub` field and filtered by ceiling ([ADR-0015](../adr/0015-hub-membership-computed-at-read-time.md)). A hub may point to a parent hub; hub chains are acyclic and at most 3 hubs deep. | ADR in #2; budget in 2; chain rules in 3; member list in 8 |
+| **A** | Hubs store only their introduction (≤ 800 words); members are computed at read time from the `hub` field and filtered by ceiling ([ADR-0015](../../adr/0015-hub-membership-computed-at-read-time.md)). A hub may point to a parent hub; hub chains are acyclic and at most 3 hubs deep. | ADR in #2; budget in 2; chain rules in 3; member list in 8 |
 | **B** | Optimistic concurrency: every note exposes a content hash; update proposals carry `base_hash`; `ApplyProposal` refuses if the note changed (proposal goes back to `needs_owner` with the conflict flagged); `OwnerEditNote` uses the same mechanism. | 6, 9 |
 | **C** | `AccessContext(principal, ceiling, scopes)` with `principal = Agent(name) \| Owner`. Authorization is checked in the use cases: `SubmitProposal` requires scope `propose`; `OwnerEditNote`, `ReviewProposal` and maintenance require `Owner`; `source.agent` always comes from the context, never from the payload. | 5, 8, 9, 10 |
 | **D** | The secret scanner covers frontmatter (title, summary, …) and body, for owner edits too. The validation snapshot uses a light `NoteRef` without body. | 2, 3, 4, 9 |

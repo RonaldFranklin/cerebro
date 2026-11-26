@@ -1,7 +1,7 @@
 # Phase 3 plan — CLI and read-only MCP
 
 Approved by the owner on 2026-11-25 with the adjustments below. Delivered on 2026-11-25. The owner approved the phase. Its security checkpoint awaits only the owner's real-client tests.
-[Roadmap and acceptance criteria](../roadmap.md#-phase-3--cli-and-read-only-mcp)
+[Roadmap and acceptance criteria](delivered-phases.md#-phase-3--cli-and-read-only-mcp)
 
 ## 1. Pull requests
 
@@ -33,7 +33,7 @@ independent review, resolution of findings and completed green CI. Use scripts/m
 | Accept tokens only through Authorization: Bearer. Reject query credentials. Exclude tokens, note bodies and proposal payloads from logs. | 2–10 |
 | Automate acceptance with the SDK client, sample dev content, a restricted note and an internal token. Document exact commands for the owner to test both real clients. Preserve all global configuration, including ~/.claude and ~/.codex. | 10 |
 
-[ADR-0017](../adr/0017-cli-and-mcp-transports.md) records these decisions.
+[ADR-0017](../../adr/0017-cli-and-mcp-transports.md) records these decisions.
 
 ## 3. Approved design decisions
 
@@ -58,7 +58,7 @@ independent review, resolution of findings and completed green CI. Use scripts/m
    Populate summary from the note on rebuild and incremental writes, bump the disposable index schema, and
    contract-test fake and SQLite results plus automatic rebuild from a Phase 2 index. This keeps the adapter
    independent of storage and avoids loading a note body for each neighbor.
-   [ADR-0014](../adr/0014-mcp-tool-surface.md)
+   [ADR-0014](../../adr/0014-mcp-tool-surface.md)
 
    | Tool | Input and result |
    |---|---|
@@ -76,7 +76,7 @@ independent review, resolution of findings and completed green CI. Use scripts/m
    reauthenticate each tool call with AuthenticateToken, including on established stdio connections. Require
    read scope. Test that reconnecting with a different or revoked credential cannot retrieve earlier results. The resulting context uses min(listener, token). Phase 6 handles deployment and Phase 8 handles
    Cloudflare. Tokens travel off-host only over HTTPS.
-   [ADR-0005](../adr/0005-sensitivity-and-access-ceiling.md) · [ADR-0010](../adr/0010-network-access.md)
+   [ADR-0005](../../adr/0005-sensitivity-and-access-ceiling.md) · [ADR-0010](../../adr/0010-network-access.md)
 5. **Bound input before use cases.** Proposed starting limits are 64 KiB per MCP message or CLI structured input,
    1 KiB per UTF-8 query, 256 bytes per identifier, filter or section, and 4 KiB per review reason. Use domain
    constraints wherever tighter. Bound every accepted field, including decision overrides, and reject unknown fields.
@@ -95,7 +95,7 @@ independent review, resolution of findings and completed green CI. Use scripts/m
 | Uvicorn (runtime) | Serve the SDK's ASGI app with the request limiter wrapped around it. Verify the bounded path with the chosen SDK before pinning. |
 
 At PR 7 select compatible, stable releases aged at least seven days under the existing uv cutoff. Pin direct
-dependencies exactly and check uv sync --locked. Record exact versions and release dates, including transitive packages, and the lockfile delta in PR 7. [ADR-0013](../adr/0013-stack-and-dependency-policy.md)
+dependencies exactly and check uv sync --locked. Record exact versions and release dates, including transitive packages, and the lockfile delta in PR 7. [ADR-0013](../../adr/0013-stack-and-dependency-policy.md)
 
 ## 5. Acceptance and security checkpoint
 
@@ -130,7 +130,7 @@ fixture prepared by the manual runbook. With an internal token it discovers four
 finds a two-hop neighbor and receives identical errors for a missing and a restricted note. Search for the
 restricted marker is empty. Both transports recover after a real listener restart. The SDK sees a connection
 failure on direct HTTP and the fixed offline MCP error over the live stdio bridge.
-[Acceptance test](../../backend/tests/integration/test_phase3_acceptance.py)
+[Acceptance test](../../../backend/tests/integration/test_phase3_acceptance.py)
 
 ### Decisions for review
 
@@ -154,6 +154,6 @@ failure on direct HTTP and the fixed offline MCP error over the live stdio bridg
   Acceptance adds missing and expired credentials, rejected replay headers, revocation and restart.
 - Owner-only token lists omit both secrets and hashes. Review checks the proposal revision, records the owner
   decision and applies through the existing serialized write path. Proposal submission through MCP is planned for Phase 4.
-- Residual storage risks are recorded in [architecture](../architecture.md#accepted-risks-owner-decision-2026-11-25).
+- Residual storage risks are recorded in [architecture](../../architecture.md#accepted-risks-owner-decision-2026-11-25).
   The SDK test and isolated shell setup are verified. The owner runs the
-  [real-client checks](../agent-integration.md) and decides the Phase 3 security checkpoint.
+  [real-client checks](../../agent-integration.md) and decides the Phase 3 security checkpoint.

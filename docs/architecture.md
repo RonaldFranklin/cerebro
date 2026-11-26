@@ -3,8 +3,8 @@
 Cérebro follows a **hexagonal (ports and adapters)** architecture. The core (domain + application) knows nothing
 about YAML, SQLite, git, HTTP, MCP or any LLM provider. See [ADR-0001](adr/0001-hexagonal-architecture.md).
 
-The write path below is the Phase 7 target. The [delivery plan](plans/phase-7.md) tracks its rollout.
-[ADR-0020](adr/0020-direct-agent-writes.md) records the change from the Inbox shipped in Phases 4 and 5.
+Agents write directly through validated use cases ([ADR-0020](adr/0020-direct-agent-writes.md)). Known errors
+in the operational parts of this document are listed in [Phase 6 of the roadmap](roadmap.md#-phase-6--deploy-hml-prod).
 
 ## 1. Layers
 
@@ -105,6 +105,7 @@ backend/
 | `TokenStore` | `add`, `get`, `find_by_hash` (also returns revoked tokens), `save`, `all`; tokens are stored hashed | SQLite |
 | `WriteAttemptStore` | Atomically reserve a rolling-hour slot for an authenticated token; a refusal leaves state unchanged | SQLite; in-memory fake |
 | `ChangeHistory` | Return recent first-parent revisions, attribution and note versions for private owner history | Git/filesystem; in-memory fake |
+| `Credentials`, `LoginAttempts`, `SessionStore` | Owner browser login: password verifier, shared attempt throttle, listener-bound sessions ([ADR-0019](adr/0019-owner-browser-api.md)) | crypto, SQLite, in-memory sessions; fakes |
 | `Clock`, `IdGenerator` | `now()`; note ids, token ids and token secrets, for deterministic tests | system / fixed fakes |
 
 Recent changes scans at most 32 first-parent revisions and shows up to 20 attributable note changes. The application
@@ -349,6 +350,6 @@ TanStack React Query 5.108.0, Sigma 4.0.6, Graphology 0.26.0 and ForceAtlas2 0.1
 provide the UI and graph. The editor uses CodeMirror state 6.7.6, view 6.43.15, commands 6.11.1,
 lang-markdown 6.5.2 and autocomplete 6.20.4. Marked 18.2.1 and DOMPurify 3.4.18 render
 and sanitize Markdown. TypeScript 7.0.2, Vite 8.3.8 and Playwright 1.65.1 compile, bundle and
-test the frontend. The [Phase 5 inventory](plans/phase-5.md#4-dependency-proposal-and-verified-versions)
+test the frontend. The [Phase 5 inventory](plans/archive/phase-5.md#4-dependency-proposal-and-verified-versions)
 records the type packages, transitive distributions and UTC release dates for the committed
 [web lockfile](../web/pnpm-lock.yaml).

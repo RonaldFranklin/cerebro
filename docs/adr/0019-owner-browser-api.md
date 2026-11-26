@@ -37,7 +37,7 @@ Translate prose through semantic HTML and preserve code, links and identifiers t
 
 | Delivery PR | Port or dependency responsibility |
 |---|---|
-| 2 | Pin FastAPI and its required annotated-doc distribution, Node 26.13.1, pnpm 12.22.0 and the approved web packages. The [approved inventory](../plans/phase-5.md#4-dependency-proposal-and-verified-versions) records each package's version and role. |
+| 2 | Pin FastAPI and its required annotated-doc distribution, Node 26.13.1, pnpm 12.22.0 and the approved web packages. The [approved inventory](../plans/archive/phase-5.md#4-dependency-proposal-and-verified-versions) records each package's version and role. |
 | 3 | Define application protocols for credential verification, durable login attempt reservation and ephemeral sessions as needed. Provide fakes and contract tests against the protected verifier file, SQLite throttle and bounded memory session store. Reuse the existing clock. |
 | 4–6 | Compose the HTTP adapter beside MCP, projecting use cases and DTOs for reading and reviewed writes. Keep storage and application ports behind bootstrap. |
 | 7–11 | Build the UI with React, TypeScript, Vite and TanStack Query. Use Marked/DOMPurify for reading, Sigma/Graphology/ForceAtlas2 for the graph, CodeMirror for editing and Playwright for component, browser and screenshot verification. |
