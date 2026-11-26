@@ -11,7 +11,7 @@ must equal the environment name. The same private repository holds independent `
 APP_DIR='<absolute-application-checkout>'
 ENVIRONMENT='hml'  # use prod for production
 ENV_DATA_DIR='<absolute-data-directory-for-this-environment>'
-CONTENT_DIR="$ENV_DATA_DIR/content"
+CONTENT_DIR="$ENV_DATA_DIR/content/repo"
 STATE_DIR="$ENV_DATA_DIR/state"
 BACKUP_DIR='<absolute-private-backup-directory-for-this-environment>'
 GITHUB_OWNER='<github-owner>'
@@ -69,8 +69,9 @@ restore location and its separate production key.
 ```sh
 umask 077
 mkdir -m 0700 "$RESTORE_DIR" &&
-git clone --branch "$ENVIRONMENT" --single-branch "https://github.com/$GITHUB_OWNER/cerebro-content.git" "$RESTORE_DIR/content" &&
-git -C "$RESTORE_DIR/content" reset --keep "$(cat "$SNAPSHOT/content-revision")" &&
+mkdir -m 0700 "$RESTORE_DIR/content" &&
+git clone --branch "$ENVIRONMENT" --single-branch "https://github.com/$GITHUB_OWNER/cerebro-content.git" "$RESTORE_DIR/content/repo" &&
+git -C "$RESTORE_DIR/content/repo" reset --keep "$(cat "$SNAPSHOT/content-revision")" &&
 mkdir -m 0700 "$RESTORE_DIR/state" &&
 install -m 0600 "$SNAPSHOT/state.sqlite" "$SNAPSHOT/owner.verifier" "$RESTORE_DIR/state/" &&
 python3 -c 'import sqlite3,sys; db=sqlite3.connect(sys.argv[1]); sys.exit(db.execute("PRAGMA quick_check").fetchall() != [("ok",)])' "$RESTORE_DIR/state/state.sqlite"
