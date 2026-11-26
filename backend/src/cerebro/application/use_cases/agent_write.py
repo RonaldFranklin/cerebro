@@ -2,7 +2,6 @@
 
 import re
 import unicodedata
-from collections.abc import Iterator
 from dataclasses import replace
 from datetime import date
 
@@ -11,9 +10,9 @@ from cerebro.application.agent_write import AgentWriteRequest, AgentWriteResult,
 from cerebro.application.dto import sensitivity_raise_warnings
 from cerebro.application.errors import PermissionDenied
 from cerebro.application.index_state import index_commit
-from cerebro.application.note_validation import validate_candidate
+from cerebro.application.note_validation import references, validate_candidate, write_snapshot
 from cerebro.application.ports.graph import GraphIndex
-from cerebro.application.ports.notes import NoteChange, NoteRepository
+from cerebro.application.ports.notes import NoteChange, NoteRepository, NoteScan
 from cerebro.application.ports.search import SearchIndex
 from cerebro.application.ports.system import Clock, IdGenerator
 from cerebro.application.ports.write_attempts import WriteAttemptStore
@@ -23,7 +22,6 @@ from cerebro.domain.content_hash import content_hash, is_content_hash
 from cerebro.domain.enums import Priority
 from cerebro.domain.errors import ContentConflict, InvalidValueError
 from cerebro.domain.frontmatter import FIELD_ORDER, parse_note
-from cerebro.domain.links import loose_link_targets
 from cerebro.domain.note import Note, NoteId
 from cerebro.domain.report import AGENT_WRITE_POLICY, Severity, ValidationReport
 from cerebro.domain.vocabulary import CORE, HUB, Vocabulary
@@ -67,9 +65,24 @@ class AgentWrite:
         if ctx.token_id is None or not isinstance(ctx.principal, Agent):
             raise PermissionDenied("write without an authenticated agent token")
         now = self._clock.now()
-        if not self._attempts.reserve(ctx.token_id, now, self._limit):
+        release = self._attempts.reserve(ctx.token_id, now, self._limit)
+        if release is None:
             raise WriteRejected(WriteFinding("rate_limited", "request", "Wait for a rolling-hour quota slot."))
 
+        try:
+            scan = write_snapshot(self._notes)
+            return self._write(request, ctx, ctx.token_id, ctx.principal, now.date(), scan)
+        except WriteRejected as error:
+            if error.server_failure:
+                release()
+            raise
+        except Exception:
+            release()
+            raise
+
+    def _write(
+        self, request: AgentWriteRequest, ctx: AccessContext, token_id: str, agent: Agent, today: date, scan: NoteScan
+    ) -> AgentWriteResult:
         if request.has_unexpected_fields:
             raise WriteRejected(
                 WriteFinding(
@@ -79,6 +92,7 @@ class AgentWrite:
                 )
             )
 
+        excluded = scan.excluded_stems
         key = None
         base = None
         created = None
@@ -87,10 +101,10 @@ class AgentWrite:
                 raise WriteRejected(WriteFinding("invalid_field", "request_id", "Supply a 1-64 character request id."))
             if request.target is not None or request.base_hash is not None:
                 raise WriteRejected(WriteFinding("invalid_field", "target", "Omit target and base_hash on create."))
-            key = create_request_key(ctx.token_id, request.request_id)
+            key = create_request_key(token_id, request.request_id)
             created = self._notes.find_create(key)
             if created is not None:
-                _require_core_scope(self._visible_target(created.note.id, ctx), ctx, "target")
+                _require_core_scope(self._visible_target(created.note.id, ctx, excluded), ctx, "target")
             note_id = created.note.id if created else _CREATE_PLACEHOLDER
         elif request.operation == "update":
             if request.request_id is not None or not is_content_hash(request.base_hash):
@@ -99,7 +113,7 @@ class AgentWrite:
                 note_id = NoteId(request.target or "")
             except InvalidValueError:
                 raise WriteRejected(_UNAVAILABLE) from None
-            base = self._visible_target(note_id, ctx)
+            base = self._visible_target(note_id, ctx, excluded)
             _require_core_scope(base, ctx, "target")
             if content_hash(base) != request.base_hash:
                 raise self._stale()
@@ -107,7 +121,7 @@ class AgentWrite:
             raise WriteRejected(WriteFinding("invalid_field", "operation", "Choose create or update."))
 
         try:
-            candidate = _parse(request, note_id, now.date(), base)
+            candidate = _parse(request, note_id, today, base)
         except WriteRejected:
             if created:
                 raise WriteRejected(_CONFLICT) from None
@@ -116,11 +130,10 @@ class AgentWrite:
             raise WriteRejected(WriteFinding("outside_ceiling", "sensitivity", "Choose an authorized sensitivity."))
         _require_core_scope(candidate, ctx, "priority")
         if key is not None and created is None:
-            note_id = self._new_id(candidate.title)
+            note_id = self._new_id(candidate.title, excluded)
             candidate = replace(candidate, id=note_id)
-        unavailable = self._unavailable_references(candidate, ctx)
-        if unavailable:
-            raise WriteRejected(*unavailable[:12])
+        if unavailable := self._unavailable_references(candidate, ctx, excluded):
+            raise unavailable
         if created is not None:
             # Compare with the note as the original commit stored it, ignoring service timestamps (ADR-0024).
             if replace(candidate, created=date.min, updated=date.min) != replace(
@@ -135,7 +148,7 @@ class AgentWrite:
         if base and replace(candidate, updated=base.updated) == base:
             raise WriteRejected(WriteFinding("unchanged", "request", "The stored note already contains these changes."))
         report = validate_candidate(
-            candidate, ctx=ctx, notes=self._notes, vocabulary=self._vocabulary, policy=AGENT_WRITE_POLICY, base=base
+            candidate, ctx=ctx, scan=scan, vocabulary=self._vocabulary, policy=AGENT_WRITE_POLICY, base=base
         )
         errors = projected(report, Severity.ERROR)
         if errors:
@@ -143,7 +156,7 @@ class AgentWrite:
         warnings = projected(report, Severity.WARNING)
         if base is None:
             warnings += self._possible_duplicate(candidate, ctx)
-        message = AgentWriteCommit(note_id=note_id, written_by=ctx.principal.name, request_key=key)
+        message = AgentWriteCommit(note_id=note_id, written_by=agent.name, request_key=key)
         revision = self._commit(candidate, message, request.base_hash)
         return AgentWriteResult(
             note_id,
@@ -164,27 +177,33 @@ class AgentWrite:
                 return (WriteFinding("possible_duplicate", "title", hint),)
         return ()
 
-    def _new_id(self, title: str) -> NoteId:
+    def _new_id(self, title: str, excluded: frozenset[str]) -> NoteId:
         decomposed = unicodedata.normalize("NFKD", title.casefold())
         unaccented = "".join(char for char in decomposed if not unicodedata.combining(char))
         stem = re.sub(r"[^a-z0-9]+", "-", unaccented).strip("-")[:60].rstrip("-") or "note"
         for _ in range(32):
             note_id = NoteId(f"{stem}-{self._ids.new_note_suffix()}")
-            if self._notes.get(note_id) is None:
+            if note_id.value not in excluded and self._notes.get(note_id) is None:
                 return note_id
-        raise WriteRejected(WriteFinding("id_unavailable", "request", "Retry the create with the same request id."))
+        raise WriteRejected(
+            WriteFinding("id_unavailable", "request", "Retry the create with the same request id."), server_failure=True
+        )
 
-    def _unavailable_references(self, note: Note, ctx: AccessContext) -> list[WriteFinding]:
+    def _unavailable_references(self, note: Note, ctx: AccessContext, excluded: frozenset[str]) -> WriteRejected | None:
         """One finding per position (entry or text line) that references a missing or hidden note. It is built from
         the submitted note alone, so both cases read exactly the same. Only the first explains the link format."""
         visible: dict[NoteId, bool] = {note.id: True}
         positions: dict[tuple[str, str], None] = {}  # ordered and without duplicates
-        for field, position, ref in _references(note):
+        for field, position, ref in references(note):
             if ref not in visible:
-                visible[ref] = visible_id(self._notes, ref, ctx, include_history=True) is not None
+                visible[ref] = (
+                    ref.value not in excluded and visible_id(self._notes, ref, ctx, include_history=True) is not None
+                )
             if not visible[ref]:
                 positions[field, position] = None
-        return [
+        if not positions:
+            return None
+        findings = [
             WriteFinding(
                 "broken_link",
                 field,
@@ -192,11 +211,17 @@ class AgentWrite:
             )
             for number, (field, position) in enumerate(positions)
         ]
+        only_excluded = all(ref.value in excluded for ref, readable in visible.items() if not readable)
+        return WriteRejected(*findings[:12], server_failure=only_excluded)
 
-    def _visible_target(self, note_id: NoteId, ctx: AccessContext) -> Note:
+    def _visible_target(self, note_id: NoteId, ctx: AccessContext, excluded: frozenset[str]) -> Note:
+        if note_id.value in excluded:
+            raise WriteRejected(_UNAVAILABLE, server_failure=True)
         note = stored_note(self._notes, note_id, ctx)
-        if note is None or not ctx.ceiling.allows(note.sensitivity) or self._unavailable_references(note, ctx):
+        if note is None or not ctx.ceiling.allows(note.sensitivity):
             raise WriteRejected(_UNAVAILABLE)
+        if unavailable := self._unavailable_references(note, ctx, excluded):
+            raise WriteRejected(_UNAVAILABLE, server_failure=unavailable.server_failure)
         return note
 
     @staticmethod
@@ -211,21 +236,6 @@ class AgentWrite:
             raise self._stale() from None
         index_commit(self._search, self._graph, candidate, previous=previous, revision=revision)
         return revision
-
-
-def _references(note: Note) -> Iterator[tuple[str, str, NoteId]]:
-    """``(field, position, target)`` of every reference, including each ``[[...]]`` that redaction treats as one."""
-    if note.hub is not None:
-        yield "hub", "The hub id", note.hub
-    for number, ref in enumerate(note.related, 1):
-        yield "related", f"Related entry #{number}", ref
-    if note.superseded_by is not None:
-        yield "superseded_by", "The superseded_by id", note.superseded_by
-    for field, text in (("title", note.title), ("summary", note.summary), ("body", note.body)):
-        # Split on "\n" only: a link cannot contain one, but may contain other line separators.
-        for number, line in enumerate(text.split("\n"), 1):
-            for ref in loose_link_targets(line):
-                yield field, f"Line {number} of {field}", ref
 
 
 def _require_core_scope(note: Note, ctx: AccessContext, field: str) -> None:

@@ -6,7 +6,7 @@ from cerebro.application.access import require_owner, visible_note
 from cerebro.application.dto import OwnerEditNoteRequest, OwnerEditNoteResult, sensitivity_raise_warnings
 from cerebro.application.errors import PermissionDenied
 from cerebro.application.index_state import index_commit
-from cerebro.application.note_validation import validate_candidate
+from cerebro.application.note_validation import validate_candidate, write_snapshot
 from cerebro.application.ports.graph import GraphIndex
 from cerebro.application.ports.notes import NoteChange, NoteRepository
 from cerebro.application.ports.search import SearchIndex
@@ -56,7 +56,7 @@ class OwnerEditNote:
         report = validate_candidate(
             candidate,
             ctx=ctx,
-            notes=self._notes,
+            scan=write_snapshot(self._notes),
             vocabulary=self._vocabulary,
             policy=OWNER_EDIT_POLICY,
             base=base,

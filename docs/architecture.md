@@ -243,10 +243,13 @@ Filesystem repository, operating notes (Phase 2):
   everywhere (search, graph, reads, link targets are redacted), so exclusion only ever narrows what is served. Not
   stable, hence fail-closed: a restricted note that cannot be decrypted (the result depends on the configured key),
   a symlinked or unreadable file, a folder that is not a real directory.
-- Writes are conservative: cross-note validation (`list_refs`, `list_notes`) needs every note, so agent writes and
-  owner edits fail while **any** problem file exists, stable or not (an incomplete set could pass a budget or hub
-  rule the full set fails). Such a refused write still counts against the agent's quota. The owner fixes the file by hand and
-  commits it; the health report names it.
+- Writes validate the candidate, cross-note links and P0 budget against the usable committed notes. A stable
+  problem blocks editing that id or linking to it, including links in code, titles and summaries. Other notes
+  remain writable. Unstable scans still prevent writes. The owner sees excluded files in Health and can repair
+  them in the content repository. Server failures release the agent's quota reservation. Broken references
+  consume a slot if any failed id is missing or hidden. A request blocked solely by an excluded id releases its slot.
+  The response uses the same unavailable-target or link finding in all three cases. Quota exhaustion can therefore
+  distinguish an excluded file from a missing or hidden id. Repaired notes enter the P0 budget on the next scan.
 - Below the `restricted` ceiling, a note file that cannot be served now (`NoteReadError` on `get`) reads exactly like
   a missing note, so an agent cannot learn that a hidden note exists; at `restricted` the error propagates.
 - `apply` refuses when a `.git/index.lock` exists (the error tells the owner to remove a stale one), when anything is

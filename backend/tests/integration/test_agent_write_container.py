@@ -7,7 +7,13 @@ from pathlib import Path
 import pytest
 
 from cerebro.application.agent_write import AgentWriteRequest, WriteRejected
-from cerebro.application.dto import AuthenticateTokenRequest, IssueAgentTokenRequest
+from cerebro.application.dto import (
+    AuthenticateTokenRequest,
+    HealthReportRequest,
+    IssueAgentTokenRequest,
+    OwnerEditNoteRequest,
+)
+from cerebro.application.errors import NoteReadError
 from cerebro.application.index_state import index_is_stale
 from cerebro.bootstrap.container import Container, build_container
 from cerebro.domain.access import AccessCeiling, AccessContext, Scope
@@ -136,3 +142,25 @@ def test_unchanged_update_has_one_safe_outcome_for_plaintext_and_encrypted_notes
     with pytest.raises(WriteRejected, match="unchanged"):
         container.use_cases.agent_write.execute(unchanged, ctx)
     assert container.notes.head() == receipt.revision
+
+
+def test_invalid_commit_blocks_only_dependent_writes_and_remains_in_health(tmp_path: Path) -> None:
+    sample = make_sample_repo(tmp_path)
+    path = "notes/bad.md"
+    (sample.root / path).write_text("---\nnot: [valid\n---\n")
+    sample.git().stage([path])
+    sample.git().commit("Add invalid note", [path])
+    service = build_container(replace(sample.settings, writes_per_hour=1))
+    service.start()
+    ctx = writer_context(service)
+    cases = service.use_cases
+    with pytest.raises(WriteRejected, match="broken_link"):
+        cases.agent_write.execute(replace(create(), body="See [[bad]]."), ctx)
+    receipt = cases.agent_write.execute(create(), ctx)
+    note = service.notes.get(receipt.note_id)
+    assert note is not None
+    owner_edit = OwnerEditNoteRequest(note=replace(note, body="See [[bad]]."), expected_hash=content_hash(note))
+    with pytest.raises(NoteReadError):
+        cases.owner_edit_note.execute(owner_edit, OWNER)
+    assert cases.owner_edit_note.execute(replace(owner_edit, note=replace(note, body="Updated.")), OWNER).revision
+    assert any(issue.subject == path for issue in cases.health_report.execute(HealthReportRequest(), OWNER).issues)
