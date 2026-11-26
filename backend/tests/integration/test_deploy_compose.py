@@ -151,7 +151,6 @@ def test_preflight_refuses_unsafe_service(tmp_path: Path, overrides: dict[str, o
 )
 def test_guarded_start(tmp_path: Path, failure: str) -> None:
     """Real Compose resolves the file; a simulated daemon records startup and shutdown."""
-    import fcntl
     import shutil
 
     docker = shutil.which("docker")
@@ -163,7 +162,13 @@ case "$*" in
     *" config --format json") exec "$REAL_DOCKER" "$@" ;;
     "image inspect "*) test "$FAILURE" != missing-image ;;
     *" create "*) exit 0 ;;
-    *" start "*) touch "$STARTED"; test "$FAILURE" != start ;;
+    *" start "*)
+        touch "$STARTED"
+        if [ "$FAILURE" = concurrent ]; then
+            FAILURE="" DATA_DIR="$OTHER_DATA" CALLS="$OTHER_CALLS" "$START_SCRIPT" /dev/null
+            echo "$?" > "$SECOND_RESULT"
+        fi
+        test "$FAILURE" != start ;;
     *" ps -a -q backend") echo abc ;;
     "container inspect abc") test "$FAILURE" != inspect && cat "$CONTAINER" ;;
     "network inspect cerebro-hml_default")
@@ -212,7 +217,12 @@ esac
         "CEREBRO_GIT_EMAIL": "fixture@example.invalid",
         "REAL_DOCKER": docker,
         "FAILURE": failure,
+        "HOME": str(tmp_path),
         "CALLS": str(calls),
+        "OTHER_DATA": str(tmp_path / "drill" / "hml"),
+        "OTHER_CALLS": str(tmp_path / "drill-calls"),
+        "SECOND_RESULT": str(tmp_path / "drill-result"),
+        "START_SCRIPT": str(ROOT / "deploy/start.sh"),
         "CONTAINER": str(tmp_path / "instance"),
         "NETWORK": str(tmp_path / "bridge"),
         "LATE_NETWORK": str(tmp_path / "late-bridge"),
@@ -226,21 +236,18 @@ esac
         data.symlink_to(tmp_path / "prod", target_is_directory=True)
     for part in ("state", "index", "content", "secrets"):
         (data / part).mkdir(parents=True)
+        if failure == "concurrent":
+            (Path(env["OTHER_DATA"]) / part).mkdir(parents=True)
     if failure == "preflight":
         env["COMPOSE_PROJECT_NAME"] = "cerebro-prod"
-    lock_fd = os.open(data / "state", os.O_RDONLY | os.O_DIRECTORY)
-    try:
-        if failure == "concurrent":
-            fcntl.flock(lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        result = subprocess.run([str(ROOT / "deploy/start.sh"), "/dev/null"], env=env, capture_output=True, check=False)
-    finally:
-        os.close(lock_fd)
-    assert (result.returncode == 0) == (not failure), result.stderr
+    result = subprocess.run([env["START_SCRIPT"], "/dev/null"], env=env, capture_output=True, check=False)
+    assert (result.returncode == 0) == (failure in ("", "concurrent")), result.stderr
+    if failure == "concurrent":
+        assert (tmp_path / "drill-result").read_text().strip() != "0"
+        assert " create " not in (tmp_path / "drill-calls").read_text()
     commands = calls.read_text()
-    assert (" create " in commands) == (
-        failure not in ("preflight", "missing-image", "wrong-data", "symlink", "concurrent")
-    )
-    started = failure in ("", "start", "port", "health", "existing", "late-foreign")
+    assert (" create " in commands) == (failure not in ("preflight", "missing-image", "wrong-data", "symlink"))
+    started = failure in ("", "concurrent", "start", "port", "health", "existing", "late-foreign")
     assert (" start " in commands) == started
     assert ("container stop abc" in commands) == (
         failure in ("start", "port", "health", "existing", "network", "foreign", "late-foreign", "inspect", "attached")

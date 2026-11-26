@@ -13,11 +13,11 @@ trap 'rm -rf -- "$scratch"' EXIT
 "${dc[@]}" config --format json > "$scratch/model"
 project=$(python3 "$check" --project < "$scratch/model")
 dc+=(-p "$project")
-state=$(python3 -c 'import json, sys; print(next(v["source"] for v in json.load(sys.stdin)["services"]["backend"]["volumes"] if v["target"] == "/data/state"))' < "$scratch/model")
-# Lock the existing directory inode for this deployment, including final verification.
-exec {lock_fd}<"$state"
+# Migrations and restore drills can change DATA_DIR while targeting the same project.
+umask 077
+exec {lock_fd}>>"${HOME:?run as the deployment operator}/.${project}.start.lock"
 if ! flock --exclusive --nonblock "$lock_fd"; then
-    echo "Another startup holds the deployment lock for this state directory." >&2
+    echo "Another startup holds the deployment lock for this project." >&2
     exit 1
 fi
 
