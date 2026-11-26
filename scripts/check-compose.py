@@ -26,6 +26,7 @@ root = mounts["/data/state"].parent
 if (
     root.name != environment["CEREBRO_GIT_BRANCH"]
     or not root.is_absolute()
+    or root.is_relative_to(Path(service["build"]["context"]).resolve())
     or any(path != root / Path(target).name or path.resolve() != path for target, path in mounts.items())
 ):
     sys.exit("Use regular mount directories under an absolute data directory named for the environment.")

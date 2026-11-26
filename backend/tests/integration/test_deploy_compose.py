@@ -62,6 +62,8 @@ def test_deployment_model(tmp_path: Path, environment: str, port: str) -> None:
     service = model["services"]["backend"]
     assert service["image"] == f"cerebro-backend:git-{sha}"
     assert service["build"]["context"] == str(ROOT)
+    in_checkout = {**service, "build": {"context": str(tmp_path)}}
+    assert checked({**model, "services": {"backend": in_checkout}}).returncode != 0
     assert service["pull_policy"] == "never"
     assert service["restart"] == "unless-stopped"
     assert service["logging"]["options"].keys() >= {"max-size", "max-file"}
@@ -117,6 +119,7 @@ def test_preflight_refuses_unsafe_service(tmp_path: Path, overrides: dict[str, o
         "networks": {"default": None},
         "user": "10001:10001",
     }
+    service["build"] = {"context": str(ROOT)}
     service["volumes"] = [
         {"target": f"/data/{part}", "source": str(tmp_path / "hml" / part), "type": "bind"}
         for part in ("state", "index", "content", "secrets")
@@ -135,6 +138,7 @@ def test_preflight_refuses_unsafe_service(tmp_path: Path, overrides: dict[str, o
         "port",
         "network",
         "foreign",
+        "late-foreign",
         "health",
         "preflight",
         "missing-image",
@@ -156,11 +160,11 @@ case "$*" in
     *" config --format json") exec "$REAL_DOCKER" "$@" ;;
     "image inspect "*) test "$FAILURE" != missing-image ;;
     *" create "*) exit 0 ;;
-    *" start "*) test "$FAILURE" != start ;;
-    *" ps -q backend") if [ "$FAILURE" = existing ]; then echo abc; fi ;;
+    *" start "*) touch "$STARTED"; test "$FAILURE" != start ;;
     *" ps -a -q backend") echo abc ;;
     "container inspect abc") test "$FAILURE" != inspect && cat "$CONTAINER" ;;
-    "network inspect cerebro-hml_default") cat "$NETWORK" ;;
+    "network inspect cerebro-hml_default")
+        if [ "$FAILURE" = late-foreign ] && [ -f "$STARTED" ]; then cat "$LATE_NETWORK"; else cat "$NETWORK"; fi ;;
     "container stop abc") exit 0 ;;
     *) exit 1 ;;
 esac
@@ -188,7 +192,11 @@ esac
         "Containers": {"abc": {}, "intruder": {}} if failure == "foreign" else {"abc": {}},
         "Labels": {"com.docker.compose.project": "cerebro-hml", "com.docker.compose.network": "default"},
     }
-    for filename, record in (("instance", instance), ("bridge", bridge)):
+    for filename, record in (
+        ("instance", instance),
+        ("bridge", bridge),
+        ("late-bridge", {**bridge, "Containers": {"abc": {}, "intruder": {}}}),
+    ):
         (tmp_path / filename).write_text(json.dumps([record]))
     env = {
         "PATH": f"{tmp_path}:{os.environ['PATH']}",
@@ -204,6 +212,8 @@ esac
         "CALLS": str(calls),
         "CONTAINER": str(tmp_path / "instance"),
         "NETWORK": str(tmp_path / "bridge"),
+        "LATE_NETWORK": str(tmp_path / "late-bridge"),
+        "STARTED": str(tmp_path / "started"),
     }
     if failure == "wrong-data":
         env["DATA_DIR"] = str(tmp_path / "prod")
@@ -219,7 +229,9 @@ esac
     assert (result.returncode == 0) == (not failure), result.stderr
     commands = calls.read_text()
     assert (" create " in commands) == (failure not in ("preflight", "missing-image", "wrong-data", "symlink"))
-    started = failure in ("", "start", "port", "health", "existing")
+    started = failure in ("", "start", "port", "health", "existing", "late-foreign")
     assert (" start " in commands) == started
-    assert ("container stop abc" in commands) == (failure in ("start", "port", "health"))
+    assert ("container stop abc" in commands) == (
+        failure in ("start", "port", "health", "existing", "network", "foreign", "late-foreign", "inspect")
+    )
     assert " stop backend" not in commands

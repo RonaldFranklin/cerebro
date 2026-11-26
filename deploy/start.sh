@@ -16,20 +16,20 @@ dc+=(-p "$project")
 
 image=$(python3 -c 'import json, sys; print(json.load(sys.stdin)["services"]["backend"]["image"])' < "$scratch/model")
 docker image inspect "$image" > /dev/null
-previous=$("${dc[@]}" ps -q backend)
 "${dc[@]}" create --no-build --pull never backend
 id=$("${dc[@]}" ps -a -q backend)
+if [[ -z "$id" || "$id" == *$'\n'* ]]; then
+    echo "Cannot identify a unique backend container in this project." >&2
+    exit 1
+fi
 
 check_runtime() {
     docker container inspect "$id" > "$scratch/container" || return 1
     docker network inspect "${project}_default" > "$scratch/network" || return 1
     python3 "$check" "$scratch/container" "$scratch/network" "$1" < "$scratch/model"
 }
-check_runtime created
-if ! "${dc[@]}" start --wait backend || ! check_runtime running; then
-    if [[ "$id" != "$previous" ]]; then
-        echo "Startup checks failed. Stopping the backend started by this attempt." >&2
-        docker container stop "$id"
-    fi
+if ! check_runtime created || ! "${dc[@]}" start --wait backend || ! check_runtime running; then
+    echo "Startup checks failed. Stopping the identified project backend." >&2
+    docker container stop "$id"
     exit 1
 fi
