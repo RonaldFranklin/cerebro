@@ -12,9 +12,10 @@ class FakeHistory:
         self.unreadable: set[str] = set()
         """Revisions whose blobs cannot be decoded: ``note_at`` fails closed, like the git adapter."""
 
-    def recent(self, cursor: str | None = None, *, verify_head: str | None = None) -> tuple[str, ...]:
+    def recent(self, cursor: str | None = None, *, verify_head: tuple[str, str] | None = None) -> tuple[str, ...]:
         if verify_head is not None:
-            self._require_known(verify_head)
+            for revision in verify_head:
+                self._require_known(revision)
         if cursor is not None:
             self._require_known(cursor)
         return (self.parent,) if cursor == self.parent else (self.revision, self.parent)

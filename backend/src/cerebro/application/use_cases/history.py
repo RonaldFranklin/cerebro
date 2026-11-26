@@ -4,7 +4,7 @@ import difflib
 import json
 import re
 from collections.abc import Callable, Iterator
-from contextlib import AbstractContextManager, nullcontext
+from contextlib import AbstractContextManager, contextmanager, nullcontext
 from dataclasses import dataclass
 from functools import lru_cache
 
@@ -56,22 +56,30 @@ class OwnerHistory:
 
     def list(self, ctx: AccessContext, cursor: HistoryCursor | None = None) -> ChangePage:
         require_owner(ctx, "inspect change history")
-        with self._guard():
-            return self._list(ctx, cursor)
+        with self._window(cursor) as (head, revisions):
+            return self._list(ctx, head, revisions)
 
-    def _window(self, cursor: HistoryCursor | None) -> tuple[str | None, tuple[str, ...]]:
-        recent = self._history.recent()
+    @contextmanager
+    def _window(self, cursor: HistoryCursor | None) -> Iterator[tuple[str | None, tuple[str, ...]]]:
         if cursor is None:
-            return next(iter(recent), None), recent
-        # The browser authenticated this continuation. Its original HEAD must still be on the current chain.
+            with self._guard():
+                recent = self._history.recent()
+                yield next(iter(recent), None), recent
+            return
+        # Check old ancestry outside the writer lock, against the exact commit we will recheck under it.
+        recent = self._history.recent()
         if not recent or not is_revision(cursor.start):
             raise ChangeUnavailable()
-        verify_head = None if cursor.head in recent else cursor.head
-        return recent[0], self._history.recent(cursor.start, verify_head=verify_head)
+        observed = recent[0]
+        ancestry = None if cursor.head in recent else (cursor.head, observed)
+        revisions = self._history.recent(cursor.start, verify_head=ancestry)
+        with self._guard():
+            if self._notes.head() != observed:
+                raise ChangeUnavailable()
+            yield cursor.head, revisions
 
-    def _list(self, ctx: AccessContext, cursor: HistoryCursor | None) -> ChangePage:
+    def _list(self, ctx: AccessContext, head: str | None, revisions: tuple[str, ...]) -> ChangePage:
         rows: list[ChangeSummary] = []
-        head, revisions = self._window(cursor)
         page_cursor = HistoryCursor(head, revisions[0]) if head and revisions else None
         for index, revision in enumerate(revisions):
             if index == RECENT_WINDOW or len(rows) == MAX_CHANGES:
@@ -87,13 +95,12 @@ class OwnerHistory:
 
     def detail(self, request: HistoryRequest, ctx: AccessContext) -> ChangeDetail:
         require_owner(ctx, "inspect change history")
-        with self._guard():
-            return self._detail(request, ctx)
+        with self._window(request.cursor) as (_, revisions):
+            if not is_revision(request.revision) or request.revision not in revisions[:RECENT_WINDOW]:
+                raise ChangeUnavailable()
+            return self._detail(request.revision, ctx)
 
-    def _detail(self, request: HistoryRequest, ctx: AccessContext) -> ChangeDetail:
-        revision = request.revision
-        if not is_revision(revision) or revision not in self._window(request.cursor)[1][:RECENT_WINDOW]:
-            raise ChangeUnavailable()
+    def _detail(self, revision: str, ctx: AccessContext) -> ChangeDetail:
         versions = self._authorized(revision, ctx)
         if versions is None:
             raise ChangeUnavailable()
