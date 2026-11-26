@@ -11,6 +11,8 @@ type State =
 
 export class BrowserSession {
   private generation = 0;
+  private probe = 0;
+  private absoluteDeadline = Infinity;
   private state: State = { kind: "checking" };
   private readonly listeners = new Set<() => void>();
   private lifetime = new AbortController();
@@ -46,6 +48,7 @@ export class BrowserSession {
     this.lifetime = new AbortController();
     window.clearTimeout(this.idleTimer);
     window.clearTimeout(this.absoluteTimer);
+    this.absoluteDeadline = Infinity;
     if (this.state.kind === "active") {
       void this.state.queries.cancelQueries();
       this.state.queries.clear();
@@ -60,25 +63,36 @@ export class BrowserSession {
     this.idleTimer = window.setTimeout(this.expire, IDLE_MS);
   };
 
+  private scheduleDeadline(session: Session, started: number): boolean {
+    const seconds = session.absolute_remaining_seconds;
+    if (!Number.isFinite(seconds) || seconds > ABSOLUTE_MS / 1000) {
+      this.reset({ kind: "offline" });
+      return false;
+    }
+    this.absoluteDeadline = Math.min(this.absoluteDeadline, started + seconds * 1000);
+    const remaining = this.absoluteDeadline - performance.now();
+    if (remaining <= 0) {
+      this.expire();
+      return false;
+    }
+    window.clearTimeout(this.absoluteTimer);
+    this.absoluteTimer = window.setTimeout(this.expire, remaining);
+    return true;
+  }
+
   private activate(session: Session, started: number) {
-    if (!["internal", "restricted"].includes(session.ceiling) || !session.csrf_token
-      || !Number.isFinite(session.absolute_remaining_seconds) || session.absolute_remaining_seconds > ABSOLUTE_MS / 1000) {
+    if (!["internal", "restricted"].includes(session.ceiling) || !session.csrf_token) {
       this.reset({ kind: "offline" });
       return;
     }
     this.reset({ kind: "checking" });
-    const remaining = session.absolute_remaining_seconds * 1000 - (performance.now() - started);
-    if (remaining <= 0) {
-      this.expire();
-      return;
-    }
+    if (!this.scheduleDeadline(session, started)) return;
     this.set({
       kind: "active", checking: false, generation: ++this.generation, session,
       queries: new QueryClient({ defaultOptions: { queries: { retry: false, refetchOnWindowFocus: false } } }),
       api: new ApiClient(session, this.lifetime.signal, this.expire, this.activity),
     });
     this.activity();
-    this.absoluteTimer = window.setTimeout(this.expire, remaining);
   }
 
   restore = async () => {
@@ -96,21 +110,22 @@ export class BrowserSession {
   };
 
   revalidate = async () => {
-    if (this.state.kind !== "active" || this.state.checking) return;
+    if (this.state.kind !== "active") return;
+    const probe = ++this.probe;
     this.set({ ...this.state, checking: true });
     const signal = this.lifetime.signal;
     const started = performance.now();
     try {
       const session = await currentSession(signal);
-      if (signal.aborted || this.state.kind !== "active") return;
+      if (signal.aborted || probe !== this.probe || this.state.kind !== "active") return;
       if (session.csrf_token !== this.state.session.csrf_token || session.ceiling !== this.state.session.ceiling) {
         this.activate(session, started);
-      } else {
+      } else if (this.scheduleDeadline(session, started)) {
         this.activity();
         this.set({ ...this.state, checking: false });
       }
     } catch (error) {
-      if (!signal.aborted) {
+      if (!signal.aborted && probe === this.probe) {
         if (error instanceof ApiError && error.status === 401) this.expire();
         else this.reset({ kind: "offline" });
       }

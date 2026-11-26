@@ -105,3 +105,43 @@ test("retry signs out the current cookie after a cross-tab session change", asyn
   await page.getByRole("button", { name: "Retry sign out" }).click();
   await expect(page.getByLabel("Password")).toBeVisible();
 });
+
+test("a later focus check supersedes an older in-flight response", async ({ page }) => {
+  let calls = 0;
+  let finish!: () => void;
+  await page.route("**/api/session", async route => {
+    calls++;
+    if (calls === 2) {
+      await new Promise<void>(resolve => { finish = resolve; });
+      await route.fulfill({ json: session });
+    } else await route.fulfill(calls === 1 ? { json: session } : { status: 401, json: {} });
+  });
+  await page.route("**/api/overview", route => route.fulfill({ json: overview }));
+  await page.goto("/");
+  await expect(page.getByText("Private fixture", { exact: true })).toBeVisible();
+  await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+  await expect.poll(() => calls).toBe(2);
+  await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+  await expect(page.getByLabel("Password")).toBeVisible();
+  finish();
+  await expect(page.getByText("Private fixture", { exact: true })).toHaveCount(0);
+});
+
+test("a slow resumed-session response cannot outlive its server deadline", async ({ page }) => {
+  let resumed = false;
+  let finish!: () => void;
+  await page.clock.install();
+  await page.route("**/api/session", async route => {
+    if (resumed) await new Promise<void>(resolve => { finish = resolve; });
+    await route.fulfill({ json: { ...session, absolute_remaining_seconds: resumed ? 1 : 28800 } });
+  });
+  await page.route("**/api/overview", route => route.fulfill({ json: overview }));
+  await page.goto("/");
+  await expect(page.getByText("Private fixture", { exact: true })).toBeVisible();
+  resumed = true;
+  await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+  await expect.poll(() => Boolean(finish)).toBe(true);
+  await page.clock.fastForward(2000);
+  finish();
+  await expect(page.getByLabel("Password")).toBeVisible();
+});
