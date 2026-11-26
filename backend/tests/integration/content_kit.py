@@ -166,7 +166,7 @@ def make_sample_repo(tmp_path: Path, *, notes: list[Note] | None = None) -> Samp
     git = GitRepo(root, identity=IDENTITY)
     git.init("main")
     (root / "schema").mkdir()
-    (root / "schema/areas.yaml").write_text("areas:\n  - infrastructure\n")
+    (root / "schema/areas.yaml").write_text("areas:\n  - infrastructure\n  - security\n")
     (root / "schema/types.yaml").write_text("types:\n  - concept\n  - guide\n  - runbook\n  - reference\n  - config\n")
     git.stage(["schema/areas.yaml", "schema/types.yaml"])
     git.commit("Initialise schema")

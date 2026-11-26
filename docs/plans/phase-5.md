@@ -373,3 +373,20 @@ Playwright exercises filtering, cancellation, missing notes, keyboard navigation
 HTML sanitization and translation boundaries. The installed-service test captures the production build
 against the disposable HTTPS fixture. [Search screenshot](../screenshots/phase-5/08-search.png) ·
 [Reader screenshot](../screenshots/phase-5/08-reader.png)
+
+### PR 9 delivery record
+
+The graph opens on the visible, current notes. Its filter menus use the graph returned by the
+session's listener. History is opt-in. The global view retains only edges whose endpoints pass all
+five filters. Selecting a note with the pointer or the HTML list opens its one-hop neighborhood.
+The two-hop control asks the backend for paths through matching nodes. Returning to the global
+graph restores its filters, history and color selection. Opening a note preserves the history scope.
+
+The canvas uses Sigma and Graphology. A same-origin worker runs synchronous ForceAtlas2 on numeric
+node indices and edges. Labels and note summaries stay out of the worker. Colors are consistent for
+each area or type. The four priority sizes decrease from P0 to P3. The HTML list remains available
+to keyboard users and browsers without WebGL. Layout workers and renderers are disposed when their
+graph unmounts. Graph settings and selection live in session memory.
+
+[Global graph](../screenshots/phase-5/09-graph.png) ·
+[Local neighborhood](../screenshots/phase-5/09-neighborhood.png)

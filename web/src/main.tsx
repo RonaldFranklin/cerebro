@@ -1,4 +1,4 @@
-import { useEffect, useState, useSyncExternalStore, type ReactNode } from "react";
+import { lazy, Suspense, useEffect, useState, useSyncExternalStore, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import { flushSync } from "react-dom";
 import { QueryClientProvider, useQuery } from "@tanstack/react-query";
@@ -9,6 +9,8 @@ import { OverviewScreen, Shell } from "./Shell";
 import { ReaderScreen } from "./Reader";
 import { SearchScreen } from "./Search";
 import "./app.css";
+
+const GraphScreen = lazy(() => import("./GraphScreen"));
 
 function Status({children, action, label}: {children: ReactNode; action?: () => void; label?: string}) {
   return <main className="session-status"><h1>Cérebro</h1><p role="status">{children}</p>
@@ -76,6 +78,7 @@ function App() {
         {state.checking && <Status>Checking session…</Status>}
         <div hidden={state.checking}><Shell path={home ? "/" : path} ceiling={state.session.ceiling} onNavigate={navigate} onLogout={manager.signOut}>
           {home ? <Home api={state.api}/> :
+            path === "/graph" ? <Suspense fallback={<p role="status">Loading graph…</p>}><GraphScreen api={state.api}/></Suspense> :
             path === "/search" ? <SearchScreen api={state.api}/> :
             path.startsWith("/notes/") ? <ReaderScreen api={state.api} id={path.slice("/notes/".length)}
               history={url.searchParams.get("history") === "true"} section={url.searchParams.get("section")}/> : <section className="pending-view"><h1>{title}</h1>
