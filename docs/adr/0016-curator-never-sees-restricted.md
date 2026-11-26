@@ -1,6 +1,6 @@
 # ADR-0016: The curator never receives restricted notes
 
-- **Status:** accepted
+- **Status:** superseded by [ADR-0020](0020-direct-agent-writes.md)
 - **Date:** 2026-11-25
 
 ## Context

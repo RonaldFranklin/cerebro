@@ -21,7 +21,7 @@ Cérebro is the **single source of curated context** for every agent and session
   progressive disclosure), yet pleasant for a human to browse.
 - **Cheap per query, flat as it scales.** A typical lookup should cost roughly 2–3k tokens regardless of how
   many notes exist.
-- **Controlled writes.** Agents propose; validation + curator + owner decide.
+- **Controlled writes.** Authorized agents create and update notes through automatic validation, with attribution in Git.
 - **Current over historical.** Superseded knowledge is kept for history but never served as current.
   Operational knowledge distinguishes *proposed*, *applied* and *verified*.
 - **Secure by default.** Sensitivity ceilings per entry point and per token; restricted content encrypted at

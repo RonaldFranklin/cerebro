@@ -1,6 +1,6 @@
 # ADR-0019: Same-origin owner browser API and local web toolchain
 
-- **Status:** accepted
+- **Status:** accepted, amended by [ADR-0020](0020-direct-agent-writes.md)
 - **Date:** 2026-11-25
 
 ## Context

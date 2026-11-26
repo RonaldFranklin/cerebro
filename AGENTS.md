@@ -10,8 +10,8 @@ Claude Code reads this file automatically when no `CLAUDE.md` exists; keep it th
 
 A self-hosted, single-user knowledge base that gives every AI agent (Claude Code, Codex, ChatGPT, …) the same
 curated, prioritized context through MCP, plus a web UI where the owner browses notes and sees the knowledge graph.
-Agents **read** freely (within their sensitivity ceiling) but **never write directly**: they submit proposals to an
-Inbox, which are validated, curated and approved before becoming notes.
+Agents read within their sensitivity ceiling. Phase 7 grants explicitly authorized agents immediate, validated
+create/update operations with authenticated attribution in Git.
 
 ## 2. Read before working (in this order)
 
@@ -39,7 +39,9 @@ Inbox, which are validated, curated and approved before becoming notes.
   global/local graph, Inbox review, editor and private health panel. See the
   [delivery report and security checkpoint](docs/plans/phase-5.md#8-phase-5-final-report)
   and [WSL walkthrough](docs/plans/phase-5.md#7-open-the-interface-from-wsl). The owner's visual
-  and security reviews are pending. Phase 7 (curator) is next. Phase 6 (deploy) follows with Docker
+  and security reviews are pending. Phase 7 (direct agent writes) is in progress. The owner authorized its
+  [plan](docs/plans/phase-7.md) and merges, including the ADR and security changes, after independent
+  review and green CI through the merge script. Phase 6 (deploy) follows with Docker
   validation in WSL dev before hml and promotion of the same image to prod on the server.
 - **Phase 2 decisions (2026-11-25):** the owner declined a MAC for token rows and accepted the
   [residual risk](docs/architecture.md#accepted-risks-owner-decision-2026-11-25). The owner approved
@@ -59,10 +61,10 @@ Inbox, which are validated, curated and approved before becoming notes.
 - These rules are enforced by `import-linter` in CI. A failing contract is a failing build.
 
 **Write path**
-- No inbound adapter may write notes directly. Every change goes through the `SubmitProposal` →
-  `ValidateProposal` → `CurateProposal` → `ApplyProposal` use cases, or through `OwnerEditNote` for the owner.
-- Every applied change is a git commit in the content repository with `Proposed-by:`, `Curated-by:`,
-  `Approved-by:` trailers.
+- Inbound adapters call application use cases for every note change. Agent writes require explicit
+  `write` authority and deterministic validation. Owner edits use `OwnerEditNote`.
+- Every applied agent change creates a Git commit identifying its authenticated agent, under
+  [ADR-0020](docs/adr/0020-direct-agent-writes.md). Preserve historical audit trailers.
 
 **Security**
 - Never commit secrets, tokens, keys, `.env` files or real personal data. Use `.env.example` with placeholders.

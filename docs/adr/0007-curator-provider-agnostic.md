@@ -1,6 +1,6 @@
 # ADR-0007: Curator is provider-agnostic and optional
 
-- **Status:** accepted
+- **Status:** superseded by [ADR-0020](0020-direct-agent-writes.md)
 - **Date:** 2026-11-24
 
 ## Context

@@ -1,6 +1,6 @@
 # ADR-0006: Write path — Inbox, validation, curator, approval
 
-- **Status:** accepted
+- **Status:** superseded by [ADR-0020](0020-direct-agent-writes.md)
 - **Date:** 2026-11-24
 
 ## Context

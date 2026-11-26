@@ -3,11 +3,14 @@
 Cérebro follows a **hexagonal (ports and adapters)** architecture. The core (domain + application) knows nothing
 about YAML, SQLite, git, HTTP, MCP or any LLM provider. See [ADR-0001](adr/0001-hexagonal-architecture.md).
 
+The write path below is the Phase 7 target. The [delivery plan](plans/phase-7.md) tracks its rollout.
+[ADR-0020](adr/0020-direct-agent-writes.md) records the change from the Inbox shipped in Phases 4 and 5.
+
 ## 1. Layers
 
 ```
                    INBOUND ADAPTERS (driving)
-     MCP server · HTTP API (FastAPI) · CLI · Curator worker · Scheduler
+     MCP server · HTTP API (FastAPI) · CLI · Scheduler
                                │ calls use cases
                                ▼
       ┌────────────────────────────────────────────────────────┐
@@ -16,7 +19,7 @@ about YAML, SQLite, git, HTTP, MCP or any LLM provider. See [ADR-0001](adr/0001-
       │   ┌────────────────────────────────────────────────┐   │
       │   │ DOMAIN — pure Python, standard library only    │   │
       │   │ Note · NoteId · Link · Priority · Sensitivity  │   │
-      │   │ Status · Proposal · Decision · AccessCeiling   │   │
+      │   │ Status · AccessCeiling                         │   │
       │   │ validation rules · budgets · link extraction   │   │
       │   └────────────────────────────────────────────────┘   │
       └────────────────────────────────────────────────────────┘
@@ -24,7 +27,7 @@ about YAML, SQLite, git, HTTP, MCP or any LLM provider. See [ADR-0001](adr/0001-
                                ▼
                    OUTBOUND ADAPTERS (driven)
    Markdown files · SQLite FTS5 index · git CLI · Fernet cipher
-   LLM providers (Claude / OpenAI) · token store · clock · id generator
+   Token store · rate limits · clock · id generator
 ```
 
 ### Dependency rule
@@ -60,11 +63,10 @@ backend/
 │   │   ├── slug.py            # kebab-case rule shared by ids, areas and types
 │   │   ├── access.py          # AccessCeiling, visibility rules
 │   │   ├── budgets.py         # word count, per-note and combined P0 budgets
-│   │   ├── proposal.py        # Proposal, ProposalKind, lifecycle, Decision
 │   │   ├── secrets_scan.py    # regex patterns that block secret-looking content
 │   │   ├── report.py          # Violation, ViolationCode, Severity, ValidationReport
 │   │   ├── frontmatter.py     # parse_note (raw mapping -> Note | report), note_to_raw (canonical order)
-│   │   ├── validation.py      # note + proposal validation, returns violations
+│   │   ├── validation.py      # note validation, returns violations
 │   │   └── errors.py
 │   ├── application/
 │   │   ├── ports/             # Protocols (see section 3)
@@ -78,10 +80,9 @@ backend/
 │   │   │   └── cli/
 │   │   └── outbound/
 │   │       ├── filesystem/    # Markdown + YAML frontmatter repository
-│   │       ├── sqlite/        # FTS5 search index, graph tables, proposal store, token store
+│   │       ├── sqlite/        # FTS5 search index, graph tables, token store and write limits
 │   │       ├── git/           # git via subprocess
-│   │       ├── crypto/        # Fernet cipher
-│   │       └── llm/           # curator adapters (anthropic, openai), null curator
+│   │       └── crypto/        # Fernet cipher
 │   └── bootstrap/
 │       ├── settings.py        # configuration from env/file
 │       └── container.py       # wires adapters into use cases (composition root)
@@ -99,12 +100,14 @@ backend/
 | `NoteRepository` | `get`, `list_refs` (body-free `NoteRef` snapshot), `list_notes`, `head()` (the current content revision: the id the last `apply` returned, `None` when empty), and `apply(changes, message)`: write one or more notes and record **one** commit with the trailers, all-or-nothing; each `NoteChange` carries the `expected_hash` (`None` = must not exist) and a mismatch raises `ContentConflict` | filesystem; in-memory fake |
 | `SearchIndex` | `upsert` / `remove` / `rebuild(notes, revision=)`, `built_from()` / `set_revision()` (the content revision the index reflects; `upsert`/`remove` never change it), `search(SearchQuery)` (ceiling mandatory; order: score, priority, id) and `find_similar` (duplicate detection); returns summaries only | SQLite FTS5 |
 | `GraphIndex` | `rebuild(refs, revision=)`, `built_from()` / `set_revision()` (as `SearchIndex`), `graph`, `backlinks`, `neighbors(hops)`, `orphans`, `broken_links`; every query takes the ceiling, hidden notes are neither nodes nor broken links | SQLite tables |
-| `ProposalStore` | `admit` (token-scoped quota check and insert in one transaction), `add`, `get`, `save(proposal, expected_revision)` (compare-and-swap on `revision`, else `ProposalConflict`), `find(status, source_agent)`: proposals and decisions (audit) | SQLite |
 | `VersionControl` | `push` to the backup remote. Commits are made by `NoteRepository.apply`, so a write and its commit cannot diverge | git CLI |
 | `Cipher` | encrypt/decrypt restricted note payloads (used by the filesystem adapter only); `DecryptionError` on tampering | Fernet |
-| `Curator` | `name` (recorded as `Curated-by`, must start with `curator/`, e.g. `curator/null`) and `curate(CurationRequest) -> Decision` for a validated proposal | Anthropic, OpenAI, `NullCurator` |
 | `TokenStore` | `add`, `get`, `find_by_hash` (also returns revoked tokens), `save`, `all`; tokens are stored hashed | SQLite |
-| `Clock`, `IdGenerator` | `now()`; proposal ids, token ids and token secrets, for deterministic tests | system / fixed fakes |
+| `Clock`, `IdGenerator` | `now()`; note ids, token ids and token secrets, for deterministic tests | system / fixed fakes |
+
+The direct-write path needs durable per-token attempt accounting across restarts and concurrent calls.
+Recent changes reads bounded commit history through an outbound port. Application use cases control which
+actor, date, note and diff reach the browser, including visibility checks on both revisions and current state.
 
 Ports know nothing about access: use cases apply the ceiling and raise `NoteNotFound` for hidden notes exactly as
 for missing ones, while the two indexes filter by the mandatory ceiling argument. Application exceptions live in
@@ -136,31 +139,30 @@ body (whole or one section) whose target the reader cannot see, or that does not
 `docs/domain-model.md`).
 
 **Write**
-- `SubmitProposal` — prepare an agent-attributed submission in request-local memory. The composition root exposes AdmitProposal, which runs submission, deterministic validation and NullCurator before atomic quota admission.
-- `ValidateProposal` — deterministic checks: schema, budgets, secret scan, duplicates.
-- `CurateProposal` — ask the `Curator` port for a decision (reject / merge / create / needs-human). The curator
-  context is capped at `internal` and a proposal that creates, changes or links a restricted note skips the curator
-  and goes straight to `needs_owner` (`Curated-by: curator/policy`), enforced here whatever the adapter
-  ([ADR-0016](adr/0016-curator-never-sees-restricted.md)).
-- `ReviewProposal` — owner approves, edits or rejects.
-- `ApplyProposal` — turn an approved decision into note changes + commit. When an existing note's sensitivity rises
-  to `restricted`, the result carries a `PREVIOUS_VERSION_IN_HISTORY` warning (the old version stays in git history).
-- `OwnerEditNote` — owner edits directly (still validated, committed with owner as author); same warning on a rise
-  to `restricted` (see `docs/domain-model.md` section 4).
+
+- An authenticated agent with `write` calls `cerebro_write` to create or update a note. The application
+  counts attempts per token and checks the candidate under the writer lock. It enforces the effective ceiling,
+  frontmatter schema, budgets, link rules, secret scan and content-hash precondition before committing.
+  The repository records the agent from authentication. The MCP adapter returns a commit receipt or a
+  bounded, redacted error with a correction the agent can make.
+- `OwnerEditNote` keeps the owner's validated edit path. Both paths warn when raising a note to
+  restricted leaves an earlier plaintext revision in git.
+- `cerebro_write_guide` serves the versioned English writing instructions. See the
+  [write decision](adr/0020-direct-agent-writes.md) and [domain contract](domain-model.md#7-agent-writes).
 
 **Maintenance**
 - `RebuildIndex` — re-read the content repo, decrypt restricted notes in memory, rebuild the index (owner only; also
   the recovery path when an index update failed after a commit).
 - `HealthReport` — orphans, broken links, hub chains, overdue `review_by`, budget violations, secrets in existing
-  notes (never echoed), stale or orphaned proposals, stale indexes (owner only, restricted ceiling).
+  notes (never echoed), stale indexes (owner only, restricted ceiling).
   An index is stale when its `built_from()` differs from the repository `head()` (`index_is_stale`; the
   `Container.start()` reindexes when it is stale, implemented in Phase 2 PR 8), or when its content
-  differs note by note. `RebuildIndex` records `head()` (read before the notes); `ApplyProposal` and
+  differs note by note. `RebuildIndex` records `head()` (read before the notes); agent writes and
   `OwnerEditNote` advance the recorded revision after updating an index that was fresh before the commit, so a
   failed index update stays visible until `RebuildIndex` runs.
   **Single writer:** reading `head()`, `apply` and advancing the revision must run under ONE writer lock held by
   the composition root (ADR-0002: writes are serialized through the application). Implemented as `WriterLock` in
-  `cerebro.bootstrap.container` (a thread lock plus `flock` on `<state_dir>/writer.lock`) wrapping `ApplyProposal`,
+  `cerebro.bootstrap.container` (a thread lock plus `flock` on `<state_dir>/writer.lock`) wrapping agent writes,
   `OwnerEditNote` and `RebuildIndex`. Without it, a concurrent
   commit between those steps can make the conditional advance hide a failed index update. `rebuild(revision=)`
   must store the revision atomically with the rows.
@@ -179,7 +181,6 @@ Workstation                                    Server (docker compose: cerebro-<
 │ Codex             │── Tailscale (HTTPS) ────▶│   private listener  (ceiling: restricted) │
 │ Browser (web UI)  │                          │   public listener   (ceiling: internal)   │
 └───────────────────┘                          │ web (static, served by backend or proxy)  │
-                                               │ curator worker (same image, other command)│
 (future) cloud agents ── Cloudflare Tunnel ───▶│ cloudflared ──▶ public listener only      │
                          + Cloudflare Access   └──────────────────────────────────────────┘
                                                  volumes: content repo (git), state (sqlite),
@@ -198,7 +199,7 @@ Workstation                                    Server (docker compose: cerebro-<
 |---|---|---|---|
 | Notes | content repo working copy | yes (private repo) | push to private remote |
 | Search/graph index | state dir, `index.sqlite` | no | no — rebuildable |
-| Proposals, decisions, tokens | state dir, `state.sqlite` | no | yes (file backup) |
+| Tokens, write limits and retained legacy Inbox state | state dir, `state.sqlite` | no | yes (file backup) |
 | Fernet key, admin password hash | secrets dir | no | owner keeps an offline copy of the key |
 
 Filesystem repository, operating notes (Phase 2):
@@ -228,10 +229,10 @@ not coordinated with other processes using the file: rolling deploys with differ
 - **No rollback or replay protection for proposal rows.** The sealed payload binds the proposal id, but not its
   revision: restoring a whole older row (for example from a backup) passes every check.
 - **Historical proposal payloads.** Backups and WAL snapshots from before Phase 4 may contain sealed submissions
-  rejected after the initial write. New validation rejections reach durable admission already scrubbed. A valid
-  proposal may be backed up while it awaits owner review. A later manual rejection scrubs the current content.
+  rejected after the initial write. Phase 4 scrubbed validation rejections at admission. Older backups can also contain proposals awaiting
+  review when the backup was taken. The Phase 7 cutover preserves backups and leaves legacy rows inert.
 - **A note raised to `restricted` leaves plaintext history.** The previous public or internal version stays in the
-  content repository's git history and in backups; history is never rewritten. `ApplyProposal` and `OwnerEditNote`
+  content repository's git history and in backups; history is never rewritten. Agent writes and owner edits
   return a warning when this happens ([domain-model](domain-model.md)).
 - The content repository's own `.git/config` is trusted (filter drivers, `core.sshCommand`, `receivepack`), and the
   writer lock only stops Cérebro's own writers: an outside edit between the clean-state check and the write is
@@ -245,7 +246,9 @@ not coordinated with other processes using the file: rolling deploys with differ
   color by area or type (toggle), filters by priority/status/area/sensitivity, local graph (N hops) on click.
 - **Reader:** notes rendered as real HTML with `lang` set so browser translation works. Code blocks, inline
   code, paths, commands, note ids and links carry `translate="no"`.
-- **Inbox review:** list proposals, see validation results and curator decision as a diff, approve/edit/reject.
+- **Recent changes:** the private, restricted owner session sees who changed each note, when, and a bounded
+  diff. History reads require visibility of the current note and both sides of an edit. Links in historical
+  content receive the same visibility protection as links in the reader.
 - **Editor (owner):** CodeMirror 6 with `[[link]]` autocomplete; saves go through `OwnerEditNote`.
 - English only; no i18n library ([ADR-0009](adr/0009-english-only.md)).
 
@@ -265,7 +268,6 @@ Full policy in [ADR-0013](adr/0013-stack-and-dependency-policy.md). Summary:
 | HTTP | Uvicorn and FastAPI | adapter and bootstrap only |
 | MCP | official `mcp` Python SDK | adapter only |
 | CLI | argparse (stdlib) | local owner commands, ADR-0017 |
-| LLM | provider SDKs, one adapter each | optional, Phase 7 |
 | Quality | pytest, ruff, mypy (strict), import-linter | custom `stdlib_only` contract type in `backend/devtools/` |
 | Web | Node 26.13.1 Active LTS, pnpm 12.22.0, React, TypeScript, Vite, TanStack Query, Sigma.js, graphology, CodeMirror 6 | |
 

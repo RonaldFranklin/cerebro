@@ -1,6 +1,6 @@
 # ADR-0018: Validate Inbox submissions before durable admission
 
-- **Status:** accepted
+- **Status:** superseded by [ADR-0020](0020-direct-agent-writes.md)
 - **Date:** 2026-11-25
 
 ## Context
