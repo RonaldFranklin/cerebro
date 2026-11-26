@@ -6,6 +6,8 @@ import { type ApiClient, type Overview } from "./api";
 import { BrowserSession } from "./session";
 import { Login } from "./Login";
 import { OverviewScreen, Shell } from "./Shell";
+import { ReaderScreen } from "./Reader";
+import { SearchScreen } from "./Search";
 import "./app.css";
 
 function Status({children, action, label}: {children: ReactNode; action?: () => void; label?: string}) {
@@ -23,14 +25,18 @@ function Home({api}: {api: ApiClient}) {
 
 const routeTitles: Record<string,string> = {"/graph":"Graph", "/search":"Search", "/inbox":"Inbox", "/health":"Health"};
 
+function address() { return location.pathname + location.search + location.hash; }
+
 function App() {
   const [manager] = useState(() => new BrowserSession());
   const state = useSyncExternalStore(manager.subscribe, manager.snapshot);
-  const [path, setPath] = useState(location.pathname);
+  const [route, setRoute] = useState(address);
+  const url = new URL(route, location.origin);
+  const path = url.pathname;
 
   useEffect(() => {
     manager.start();
-    const pop = () => setPath(location.pathname);
+    const pop = () => setRoute(address());
     const resume = (event: PageTransitionEvent) => { if (event.persisted) void manager.restore(); };
     const hide = (event: PageTransitionEvent) => { if (event.persisted) flushSync(manager.suspend); };
     const visible = () => { if (document.visibilityState === "visible") void manager.revalidate(); };
@@ -50,9 +56,11 @@ function App() {
   }, [manager]);
 
   function navigate(next: string) {
-    if (next === path || !next.startsWith("/") || next.startsWith("//")) return;
+    if (next === route || !next.startsWith("/") || next.startsWith("//")) return;
     history.pushState(null, "", next);
-    setPath(location.pathname);
+    setRoute(address());
+    document.getElementById("workspace-main")?.focus({ preventScroll: true });
+    window.scrollTo(0, 0);
   }
   switch (state.kind) {
     case "checking": return <Status>Checking session…</Status>;
@@ -67,7 +75,10 @@ function App() {
       return <QueryClientProvider key={state.generation} client={state.queries}>
         {state.checking && <Status>Checking session…</Status>}
         <div hidden={state.checking}><Shell path={home ? "/" : path} ceiling={state.session.ceiling} onNavigate={navigate} onLogout={manager.signOut}>
-          {home ? <Home api={state.api}/> : <section className="pending-view"><h1>{title}</h1>
+          {home ? <Home api={state.api}/> :
+            path === "/search" ? <SearchScreen api={state.api}/> :
+            path.startsWith("/notes/") ? <ReaderScreen api={state.api} id={path.slice("/notes/".length)}
+              history={url.searchParams.get("history") === "true"} section={url.searchParams.get("section")}/> : <section className="pending-view"><h1>{title}</h1>
             <p>{denied ? "This view requires the private listener." : "This view is not yet available."}</p>
             <a href="/">Back to overview</a></section>}
         </Shell></div>

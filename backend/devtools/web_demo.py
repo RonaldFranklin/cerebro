@@ -15,7 +15,7 @@ from dataclasses import replace
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-from tests.integration.content_kit import ISLAND_ID
+from tests.integration.content_kit import ISLAND_ID, SSH_ID
 
 from cerebro.adapters.inbound.cli_owner import set_owner_password
 from cerebro.application.browser import ProvisionOwnerPassword
@@ -59,6 +59,28 @@ def _populate(config: Path, *, automation: bool) -> bool:
     )
     if not created.validation.ok:
         raise RuntimeError("Invalid fixture hub")
+    ssh = container.notes.get(SSH_ID)
+    assert ssh
+    reference = replace(
+        ssh,
+        body=(
+            "## Check the client\n\n"
+            "Use the workstation client to inspect your local SSH configuration before connecting. "
+            "The version check runs locally.\n\n"
+            "```sh\nssh -V\n```\n\n"
+            "## Configuration\n\n"
+            "Keep connection preferences in `~/.ssh/config`. "
+            "Use a separate entry for each environment so the expected settings are easy to review.\n\n"
+            "## Related guidance\n\n"
+            "Read [[docker-conventions]] for the naming rules used by container services.\n"
+        ),
+    )
+    edited = container.use_cases.owner_edit_note.execute(
+        OwnerEditNoteRequest(note=reference, expected_hash=content_hash(ssh)),
+        AccessContext.for_owner(AccessCeiling(Sensitivity.RESTRICTED)),
+    )
+    if not edited.validation.ok:
+        raise RuntimeError("Invalid fixture runbook")
     submitted = container.use_cases.submit_proposal.execute(
         SubmitProposalRequest(
             kind=ProposalKind.UPDATE,
