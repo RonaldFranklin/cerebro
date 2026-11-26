@@ -16,7 +16,7 @@ from tests.unit.application.write_kit import SECRET, Kit, agent_ctx
 from tests.unit.domain.builders import VALID_SUMMARY, VOCABULARY
 
 
-def writer(kit: Kit, limit: int = 20) -> AgentWrite:
+def writer(kit: Kit, limit: int = 60) -> AgentWrite:
     w = kit.world
     return AgentWrite(w.notes, w.search, w.graph, FakeWriteAttemptStore(), kit.clock, kit.ids, VOCABULARY, limit)
 
@@ -45,20 +45,22 @@ def test_create_replay_conflict_update_and_stale_retry() -> None:
     ctx = replace(agent_ctx(scopes=frozenset({Scope.WRITE, Scope.READ})), token_id="token-one")
     created = write.execute(request(), ctx)
     commits = kit.commits
-    assert write.execute(request(), ctx).revision == created.revision
+    replay = write.execute(request(), ctx)
+    assert (replay.note_id, replay.revision) == (created.note_id, created.revision)
     with pytest.raises(WriteRejected, match="request_conflict"):
         write.execute(replace(request(), body="Different"), ctx)
     note = kit.world.notes.get(created.note_id)
     assert note is not None
     update = replace(
-        request(),
+        request(title="Renamed direct write"),
         operation="update",
         target=note.id.value,
         request_id=None,
         base_hash=content_hash(note),
         body="A corrected synthetic procedure.",
     )
-    write.execute(update, ctx)
+    assert write.execute(update, ctx).note_id == created.note_id
+    assert write.execute(request(), ctx).note_id == created.note_id
     assert kit.commits == commits + 1
     with pytest.raises(WriteRejected, match="stale_base"):
         write.execute(update, ctx)
@@ -119,13 +121,43 @@ def test_non_storable_body_is_rejected_before_commit(body: str) -> None:
     assert kit.commits == before
 
 
+@pytest.mark.parametrize(
+    ("title", "stem"),
+    [
+        ("  RÉSUMÉ — São_Paulo 2!!", "resume-sao-paulo-2"),
+        ("Ame\u0301lie + Cafe\u0301", "amelie-cafe"),
+        ("a" * 59 + " - Manual", "a" * 59),
+        ("b" * 75, "b" * 60),
+        ("日本語", "note"),
+    ],
+)
+def test_create_uses_a_readable_ascii_id(title: str, stem: str) -> None:
+    kit = Kit()
+    ctx = replace(agent_ctx(scopes=frozenset({Scope.WRITE})), token_id="token")
+    assert writer(kit).execute(request(title=title), ctx).note_id == NoteId(f"{stem}-0001")
+
+
+def test_create_can_retry_after_repeated_suffix_collisions(monkeypatch: pytest.MonkeyPatch) -> None:
+    kit = Kit()
+    kit.world.add(id=NoteId("direct-write-k3f9"))
+    write = writer(kit)
+    ctx = replace(agent_ctx(scopes=frozenset({Scope.WRITE})), token_id="token")
+    commits = kit.commits
+    with monkeypatch.context() as patch:
+        patch.setattr(kit.ids, "new_note_suffix", lambda: "k3f9")
+        with pytest.raises(WriteRejected, match="id_unavailable"):
+            write.execute(request(), ctx)
+    assert kit.commits == commits
+    assert write.execute(request(), ctx).note_id == NoteId("direct-write-0001")
+
+
 def test_generated_collisions_are_retried_and_replay_rechecks_current_visibility() -> None:
     kit = Kit()
-    kit.world.add(id=NoteId("note-0001"), sensitivity=Sensitivity.RESTRICTED)
+    kit.world.add(id=NoteId("direct-write-0001"), sensitivity=Sensitivity.RESTRICTED)
     write = writer(kit)
     ctx = replace(agent_ctx(scopes=frozenset({Scope.WRITE})), token_id="token")
     result = write.execute(request(), ctx)
-    assert result.note_id.value == "note-0002"
+    assert result.note_id.value == "direct-write-0002"
     note = kit.world.notes.get(result.note_id)
     assert note is not None
 

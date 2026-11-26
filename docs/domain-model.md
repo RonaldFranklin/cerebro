@@ -298,8 +298,14 @@ tracks delivery. The [Phase 4 report](plans/phase-4.md) records the earlier prop
 
 | Operation | Preconditions | Result |
 |---|---|---|
-| Create | Authenticated agent with explicit `write` scope, valid note within ceiling | One new note with a service-generated, unpredictable id. An internal id collision is retried. |
+| Create | Authenticated agent with explicit `write` scope, valid note within ceiling | One new note with a service-generated id derived from the title. |
 | Update | Visible, fully readable note and the `base_hash` of the version the agent read | One replacement of the same note, retaining its id and creation date. A stale hash requires a fresh read and reconciliation. |
+
+On create, the service converts the title to an ASCII kebab-case stem of up to 60 characters, using
+`note` if the stem is empty. It appends a hyphen and four random characters from `a-z` and `0-9`,
+and retries collisions internally. Existing ids stay valid. Changing a title preserves the id.
+An identical create replay with the same token and `request_id` returns the original receipt after
+authorization. Use non-sensitive titles because restricted filenames and Git history can reveal title words.
 
 The application issues an update hash only with an eligible full read. A section or a representation
 with redacted body links or metadata cannot be used as the basis for a full-note replacement. The writer
@@ -308,7 +314,8 @@ writer lock. Hidden and missing targets have the same external response. Agents 
 commit message. Git records the authenticated agent on each successful write.
 
 Validation applies the controlled vocabulary, schema, hard word and overview budgets, link and sensitivity
-rules and secret scan to the entire candidate. Per-token limits count write attempts across sessions,
+rules and secret scan to the entire candidate. Each token allows 60 admitted write attempts per rolling hour by default. Configure the limit
+with `writes_per_hour` in TOML or the `CEREBRO_WRITES_PER_HOUR` environment override. The count spans sessions,
 processes and restarts to stop repeated invalid requests as well as runaway successful writes.
 Failures return bounded field names or positions, safe codes and correction hints. The service never echoes
 a submitted secret or identifies an inaccessible note. A rejected or stale write produces no note, git

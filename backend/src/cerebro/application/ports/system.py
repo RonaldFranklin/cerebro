@@ -11,8 +11,8 @@ class Clock(Protocol):
 
 
 class IdGenerator(Protocol):
-    def new_note_id(self) -> str:
-        """An unpredictable, unique kebab-case identifier for an agent-created note."""
+    def new_note_suffix(self) -> str:
+        """Four random lowercase ASCII letters or digits for an agent-created note id."""
         ...
 
     def new_edit_id(self) -> str:

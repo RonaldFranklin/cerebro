@@ -9,6 +9,8 @@ from pathlib import Path
 
 from cerebro.adapters.outbound.git import GitError, GitIdentity, validate_branch, validate_remote
 
+_DEFAULT_WRITES_PER_HOUR = 60
+
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class Settings:
@@ -22,7 +24,7 @@ class Settings:
     """Fernet key file (``0600``, in a ``0700`` directory), see ADR-0008."""
     git_name: str
     git_email: str
-    writes_per_hour: int = 20
+    writes_per_hour: int = _DEFAULT_WRITES_PER_HOUR
     git_remote: str | None = field(default=None, repr=False)
     """Backup remote for ``VersionControl.push``; ``None`` disables publishing. Hidden from ``repr``: a remote
     URL may carry credentials."""
@@ -102,7 +104,7 @@ def load_settings(file: Path | None, environment: Mapping[str, str]) -> Settings
         return number
 
     configuration = Settings(
-        writes_per_hour=limit("writes_per_hour", 20),
+        writes_per_hour=limit("writes_per_hour", _DEFAULT_WRITES_PER_HOUR),
         content_repo=path("content_dir"),
         state_dir=path("state_dir"),
         key_file=path("key_file"),

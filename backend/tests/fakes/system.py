@@ -35,8 +35,8 @@ class SequentialIdGenerator:
         self._counters[kind] += 1
         return self._counters[kind]
 
-    def new_note_id(self) -> str:
-        return f"note-{self._next('note'):04d}"
+    def new_note_suffix(self) -> str:
+        return f"{self._next('note') % 0x10000:04x}"
 
     def new_edit_id(self) -> str:
         return f"edit-{self._next('edit'):04d}"

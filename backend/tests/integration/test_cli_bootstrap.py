@@ -106,7 +106,7 @@ def test_missing_working_directory_is_a_configuration_error(tmp_path: Path, monk
 def test_write_quota_configuration(tmp_path: Path) -> None:
     file = tmp_path / "settings.toml"
     file.write_text(SAMPLE)
-    assert load_settings(file, {}).writes_per_hour == 20
+    assert load_settings(file, {}).writes_per_hour == 60
     file.write_text(SAMPLE + "writes_per_hour = 7\n")
     assert load_settings(file, {}).writes_per_hour == 7
     assert load_settings(file, {"CEREBRO_WRITES_PER_HOUR": "4"}).writes_per_hour == 4
@@ -140,4 +140,4 @@ def test_large_toml_hex_quota_reports_configuration_error(tmp_path: Path) -> Non
 def test_legacy_quota_keys_allow_an_existing_configuration_to_start(tmp_path: Path) -> None:
     config = tmp_path / "legacy.toml"
     config.write_text(SAMPLE + "proposals_per_hour = 1\nproposals_pending = 2\n")
-    assert load_settings(config, {}).writes_per_hour == 20
+    assert load_settings(config, {}).writes_per_hour == 60

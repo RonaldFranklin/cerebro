@@ -1,6 +1,7 @@
 """Identifier and secret generation for the ``IdGenerator`` port."""
 
 import secrets
+import string
 import threading
 import uuid
 
@@ -18,8 +19,8 @@ class SystemIdGenerator:
 
     """
 
-    def new_note_id(self) -> str:
-        return secrets.token_hex(16)
+    def new_note_suffix(self) -> str:
+        return "".join(secrets.choice(string.ascii_lowercase + string.digits) for _ in range(4))
 
     def new_edit_id(self) -> str:
         with _UUID7_LOCK:
