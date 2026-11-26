@@ -184,8 +184,8 @@ test("a suspended editor drops its draft after another tab replaces the session"
   try {
     await expect(page.getByText("Checking session…",{exact:true})).toBeVisible();
     await expect(save).toBeHidden();
-    await page.mouse.click(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2);
     await page.keyboard.press("Enter");
+    await page.mouse.click(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2);
     expect(writes).toEqual([]);
   } finally {
     release();
