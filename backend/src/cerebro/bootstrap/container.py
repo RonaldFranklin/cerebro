@@ -5,7 +5,8 @@ the entry point hands them individual use cases from ``Container.use_cases`` (us
 attributes of ``Container`` (``notes``, ``search``, ...) exist for tests and operations. The filesystem adapter serves
 only committed note content: a note file that differs from ``HEAD`` fails the reads that touch it (and every rebuild),
 so no index is ever recorded as built from ``HEAD`` with uncommitted content. A committed file that is not a valid
-note is left out and named by the health report; it does not fail the other reads. Nothing is discarded automatically.
+note is left out and named by the health report; it does not fail the other reads.
+Startup, writes and rebuilds quarantine dirty checkout data under the state directory before restoring HEAD.
 
 **Writer lock (ADR-0002).** Reading ``head()``, ``apply`` and advancing the index revision must be serialised,
 otherwise a concurrent commit between them could make an index look fresh and hide a failed index update (see
@@ -32,6 +33,7 @@ from cerebro.adapters.outbound.crypto import FernetCipher, load_keys
 from cerebro.adapters.outbound.filesystem import FilesystemNoteRepository, WriterBusyError, load_vocabulary
 from cerebro.adapters.outbound.filesystem.history import GitChangeHistory
 from cerebro.adapters.outbound.filesystem.lock import file_lock
+from cerebro.adapters.outbound.filesystem.quarantine import quarantine_changes
 from cerebro.adapters.outbound.git import GitIdentity, GitRepo, GitVersionControl
 from cerebro.adapters.outbound.sqlite import (
     SqliteGraphIndex,
@@ -215,7 +217,14 @@ class Container:
             git, remote=settings.git_remote, branch=settings.git_branch
         )
         self.notes: NoteRepository = FilesystemNoteRepository(settings.content_repo, git=git, cipher=self.cipher)
-        self.vocabulary: Vocabulary = load_vocabulary(settings.content_repo)
+
+        def quarantine() -> None:
+            quarantine_changes(settings.content_repo, state_dir, git, settings.writer_lock_timeout)
+
+        self._quarantine = quarantine
+        with self.writer_lock.held():
+            quarantine()
+            self.vocabulary: Vocabulary = load_vocabulary(settings.content_repo)
         self.search: SearchIndex = SqliteSearchIndex(state_dir / INDEX_FILE)
         self.graph: GraphIndex = SqliteGraphIndex(state_dir / INDEX_FILE)
         self.tokens: TokenStore = SqliteTokenStore(state_dir / STATE_FILE)
@@ -246,8 +255,15 @@ class Container:
             owner_edit_note=Serialized(
                 Refreshed(OwnerEditNote(notes, search, graph, clock, vocabulary), fresh_locked), lock
             ),
-            rebuild_index=Serialized(self._rebuild, lock),
-            health_report=HealthReport(notes, search, graph, clock, vocabulary),
+            rebuild_index=Serialized(Refreshed(self._rebuild, quarantine), lock),
+            health_report=HealthReport(
+                notes,
+                search,
+                graph,
+                clock,
+                vocabulary,
+                quarantines=lambda: sorted(p.name for p in state_dir.glob("quarantine-*") if p.is_dir()),
+            ),
             issue_agent_token=IssueAgentToken(self.tokens, clock, ids),
             list_agent_tokens=ListAgentTokens(self.tokens),
             revoke_agent_token=RevokeAgentToken(self.tokens, clock),
@@ -281,6 +297,7 @@ class Container:
                 self._refresh_locked()
 
     def _refresh_locked(self) -> bool:
+        self._quarantine()
         if not index_is_stale(self.notes, self.search, self.graph):
             return False
         owner = AccessContext.for_owner(AccessCeiling(Sensitivity.RESTRICTED))

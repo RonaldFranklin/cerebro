@@ -226,6 +226,7 @@ class GitRepo:
         ok: Sequence[int] = (0,),
         redact: Sequence[str] = (),
         init: bool = False,
+        umask: int = -1,
     ) -> tuple[int, str]:
         if not init:
             git_dir = self._root / ".git"
@@ -245,6 +246,7 @@ class GitRepo:
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 start_new_session=True,
+                umask=umask,
             )
         except OSError:
             raise GitError(f"git {args[0]}: could not start git") from None
@@ -479,6 +481,32 @@ class GitRepo:
             return None
         revision, _, message = out.partition("\x00")
         return revision, message.rstrip("\n")
+
+    def working_changes(self) -> str:
+        """NUL-separated porcelain entries, including individual untracked and ignored files."""
+        return self._run(["status", "--porcelain=v1", "-z", "--no-renames", "--untracked-files=all", "--ignored"])[1]
+
+    def save_staged_patch(self, destination: Path) -> None:
+        self._run(
+            [
+                "diff",
+                "--cached",
+                "--no-ext-diff",
+                "--no-textconv",
+                "--no-renames",
+                "--binary",
+                "--full-index",
+                "--no-color",
+                f"--output={destination}",
+                "--",
+            ]
+        )
+
+    def restore_quarantined(self, paths: Sequence[str], revision: str) -> None:
+        """Restore inspected, backed-up indexed paths. A restored restricted note must be private immediately."""
+        self._require_object_id(revision)
+        if paths:
+            self._run(["restore", f"--source={revision}", "--staged", "--worktree", "--", *paths], umask=0o077)
 
     def staged_paths(self) -> tuple[str, ...]:
         """Paths whose index entry differs from ``HEAD`` (before the first commit: every path in the index)."""

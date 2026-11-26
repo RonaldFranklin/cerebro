@@ -13,7 +13,7 @@ from mcp.client import Client
 from cerebro.adapters.inbound.diagnostics import LOCAL_FAILURE, NOTE_FILES_FAILURE
 from cerebro.adapters.inbound.mcp_tools import MCPTools, parse_tool
 from cerebro.application.dto import GetNeighborsRequest, SearchNotesRequest
-from cerebro.application.errors import AuthenticationFailed
+from cerebro.application.errors import AuthenticationFailed, NoteReadError
 from cerebro.bootstrap.container import Container, build_container
 from cerebro.domain.access import AccessCeiling, AccessContext, Agent, Scope
 from cerebro.domain.enums import Priority, Sensitivity, Status
@@ -259,13 +259,18 @@ def test_local_failures_are_not_offline_and_reveal_nothing(
     missing = text_of(tools.call("cerebro_read", {"id": "absent-note"}, lambda: AGENT))
     assert text_of(tools.call("cerebro_read", {"id": VAULT_ID.value}, lambda: AGENT)) == missing == "Not found."
 
-    container.search.set_revision("rev-elsewhere")  # the next read rebuilds, which refuses uncommitted files
-    failed = tools.call("cerebro_search", {"query": ""}, lambda: AGENT)
-    assert failed.is_error
-    assert text_of(failed) == NOTE_FILES_FAILURE
-    assert capsys.readouterr().err == "cerebro: mcp cerebro_search failed: NoteReadError\n"
+    container.search.set_revision("rev-elsewhere")
+    with monkeypatch.context() as patch:
 
-    vault.write_bytes(vault.read_bytes()[:-1])
+        def unreadable() -> None:
+            raise NoteReadError(RESTRICTED_MARKER)
+
+        patch.setattr(container.notes, "scan", unreadable)
+        failed = tools.call("cerebro_search", {"query": ""}, lambda: AGENT)
+        assert failed.is_error
+        assert text_of(failed) == NOTE_FILES_FAILURE
+        assert capsys.readouterr().err == "cerebro: mcp cerebro_search failed: NoteReadError\n"
+
     monkeypatch.setattr(container.graph, "neighbors", lambda *a, **k: (_ for _ in ()).throw(OSError(RESTRICTED_MARKER)))
     failed = tools.call("cerebro_neighbors", {"id": SSH_ID.value}, lambda: AGENT)
     assert text_of(failed) == LOCAL_FAILURE

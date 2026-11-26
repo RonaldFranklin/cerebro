@@ -5,6 +5,7 @@ rebuilds before it answers, or fails; it never returns the note's title or summa
 """
 
 import contextlib
+import tarfile
 from collections.abc import Callable, Sequence
 from dataclasses import replace
 from pathlib import Path
@@ -14,7 +15,6 @@ import pytest
 from cerebro.adapters.outbound.crypto import FernetCipher, load_keys
 from cerebro.adapters.outbound.filesystem import FilesystemNoteRepository, NoteWriteError
 from cerebro.adapters.outbound.filesystem.codec import render_note
-from cerebro.adapters.outbound.filesystem.repository import UNCOMMITTED_REASON
 from cerebro.application.agent_write import AgentWriteRequest
 from cerebro.application.dto import (
     AuthenticateTokenRequest,
@@ -25,9 +25,10 @@ from cerebro.application.dto import (
     IssueAgentTokenRequest,
     OwnerEditNoteRequest,
     ReadNoteRequest,
+    RebuildIndexRequest,
     SearchNotesRequest,
 )
-from cerebro.application.errors import NoteNotFound, NoteReadError
+from cerebro.application.errors import NoteNotFound
 from cerebro.application.index_state import index_is_stale
 from cerebro.application.ports.notes import NoteChange
 from cerebro.bootstrap.container import Container, build_container
@@ -241,14 +242,6 @@ def test_an_abandoned_uncommitted_edit_never_reaches_a_rebuilt_index(service: Se
     (service.sample.root / relative).write_bytes(render_note(note))  # in progress: back to internal, plaintext
     service.sample.commit_out_of_band(replace(note, id=NoteId("added-outside")))
     assert service.stale()
-    with pytest.raises(NoteReadError) as refused:
-        service.container.use_cases.search_notes.execute(SearchNotesRequest(text=MARKER), service.reader)
-    assert refused.value.problems == ((relative, UNCOMMITTED_REASON),)
-    with pytest.raises(NoteReadError):
-        service.container.use_cases.read_note.execute(ReadNoteRequest(note_id=service.note_id), service.reader)
-    assert service.stale()  # nothing was recorded as built from HEAD
-
-    service.sample.git().discard_changes(created=[], modified=[relative])  # the owner drops the edit
     found = service.container.use_cases.search_notes.execute(SearchNotesRequest(text=MARKER), service.reader)
     assert [hit.note.id for hit in found.results] == [NoteId("added-outside")]
     assert not service.stale()
@@ -276,3 +269,66 @@ def test_one_invalid_committed_file_is_left_out_without_a_rebuild_per_request(
     assert [(i.subject, i.code) for i in report.issues if i.code is HealthCode.NOTE_FILE_EXCLUDED] == [
         (relative, HealthCode.NOTE_FILE_EXCLUDED)
     ]
+
+
+@pytest.mark.parametrize("trigger", ["write", "startup", "rebuild"])
+def test_dirty_files_are_quarantined_before_recovery(service: Service, trigger: str) -> None:
+    sample = service.sample
+    tracked = f"notes/{service.note_id.value}.md"
+    original = (sample.root / tracked).read_bytes()
+    (sample.root / tracked).write_bytes(b"staged draft\n")
+    sample.git().stage([tracked])
+    (sample.root / tracked).write_bytes(b"working draft\n")
+    (sample.root / "draft.txt").write_bytes(b"untracked draft\n")
+    if trigger == "startup":
+        (sample.root / "schema/types.yaml").write_text("invalid yaml [")
+        container = build_container(sample.settings)
+        container.start()
+    elif trigger == "rebuild":
+        service.container.use_cases.rebuild_index.execute(RebuildIndexRequest(), OWNER)
+    else:
+        service.container.use_cases.agent_write.execute(
+            AgentWriteRequest(operation="create", request_id="r-2", frontmatter=FIELDS, body="Another procedure."),
+            service.writer,
+        )
+    assert (sample.root / tracked).read_bytes() == original
+    assert not (sample.root / "draft.txt").exists()
+    assert sample.git().is_clean()
+    restarted = build_container(sample.settings)
+    restarted.start()
+    report = restarted.use_cases.health_report.execute(HealthReportRequest(), OWNER)
+    [warning] = [i for i in report.issues if i.code.value == "changes_quarantined"]
+    assert warning.severity.value == "warning"
+    folder = sample.state_dir / warning.subject
+    with tarfile.open(folder / "worktree.tar") as archive:
+        for path, expected in [(tracked, b"working draft\n"), ("draft.txt", b"untracked draft\n")]:
+            entry = archive.extractfile(path)
+            assert entry is not None
+            assert entry.read() == expected
+    assert b"+staged draft" in (folder / "staged.patch").read_bytes()
+
+
+def test_quarantine_includes_ignored_files_without_following_links(service: Service) -> None:
+    root = service.sample.root
+    (root / ".git/info/exclude").write_text("notes/drafts/\n")
+    (root / "notes/drafts").mkdir()
+    (root / "notes/drafts/private.txt").write_bytes(b"abandoned")
+    (root / "notes/drafts/key").symlink_to(service.sample.settings.key_file)
+    service.narrow(NARROWINGS["archived"])
+    assert not (root / "notes/drafts").exists()
+    [snapshot] = service.sample.state_dir.glob("quarantine-*")
+    with tarfile.open(snapshot / "worktree.tar") as archive:
+        assert archive.getmember("notes/drafts/key").issym()
+        entry = archive.extractfile("notes/drafts/private.txt")
+        assert entry is not None
+        assert entry.read() == b"abandoned"
+
+
+def test_quarantine_failure_keeps_all_original_files(service: Service, monkeypatch: pytest.MonkeyPatch) -> None:
+    root = service.sample.root
+    (root / "draft.txt").write_text("keep this")
+    monkeypatch.setattr(tarfile.TarFile, "addfile", boom)
+    with pytest.raises(NoteWriteError):
+        service.container.start()
+    assert (root / "draft.txt").read_text() == "keep this"
+    assert not list(service.sample.state_dir.glob("quarantine-*"))
