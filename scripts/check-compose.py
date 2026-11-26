@@ -18,6 +18,17 @@ if project not in ("cerebro-hml", "cerebro-prod") or set(networks) != {"default"
 environment = service.get("environment", {})
 if project != f"cerebro-{environment.get('CEREBRO_GIT_BRANCH')}":
     sys.exit("The project must match the content branch for its environment.")
+mounts = {v["target"]: Path(v["source"]) for v in service.get("volumes", []) if v["type"] == "bind"}
+parts = ("content", "state", "index", "secrets")
+if set(mounts) != {f"/data/{part}" for part in parts}:
+    sys.exit("Mount the four per-environment data directories.")
+root = mounts["/data/state"].parent
+if (
+    root.name != environment["CEREBRO_GIT_BRANCH"]
+    or not root.is_absolute()
+    or any(path != root / Path(target).name or path.resolve() != path for target, path in mounts.items())
+):
+    sys.exit("Use regular mount directories under an absolute data directory named for the environment.")
 command = service.get("command", [])
 if (
     service.get("entrypoint") is not None
@@ -53,8 +64,10 @@ if (
     sys.exit("Publish the private port only as 127.0.0.1:PORT:PORT/tcp.")
 
 if sys.argv[1:] == ["--project"]:
+    if not all(path.is_dir() for path in mounts.values()):
+        sys.exit("Create all four per-environment directories before startup.")
     print(project)
-elif len(sys.argv) == 3:
+elif len(sys.argv) == 4 and sys.argv[3] in ("created", "running"):
     [container] = json.loads(Path(sys.argv[1]).read_text())
     [bridge] = json.loads(Path(sys.argv[2]).read_text())
     name = network["name"]
@@ -62,19 +75,24 @@ elif len(sys.argv) == 3:
     runtime = container["NetworkSettings"]
     bindings = {f"{private}/tcp": [{"HostIp": "127.0.0.1", "HostPort": private}]}
     if (
-        container["State"].get("Health", {}).get("Status") != "healthy"
-        or labels.get("com.docker.compose.project") != project
+        labels.get("com.docker.compose.project") != project
         or labels.get("com.docker.compose.service") != "backend"
         or container["HostConfig"]["NetworkMode"] != name
-        or set(runtime["Networks"]) != {name}
-        or runtime["Ports"] != bindings
+        or container["HostConfig"]["PortBindings"] != bindings
         or bridge["Name"] != name
         or bridge["Driver"] != "bridge"
         or bridge.get("Options")
         or bridge["Labels"].get("com.docker.compose.project") != project
         or bridge["Labels"].get("com.docker.compose.network") != "default"
-        or set(bridge["Containers"]) != {container["Id"]}
+        or set(bridge.get("Containers") or {}) - {container["Id"]}
     ):
         sys.exit("The running backend failed its health, project bridge or loopback publication check.")
+    if sys.argv[3] == "running" and (
+        container["State"].get("Health", {}).get("Status") != "healthy"
+        or set(runtime["Networks"]) != {name}
+        or runtime["Ports"] != bindings
+        or container["Id"] not in (bridge.get("Containers") or {})
+    ):
+        sys.exit("The running backend failed its health, bridge membership or loopback publication check.")
 elif len(sys.argv) != 1:
-    sys.exit("Accepts --project or two Docker inspect JSON files (container and network).")
+    sys.exit("Accepts --project or container and network inspect files followed by created or running.")

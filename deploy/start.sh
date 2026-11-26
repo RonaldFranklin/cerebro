@@ -14,16 +14,22 @@ trap 'rm -rf -- "$scratch"' EXIT
 project=$(python3 "$check" --project < "$scratch/model")
 dc+=(-p "$project")
 
-start_backend() {
-    "${dc[@]}" up --wait --no-build --pull never backend || return 1
-    local id
-    id=$("${dc[@]}" ps -q backend) || return 1
+image=$(python3 -c 'import json, sys; print(json.load(sys.stdin)["services"]["backend"]["image"])' < "$scratch/model")
+docker image inspect "$image" > /dev/null
+previous=$("${dc[@]}" ps -q backend)
+"${dc[@]}" create --no-build --pull never backend
+id=$("${dc[@]}" ps -a -q backend)
+
+check_runtime() {
     docker container inspect "$id" > "$scratch/container" || return 1
     docker network inspect "${project}_default" > "$scratch/network" || return 1
-    python3 "$check" "$scratch/container" "$scratch/network" < "$scratch/model"
+    python3 "$check" "$scratch/container" "$scratch/network" "$1" < "$scratch/model"
 }
-if ! start_backend; then
-    echo "Startup checks failed. Stopping this project's backend." >&2
-    "${dc[@]}" stop backend
+check_runtime created
+if ! "${dc[@]}" start --wait backend || ! check_runtime running; then
+    if [[ "$id" != "$previous" ]]; then
+        echo "Startup checks failed. Stopping the backend started by this attempt." >&2
+        docker container stop "$id"
+    fi
     exit 1
 fi

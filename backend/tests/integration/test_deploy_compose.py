@@ -101,9 +101,9 @@ def test_deployment_model(tmp_path: Path, environment: str, port: str) -> None:
         {"user": "10001:0"},
     ],
 )
-def test_preflight_refuses_unsafe_service(overrides: dict[str, object]) -> None:
+def test_preflight_refuses_unsafe_service(tmp_path: Path, overrides: dict[str, object]) -> None:
     network = {"name": "cerebro-hml_default"}
-    service = {
+    service: dict[str, object] = {
         "command": [
             "cerebro-mcp",
             "--container",
@@ -117,12 +117,32 @@ def test_preflight_refuses_unsafe_service(overrides: dict[str, object]) -> None:
         "networks": {"default": None},
         "user": "10001:10001",
     }
+    service["volumes"] = [
+        {"target": f"/data/{part}", "source": str(tmp_path / "hml" / part), "type": "bind"}
+        for part in ("state", "index", "content", "secrets")
+    ]
     model = {"name": "cerebro-hml", "networks": {"default": network}, "services": {"backend": service}}
     assert checked(model).returncode == 0
     assert checked({**model, "services": {"backend": {**service, **overrides}}}).returncode != 0
 
 
-@pytest.mark.parametrize("failure", ["", "up", "inspect", "port", "network", "health", "preflight"])
+@pytest.mark.parametrize(
+    "failure",
+    [
+        "",
+        "start",
+        "inspect",
+        "port",
+        "network",
+        "foreign",
+        "health",
+        "preflight",
+        "missing-image",
+        "wrong-data",
+        "symlink",
+        "existing",
+    ],
+)
 def test_guarded_start(tmp_path: Path, failure: str) -> None:
     """Real Compose resolves the file; a simulated daemon records startup and shutdown."""
     import shutil
@@ -134,11 +154,14 @@ def test_guarded_start(tmp_path: Path, failure: str) -> None:
 echo "$*" >> "$CALLS"
 case "$*" in
     *" config --format json") exec "$REAL_DOCKER" "$@" ;;
-    *" up "*) test "$FAILURE" != up ;;
-    *" ps "*) echo abc ;;
+    "image inspect "*) test "$FAILURE" != missing-image ;;
+    *" create "*) exit 0 ;;
+    *" start "*) test "$FAILURE" != start ;;
+    *" ps -q backend") if [ "$FAILURE" = existing ]; then echo abc; fi ;;
+    *" ps -a -q backend") echo abc ;;
     "container inspect abc") test "$FAILURE" != inspect && cat "$CONTAINER" ;;
     "network inspect cerebro-hml_default") cat "$NETWORK" ;;
-    *" stop backend") exit 0 ;;
+    "container stop abc") exit 0 ;;
     *) exit 1 ;;
 esac
 """)
@@ -148,9 +171,12 @@ esac
     calls = tmp_path / "calls"
     instance = {
         "Id": "abc",
-        "State": {"Health": {"Status": "unhealthy" if failure == "health" else "healthy"}},
+        "State": {"Health": {"Status": "unhealthy" if failure in ("health", "existing") else "healthy"}},
         "Config": {"Labels": {"com.docker.compose.project": "cerebro-hml", "com.docker.compose.service": "backend"}},
-        "HostConfig": {"NetworkMode": network},
+        "HostConfig": {
+            "NetworkMode": network,
+            "PortBindings": {f"{port}/tcp": [{"HostIp": "127.0.0.1", "HostPort": port}]},
+        },
         "NetworkSettings": {
             "Networks": {network: {}},
             "Ports": {f"{port}/tcp": [{"HostIp": "0.0.0.0" if failure == "port" else "127.0.0.1", "HostPort": port}]},
@@ -159,7 +185,7 @@ esac
     bridge: dict[str, object] = {
         "Name": network,
         "Driver": "host" if failure == "network" else "bridge",
-        "Containers": {"abc": {}},
+        "Containers": {"abc": {}, "intruder": {}} if failure == "foreign" else {"abc": {}},
         "Labels": {"com.docker.compose.project": "cerebro-hml", "com.docker.compose.network": "default"},
     }
     for filename, record in (("instance", instance), ("bridge", bridge)):
@@ -179,10 +205,21 @@ esac
         "CONTAINER": str(tmp_path / "instance"),
         "NETWORK": str(tmp_path / "bridge"),
     }
+    if failure == "wrong-data":
+        env["DATA_DIR"] = str(tmp_path / "prod")
+    data = Path(env["DATA_DIR"])
+    if failure == "symlink":
+        (tmp_path / "prod").mkdir()
+        data.symlink_to(tmp_path / "prod", target_is_directory=True)
+    for part in ("state", "index", "content", "secrets"):
+        (data / part).mkdir(parents=True)
     if failure == "preflight":
         env["COMPOSE_PROJECT_NAME"] = "cerebro-prod"
     result = subprocess.run([str(ROOT / "deploy/start.sh"), "/dev/null"], env=env, capture_output=True, check=False)
     assert (result.returncode == 0) == (not failure), result.stderr
     commands = calls.read_text()
-    assert (" up " in commands) == (failure != "preflight")
-    assert (" stop backend" in commands) == (failure not in ("", "preflight"))
+    assert (" create " in commands) == (failure not in ("preflight", "missing-image", "wrong-data", "symlink"))
+    started = failure in ("", "start", "port", "health", "existing")
+    assert (" start " in commands) == started
+    assert ("container stop abc" in commands) == (failure in ("start", "port", "health"))
+    assert " stop backend" not in commands

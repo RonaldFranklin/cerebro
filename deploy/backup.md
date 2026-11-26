@@ -63,7 +63,7 @@ separately under the content owner, away from the shutdown interval. Keep Git's 
 Use an empty private directory and an authenticated host Git client (`gh auth setup-git --hostname github.com`).
 For the hml drill, choose a snapshot produced from hml fixtures or a sanitized hml checkout, use only its hml
 Fernet key, and set `ENVIRONMENT=hml`. Point `SNAPSHOT` at its completed snapshot directory and `RESTORE_DIR`
-at a fresh path. A production recovery requires the owner's approval, production access controls, its own private
+at a fresh per-environment path ending in `/hml` (for example `<private-drill-parent>/hml`). A production recovery requires the owner's approval, production access controls, its own private
 restore location and its separate production key.
 
 ```sh
