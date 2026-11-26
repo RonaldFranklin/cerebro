@@ -73,26 +73,21 @@ Pre-deploy maintenance preserves dirty content checkouts under the state directo
 
 [Approved plan and local validation record](plans/phase-6.md). Server installation is a separate owner checkpoint.
 
-- First validate the Docker image and Compose configuration in WSL dev with synthetic content. Check
-  startup, health and persistence across a container restart before deploying to the server.
+- WSL acceptance passed with synthetic content, including startup, health, MCP, browser access, loopback publication and restart persistence.
 - Dockerfile(s), `deploy/compose.yaml` with `cerebro-hml` and `cerebro-prod` projects, healthchecks,
   restart policy, log rotation, separate volumes.
 - Finish on the server. Validate in hml, then promote the same image to prod (`cerebro-backend:git-<sha>`).
 - `tailscale serve` HTTPS in front of the private listener.
-- Backups: content repo pushed to the private remote; state dir file backup; Fernet key escrow documented.
+- Backup pushes the content repository to a private GitHub remote, snapshots SQLite and copies the owner verifier. Escrow the Fernet key separately.
 - Scheduled jobs never run between 00:00 and 01:00 local time (server shuts down daily at 01:00).
 
-**Carried over from the 2026-11-26 audit (open, resolve in this phase):**
+**Audit items addressed in deployment preparation**
 
-- **Docker bind and exposure.** The HTTP server has explicit container mode ([ADR-0027](adr/0027-container-loopback-publication.md)); the accepting port still identifies the listener and its ceiling. The deployment must publish each port as `127.0.0.1:P:P` (same number on both
-  sides) and include a test of what is exposed.
-- **Backup.** `VersionControl.push` has no caller, so nothing pushes the content repository. Cérebro's git commands
-  disable automatic garbage collection (`gc.auto=0`) and nothing else runs `git gc`.
-- **Operating documentation.** The README quickstart stops after key provisioning (no owner password, token issue or
-  server start). `architecture.md` places the owner password verifier in the secrets dir, but it is
-  `<state_dir>/owner.verifier`; it also names a Scheduler adapter and package paths that do not exist.
+- **12. Docker bind and exposure.** Container mode uses the private listener on a project bridge. Compose checks and the WSL trial verified a single host-loopback publication. [ADR-0027](adr/0027-container-loopback-publication.md)
+- **13. Backup.** The backup command pairs the content revision with a SQLite snapshot and the owner verifier. Quarantine and the derived index are excluded. The maintenance example schedules Git garbage collection separately. [Backup and restore](../deploy/backup.md)
+- **14. Operating documentation.** The README covers credentials, tokens and startup. The architecture inventory places the owner verifier under the state directory and lists the implemented adapters. [Quickstart](../README.md) · [Architecture](architecture.md)
 
-**Acceptance:** hml and prod running on the server; Claude Code and Codex on the workstation use prod via
+**Pending server and workstation acceptance:** hml and prod running on the server; Claude Code and Codex on the workstation use prod via
 Tailscale; restore of content + state tested on hml.
 
 ## ⬜ Phase 8 — Later
