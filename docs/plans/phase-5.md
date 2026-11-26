@@ -199,8 +199,13 @@ pnpm_dir="$HOME/.local/opt/cerebro-pnpm-12.22.0"
   mkdir -p "$pnpm_dir"
   tar -xzf pnpm.tgz --strip-components=1 -C "$pnpm_dir" package/pnpm
 )
-export PATH="$pnpm_dir:$PATH"
-pnpm --version                                                    # 12.22.0
+if (( $? == 0 )); then
+  export PATH="$pnpm_dir:$PATH"
+  pnpm --version                                                  # 12.22.0
+else
+  echo 'pnpm installation failed.' >&2
+  false
+fi
 ```
 
 **Commands the implementation PRs must provide.** From the repository root in WSL, run the following against a disposable synthetic instance. The web commands and fixture launcher are planned deliverables. Keep the existing CLI and MCP entry points usable without installing Node on the service host.
