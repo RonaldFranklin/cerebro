@@ -91,6 +91,7 @@ export class BrowserSession {
     if (!this.scheduleDeadline(session, started)) return;
     const queries = new QueryClient({ defaultOptions: { queries: { retry: false, refetchOnWindowFocus: false } } });
     queries.setQueryDefaults(["search-form"], { gcTime: Infinity });
+    queries.setQueryDefaults(["graph-workspace"], { gcTime: Infinity });
     this.set({
       kind: "active", checking: false, generation: ++this.generation, session,
       queries,

@@ -28,6 +28,7 @@ from cerebro.domain.content_hash import content_hash
 from cerebro.domain.enums import Sensitivity
 from cerebro.domain.note import NoteId
 from cerebro.domain.proposal import ProposalKind, ProposedContent
+from cerebro.domain.vocabulary import Area
 from devtools.mcp_sample import create_sample
 from devtools.web_tls import certificate, tls_relay
 
@@ -50,6 +51,7 @@ def _populate(config: Path, *, automation: bool) -> bool:
         note,
         id=NoteId("fixture-vault-catalog"),
         title="Synthetic vault catalog",
+        area=Area("security"),
         summary="Private topic hub for the synthetic vault notes in this disposable browser fixture.",
         body="Restricted catalog for the browser demonstration.\n",
         sensitivity=Sensitivity.RESTRICTED,
