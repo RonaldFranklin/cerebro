@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from enum import StrEnum
 
 from cerebro.domain.markdown import strip_code
-from cerebro.domain.note import Note, NoteId
+from cerebro.domain.note import MAX_NOTE_ID_LENGTH, Note, NoteId
 from cerebro.domain.slug import is_slug
 
 # [[note-id]] or [[note-id#Section heading]]; no nesting, no line breaks inside the brackets.
@@ -46,6 +46,10 @@ class Link:
     section: str | None = None
 
 
+def _note_id(target: str) -> NoteId | None:
+    return NoteId(target) if len(target) <= MAX_NOTE_ID_LENGTH and is_slug(target) else None
+
+
 def extract_wikilinks(body: str) -> tuple[WikiLink, ...]:
     """Wikilinks of ``body`` in order of appearance, without duplicates.
 
@@ -55,11 +59,11 @@ def extract_wikilinks(body: str) -> tuple[WikiLink, ...]:
     """
     found: dict[WikiLink, None] = {}
     for match in _WIKILINK.finditer(strip_code(body)):
-        target = match.group(1).strip()
-        if not is_slug(target):
+        target = _note_id(match.group(1).strip())
+        if target is None:
             continue
         section = (match.group(2) or "").strip() or None
-        found[WikiLink(target=NoteId(target), section=section)] = None
+        found[WikiLink(target=target, section=section)] = None
     return tuple(found)
 
 
@@ -93,8 +97,7 @@ def note_links(note: Note) -> tuple[Link, ...]:
 
 
 def _bracket_target(inner: str) -> NoteId | None:
-    target = re.split(r"[#|]", inner, maxsplit=1)[0].strip()
-    return NoteId(target) if is_slug(target) else None
+    return _note_id(re.split(r"[#|]", inner, maxsplit=1)[0].strip())
 
 
 def loose_link_targets(body: str) -> tuple[NoteId, ...]:

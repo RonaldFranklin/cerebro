@@ -100,3 +100,11 @@ def test_redact_wikilinks_also_covers_code() -> None:
 def test_loose_link_targets_cover_code_and_alias_forms() -> None:
     body = "[[a]] `[[b]]` ```\n[[c#x]]\n``` [[ d | alias ]] [[Not A Slug]] [[a]]"
     assert [t.value for t in loose_link_targets(body)] == ["a", "b", "c", "d"]
+
+
+def test_overlong_slug_is_plain_text_in_all_link_forms() -> None:
+    long_slug = "x" * 81
+    body = f"[[{long_slug}]] and `[[{long_slug}|alias]]`"
+    assert extract_wikilinks(body) == ()
+    assert loose_link_targets(body) == ()
+    assert redact_wikilinks(body, lambda _: False) == body

@@ -3,8 +3,9 @@ from typing import Any
 import pytest
 
 from cerebro.domain.access import validate_agent_name, validate_curator_name
-from cerebro.domain.commit_message import CommitMessage
+from cerebro.domain.commit_message import AgentWriteCommit, CommitMessage, create_request_key
 from cerebro.domain.errors import InvalidValueError
+from cerebro.domain.note import NoteId
 
 
 def make(**overrides: Any) -> CommitMessage:
@@ -133,3 +134,20 @@ def test_curator_names_have_a_strict_shape(curated_by: str) -> None:
 def test_approved_by_is_always_the_owner(approved_by: str) -> None:
     with pytest.raises(InvalidValueError, match="approved_by"):
         make(approved_by=approved_by)
+
+
+@pytest.mark.parametrize("agent", ["owner", "curator/test", "agent\nWritten-by: owner"])
+def test_direct_write_requires_a_valid_agent(agent: str) -> None:
+    with pytest.raises(InvalidValueError):
+        AgentWriteCommit(note_id=NoteId("sample"), written_by=agent)
+
+
+@pytest.mark.parametrize(("key", "fingerprint"), [(None, "0" * 64), ("a" * 64, None), ("raw", "f" * 64)])
+def test_create_commit_requires_both_digests(key: str | None, fingerprint: str | None) -> None:
+    with pytest.raises(InvalidValueError):
+        AgentWriteCommit(note_id=NoteId("sample"), written_by="codex", request_key=key, fingerprint=fingerprint)
+
+
+def test_replay_key_encodes_the_token_request_pair_unambiguously() -> None:
+    assert create_request_key("ab", "c") != create_request_key("a", "bc")
+    assert create_request_key("ab", "c") == create_request_key("ab", "c")

@@ -564,7 +564,7 @@ def test_concurrent_admission_on_distinct_connections_survives_restart(state_pat
     assert restarted.get("another") is None
 
 
-@pytest.mark.parametrize("version", [1, 2])
+@pytest.mark.parametrize("version", [1, 2, 3])
 def test_state_upgrade_preserves_proposals_and_existing_credentials(
     state_path: Path, cipher: FernetCipher, version: int
 ) -> None:
@@ -605,7 +605,7 @@ def test_state_upgrade_preserves_proposals_and_existing_credentials(
                 None,
             ),
         )
-        if version == 2:
+        if version >= 2:
             conn.executescript(
                 "ALTER TABLE proposals ADD COLUMN admission_token_id TEXT;"
                 "ALTER TABLE proposals ADD COLUMN admitted_key TEXT;"
@@ -617,11 +617,23 @@ def test_state_upgrade_preserves_proposals_and_existing_credentials(
             conn.execute(
                 "UPDATE proposals SET admission_token_id = ?, admitted_key = ?", (token.id, utc_key(old.created_at))
             )
+        if version == 3:
+            conn.execute("CREATE TABLE login_attempts (reserved_us INTEGER NOT NULL) STRICT")
+            conn.execute("INSERT INTO login_attempts VALUES (42)")
+            conn.execute("UPDATE tokens SET scopes = ?", ('["read","propose"]',))
+            conn.execute("PRAGMA user_version = 3")
         conn.execute("ANALYZE")
     store = SqliteProposalStore(state_path, cipher)
     assert store.get(old.id) == old
-    assert SqliteTokenStore(state_path).get(token.id) == token
-    if version == 2:
+    if version == 3:
+        loaded = SqliteTokenStore(state_path).get(token.id)
+        assert loaded is not None
+        assert loaded.scopes == frozenset({Scope.READ, Scope.PROPOSE})
+        with closing(sqlite3.connect(state_path)) as db:
+            assert db.execute("SELECT reserved_us FROM login_attempts").fetchall() == [(42,)]
+    else:
+        assert SqliteTokenStore(state_path).get(token.id) == token
+    if version >= 2:
         with pytest.raises(ProposalLimitReached):
             store.admit(
                 make_reviewable("denied"),
@@ -635,7 +647,7 @@ def test_state_upgrade_preserves_proposals_and_existing_credentials(
     assert len(store.find(source_agent=old.source_agent)) == 2
 
 
-@pytest.mark.parametrize("version", [1, 2])
+@pytest.mark.parametrize("version", [1, 2, 3])
 def test_unrecognized_state_file_is_left_intact(state_path: Path, cipher: FernetCipher, version: int) -> None:
     state_path.parent.mkdir(mode=0o700)
     state_path.touch(mode=0o600)

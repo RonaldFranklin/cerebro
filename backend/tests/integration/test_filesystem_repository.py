@@ -24,6 +24,7 @@ from cerebro.adapters.outbound.filesystem import (
 from cerebro.adapters.outbound.filesystem import repository as repository_module
 from cerebro.adapters.outbound.git import GitError, GitRepo
 from cerebro.application.ports import Cipher, NoteChange, NoteRepository
+from cerebro.domain.commit_message import AgentWriteCommit, create_request_key
 from cerebro.domain.content_hash import content_hash
 from cerebro.domain.enums import Priority, Sensitivity
 from cerebro.domain.errors import ContentConflict, InvalidValueError
@@ -101,6 +102,24 @@ def tree_files(root: Path) -> dict[str, bytes]:
 
 
 # -- layout and format ---------------------------------------------------------------------------------------------
+
+
+def test_reopened_repository_reads_the_original_git_receipt(
+    git: GitRepo, root: Path, cipher: Cipher, repo: FilesystemNoteRepository
+) -> None:
+    note = plain()
+    key = create_request_key("token-fixture", "request-fixture")
+    message = AgentWriteCommit(note_id=note.id, written_by="test-agent", request_key=key, fingerprint="d" * 64)
+    revision = repo.apply([NoteChange(note=note)], message)
+    repo.apply([NoteChange(note=hub_note())], MESSAGE)
+    reopened = FilesystemNoteRepository(root, git=git, cipher=cipher)
+    receipt = reopened.find_create(key)
+    assert receipt is not None
+    assert receipt.revision == revision
+    assert receipt.note_id == note.id
+    assert git.describe_commit(revision)[1] == (
+        f"Add note: {note.id.value}\n\nWritten-by: test-agent\nWrite-Request: {key}\nWrite-Fingerprint: {'d' * 64}"
+    )
 
 
 def test_files_are_placed_by_type_and_named_after_the_id(repo: FilesystemNoteRepository, root: Path) -> None:

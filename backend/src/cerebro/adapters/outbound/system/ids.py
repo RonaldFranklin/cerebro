@@ -20,6 +20,9 @@ class SystemIdGenerator:
     already stores ``created_at``, so nothing new is disclosed.
     """
 
+    def new_note_id(self) -> str:
+        return secrets.token_hex(16)
+
     def new_proposal_id(self) -> str:
         with _UUID7_LOCK:
             return uuid.uuid7().hex

@@ -394,6 +394,20 @@ class GitRepo:
         parents, _, text = out.partition("\x00")
         return tuple(parents.split()), text.strip("\n")
 
+    def find_create_commit(self, request_key: str) -> tuple[str, str] | None:
+        """Look for an exact create-request trailer across the reachable content history."""
+        if not re.fullmatch(r"[0-9a-f]{64}", request_key):
+            raise GitError("invalid request key")
+        if self.head() is None:
+            return None
+        _, out = self._run(
+            ["log", "-1", "--basic-regexp", f"--grep=^Write-Request: {request_key}$", "--format=%H%x00%B", "HEAD", "--"]
+        )
+        if not out:
+            return None
+        revision, _, message = out.partition("\x00")
+        return revision, message.rstrip("\n")
+
     def has_staged_changes(self) -> bool:
         """True when the index differs from ``HEAD`` (or, before the first commit, is not empty)."""
         if self.head() is None:

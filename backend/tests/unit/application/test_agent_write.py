@@ -1,0 +1,136 @@
+from dataclasses import replace
+
+import pytest
+
+from cerebro.application.agent_write import AgentWriteRequest, WriteRejected
+from cerebro.application.errors import PermissionDenied
+from cerebro.application.ports.notes import NoteChange
+from cerebro.application.use_cases.agent_write import AgentWrite
+from cerebro.domain.access import Scope
+from cerebro.domain.content_hash import content_hash
+from cerebro.domain.enums import Sensitivity
+from cerebro.domain.note import NoteId
+from tests.fakes.write_attempts import FakeWriteAttemptStore
+from tests.unit.application.world import MESSAGE
+from tests.unit.application.write_kit import SECRET, Kit, agent_ctx
+from tests.unit.domain.builders import VALID_SUMMARY, VOCABULARY
+
+
+def writer(kit: Kit, limit: int = 20) -> AgentWrite:
+    w = kit.world
+    return AgentWrite(w.notes, w.search, w.graph, FakeWriteAttemptStore(), kit.clock, kit.ids, VOCABULARY, limit)
+
+
+def request(**fields: object) -> AgentWriteRequest:
+    return AgentWriteRequest(
+        operation="create",
+        request_id="request-1",
+        body="A synthetic procedure.",
+        frontmatter={
+            "title": "Direct write",
+            "type": "guide",
+            "area": "infrastructure",
+            "priority": "P2",
+            "sensitivity": "public",
+            "hub": "infrastructure",
+            "summary": VALID_SUMMARY,
+            **fields,
+        },
+    )
+
+
+def test_create_replay_conflict_update_and_stale_retry() -> None:
+    kit = Kit()
+    write = writer(kit)
+    ctx = replace(agent_ctx(scopes=frozenset({Scope.WRITE, Scope.READ})), token_id="token-one")
+    created = write.execute(request(), ctx)
+    commits = kit.commits
+    assert write.execute(request(), ctx).revision == created.revision
+    with pytest.raises(WriteRejected, match="request_conflict"):
+        write.execute(replace(request(), body="Different"), ctx)
+    note = kit.world.notes.get(created.note_id)
+    assert note is not None
+    update = replace(
+        request(),
+        operation="update",
+        target=note.id.value,
+        request_id=None,
+        base_hash=content_hash(note),
+        body="A corrected synthetic procedure.",
+    )
+    write.execute(update, ctx)
+    assert kit.commits == commits + 1
+    with pytest.raises(WriteRejected, match="stale_base"):
+        write.execute(update, ctx)
+
+
+@pytest.mark.parametrize("body", ["[[{}]]", "`[[{}]]`", "```\n[[{}]]\n```", "[[{}|alias]]"])
+def test_hidden_and_missing_link_feedback(body: str) -> None:
+    kit = Kit()
+    write = writer(kit)
+    ctx = replace(agent_ctx(scopes=frozenset({Scope.WRITE})), token_id="token-one")
+    outputs = []
+    for ref in ("vault-layout", "missing"):
+        with pytest.raises(WriteRejected) as err:
+            write.execute(replace(request(), body=body.format(ref)), ctx)
+        outputs.append(err.value.findings)
+    assert outputs[0] == outputs[1]
+    assert outputs[0][0].code == "broken_link"
+
+
+def test_invalid_calls_consume_quota_and_legacy_tokens_cannot_write() -> None:
+    kit = Kit()
+    write = writer(kit, 1)
+    ctx = replace(agent_ctx(), token_id="token-one")
+    with pytest.raises(PermissionDenied):
+        write.execute(request(), ctx)
+    ctx = replace(ctx, scopes=frozenset({Scope.WRITE}))
+    commits = kit.commits
+    with pytest.raises(WriteRejected) as err:
+        write.execute(replace(request(), body=SECRET), ctx)
+    assert err.value.findings[0].code == "secret_detected"
+    assert SECRET not in repr(err.value.findings)
+    with pytest.raises(WriteRejected, match="rate_limited"):
+        write.execute(request(), ctx)
+    assert kit.commits == commits
+    other = replace(ctx, token_id="another-token")
+    assert write.execute(request(), other).revision is not None
+
+
+def test_hidden_and_missing_update_targets_match() -> None:
+    kit = Kit()
+    write = writer(kit)
+    ctx = replace(agent_ctx(Sensitivity.PUBLIC, frozenset({Scope.WRITE})), token_id="token")
+    for target in ("vault-layout", "unavailable"):
+        with pytest.raises(WriteRejected, match="target_unavailable"):
+            write.execute(
+                replace(request(), operation="update", target=target, base_hash="a" * 64, request_id=None), ctx
+            )
+
+
+@pytest.mark.parametrize("body", ["a" * (48 * 1024 + 1), "\ud800"])
+def test_non_storable_body_is_rejected_before_commit(body: str) -> None:
+    kit = Kit()
+    write = writer(kit)
+    ctx = replace(agent_ctx(scopes=frozenset({Scope.WRITE})), token_id="token")
+    before = kit.commits
+    with pytest.raises(WriteRejected, match="invalid_field"):
+        write.execute(replace(request(), body=body), ctx)
+    assert kit.commits == before
+
+
+def test_generated_collisions_are_retried_and_replay_rechecks_current_visibility() -> None:
+    kit = Kit()
+    kit.world.add(id=NoteId("note-0001"), sensitivity=Sensitivity.RESTRICTED)
+    write = writer(kit)
+    ctx = replace(agent_ctx(scopes=frozenset({Scope.WRITE})), token_id="token")
+    result = write.execute(request(), ctx)
+    assert result.note_id.value == "note-0002"
+    note = kit.world.notes.get(result.note_id)
+    assert note is not None
+
+    kit.world.notes.apply(
+        [NoteChange(note=replace(note, sensitivity=Sensitivity.RESTRICTED), expected_hash=content_hash(note))], MESSAGE
+    )
+    with pytest.raises(WriteRejected, match="target_unavailable"):
+        write.execute(request(), ctx)

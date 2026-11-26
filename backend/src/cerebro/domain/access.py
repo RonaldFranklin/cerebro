@@ -87,6 +87,7 @@ class Scope(StrEnum):
 
     READ = "read"
     PROPOSE = "propose"
+    WRITE = "write"
 
     @classmethod
     def parse(cls, value: str) -> Self:

@@ -21,7 +21,7 @@ from contextlib import closing, contextmanager, suppress
 from pathlib import Path
 from typing import Final
 
-SCHEMA_VERSION: Final = 3
+SCHEMA_VERSION: Final = 4
 BUSY_TIMEOUT_MS: Final = 5000
 
 _SCHEMA_V1: Final = """
@@ -60,6 +60,13 @@ ALTER TABLE proposals ADD COLUMN admission_token_id TEXT;
 ALTER TABLE proposals ADD COLUMN admitted_key TEXT;
 CREATE INDEX proposals_by_admission ON proposals(admission_token_id, admitted_key);
 CREATE INDEX pending_by_token ON proposals(admission_token_id) WHERE status NOT IN ('rejected','applied');
+"""
+
+
+_UPGRADE_V3: Final = "CREATE TABLE login_attempts (reserved_us INTEGER NOT NULL) STRICT"
+_UPGRADE_V4: Final = """
+CREATE TABLE write_attempts (token_id TEXT NOT NULL, reserved_us INTEGER NOT NULL) STRICT;
+CREATE INDEX write_attempts_by_token ON write_attempts(token_id, reserved_us);
 """
 
 
@@ -203,7 +210,7 @@ class StateDatabase:
         version = int(conn.execute("PRAGMA user_version").fetchone()[0])
         if version == SCHEMA_VERSION:
             return
-        if version not in (0, 1, 2):
+        if version not in (0, 1, 2, 3):
             raise StateSchemaError(
                 f"{self._path} has schema version {version}; this build understands {SCHEMA_VERSION}"
             )
@@ -217,11 +224,13 @@ class StateDatabase:
                 if conn.execute("SELECT count(*) FROM sqlite_master").fetchone()[0] != 0:
                     raise StateSchemaError(f"{self._path} holds tables but no schema version; refusing to touch it")
                 _apply_schema(conn, _SCHEMA_V1)
-            elif version not in (1, 2) or not self._matches_previous(conn, version):
+            elif version not in (1, 2, 3) or not self._matches_previous(conn, version):
                 raise StateSchemaError("unexpected state schema during migration")
             if version < 2:
                 _apply_schema(conn, _UPGRADE_V2)
-            conn.execute("CREATE TABLE login_attempts (reserved_us INTEGER NOT NULL) STRICT")
+            if version < 3:
+                _apply_schema(conn, _UPGRADE_V3)
+            _apply_schema(conn, _UPGRADE_V4)
             conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
         except BaseException:
             conn.execute("ROLLBACK")
@@ -233,6 +242,8 @@ class StateDatabase:
         """Compare SQLite's normalized DDL against the previous application's own schema."""
         with closing(sqlite3.connect(":memory:")) as reference:
             _apply_schema(reference, _SCHEMA_V1)
-            if version == 2:
+            if version >= 2:
                 _apply_schema(reference, _UPGRADE_V2)
+            if version >= 3:
+                _apply_schema(reference, _UPGRADE_V3)
             return _schema_statements(reference) == _schema_statements(conn)

@@ -62,8 +62,9 @@ from cerebro.adapters.outbound.filesystem.safeio import (
 from cerebro.adapters.outbound.git import GitError, GitRepo
 from cerebro.application.errors import DecryptionError
 from cerebro.application.ports import Cipher, NoteChange
-from cerebro.domain.commit_message import CommitMessage
-from cerebro.domain.content_hash import content_hash
+from cerebro.application.ports.notes import CreateReceipt, check_agent_commit
+from cerebro.domain.commit_message import AgentWriteCommit, CommitMessage
+from cerebro.domain.content_hash import content_hash, is_content_hash
 from cerebro.domain.enums import Sensitivity
 from cerebro.domain.errors import ContentConflict, InvalidValueError
 from cerebro.domain.note import Note, NoteId
@@ -137,6 +138,32 @@ class FilesystemNoteRepository:
 
     def head(self) -> str | None:
         return self._git.head()
+
+    def find_create(self, request_key: str) -> CreateReceipt | None:
+        if not is_content_hash(request_key):
+            raise InvalidValueError("request_key", "expected a SHA-256 digest")
+        try:
+            found = self._git.find_create_commit(request_key)
+        except GitError:
+            raise NoteWriteError("could not inspect create history") from None
+        if found is None:
+            return None
+        revision, message = found
+        lines = message.splitlines()
+        if len(lines) == 5:
+            try:
+                commit = AgentWriteCommit(
+                    note_id=NoteId(lines[0].removeprefix("Add note: ")),
+                    written_by=lines[2].removeprefix("Written-by: "),
+                    request_key=request_key,
+                    fingerprint=lines[4].removeprefix("Write-Fingerprint: "),
+                )
+            except InvalidValueError:
+                pass
+            else:
+                if commit.render() == message and commit.fingerprint is not None:
+                    return CreateReceipt(note_id=commit.note_id, revision=revision, fingerprint=commit.fingerprint)
+        raise NoteWriteError("invalid create receipt in content history")
 
     def _existing_paths(self, note_id: NoteId) -> list[str]:
         for folder in FOLDERS:
@@ -240,7 +267,9 @@ class FilesystemNoteRepository:
 
     # -- writing -------------------------------------------------------------------------------------------------
 
-    def apply(self, changes: Sequence[NoteChange], message: CommitMessage) -> str:
+    def apply(self, changes: Sequence[NoteChange], message: CommitMessage | AgentWriteCommit) -> str:
+        if isinstance(message, AgentWriteCommit):
+            check_agent_commit(changes, message)
         if not changes:
             raise InvalidValueError("changes", "at least one change is required")
         ids = [change.note.id for change in changes]
@@ -322,7 +351,9 @@ class FilesystemNoteRepository:
             raise NoteWriteError("could not inspect the content repository; nothing was written") from None
         return before
 
-    def _write(self, prepared: Sequence[_Prepared], message: CommitMessage, before: frozenset[str]) -> str:
+    def _write(
+        self, prepared: Sequence[_Prepared], message: CommitMessage | AgentWriteCommit, before: frozenset[str]
+    ) -> str:
         planned = [item.relative for item in prepared]
         created = [item.relative for item in prepared if item.change.expected_hash is None]
         modified = [item.relative for item in prepared if item.change.expected_hash is not None]
