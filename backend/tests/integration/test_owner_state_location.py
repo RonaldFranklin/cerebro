@@ -1,4 +1,4 @@
-"""Owner verifier location across Git's worktree, bare and separate metadata layouts."""
+"""The owner verifier lives outside the content repository and the application repository."""
 
 from pathlib import Path
 from subprocess import run
@@ -19,47 +19,65 @@ def _git(root: Path, *arguments: str) -> None:
     run(["git", "-C", str(root), *arguments], check=True, capture_output=True)
 
 
-@pytest.mark.parametrize("metadata", ["separate", "common", "linked", "bare"])
-@pytest.mark.parametrize("content_checkout", [True, False], ids=["content", "application"])
-def test_refuses_git_metadata_before_creating_state(tmp_path: Path, metadata: str, content_checkout: bool) -> None:
-    checkout = tmp_path / "checkout"
-    git_dir = tmp_path / "metadata"
-    if metadata == "bare":
-        _git(tmp_path, "init", "--bare", str(git_dir))
-        checkout = git_dir
-    else:
-        _git(tmp_path, "init", "--separate-git-dir", str(git_dir), str(checkout))
-        if metadata in {"common", "linked"}:
-            _git(
-                checkout,
-                "-c",
-                "user.name=Test",
-                "-c",
-                "user.email=test@example.invalid",
-                "commit",
-                "--allow-empty",
-                "-m",
-                "Fixture",
-            )
-            linked = tmp_path / "linked"
-            _git(checkout, "worktree", "add", "--detach", str(linked))
-            checkout = linked
-            if metadata == "linked":
-                git_dir = git_dir / "worktrees" / "linked"
-                assert (git_dir / "commondir").is_file()
-
-    state = git_dir / "private" / "state"
-    content = checkout if content_checkout else tmp_path / "independent-content"
-    with pytest.raises(ConfigurationError, match="outside repositories"):
+@pytest.mark.parametrize("state_path", ["content/state", "content/.git/private/state", "content"])
+def test_refuses_state_inside_the_content_repository(tmp_path: Path, state_path: str) -> None:
+    content = tmp_path / "content"
+    _git(tmp_path, "init", str(content))
+    state = tmp_path / state_path
+    before = sorted(content.rglob("*"))
+    with pytest.raises(ConfigurationError, match="outside the content and application repositories"):
         owner_credentials(_settings(content, state))
+    assert sorted(content.rglob("*")) == before
+
+
+def test_refuses_a_link_that_leads_into_the_content_repository(tmp_path: Path) -> None:
+    content = tmp_path / "content"
+    content.mkdir()
+    (tmp_path / "alias").symlink_to(content, target_is_directory=True)
+    with pytest.raises(ConfigurationError, match="outside the content and application repositories"):
+        owner_credentials(_settings(content, tmp_path / "alias" / "state"))
+    assert not (content / "state").exists()
+
+
+def test_refuses_a_state_directory_that_is_a_link(tmp_path: Path) -> None:
+    (tmp_path / "target").mkdir(mode=0o700)
+    (tmp_path / "state").symlink_to(tmp_path / "target", target_is_directory=True)
+    with pytest.raises(ConfigurationError, match="regular state directory"):
+        owner_credentials(_settings(tmp_path / "content", tmp_path / "state"))
+
+
+def test_refuses_state_inside_the_running_application_checkout() -> None:
+    state = Path(__file__).resolve().parents[3] / "never-created" / "state"
+    with pytest.raises(ConfigurationError, match="outside the content and application repositories"):
+        owner_credentials(_settings(state.parents[2] / "unused-content", state))
     assert not state.parent.exists()
 
 
-def test_accepts_private_sibling_of_git_metadata(tmp_path: Path) -> None:
-    content = tmp_path / "checkout"
-    _git(tmp_path, "init", "--separate-git-dir", str(tmp_path / "metadata"), str(content))
-    state = tmp_path / "private"
-    owner_credentials(_settings(content, state))
+@pytest.mark.parametrize("layout", ["plain", "linked-module", "shared-src"])
+def test_refuses_state_inside_another_application_checkout(tmp_path: Path, layout: str) -> None:
+    checkout = tmp_path / "application"
+    module = checkout / "backend/src/cerebro/bootstrap/browser.py"
+    if layout == "shared-src":
+        (checkout / "shared/src").mkdir(parents=True)
+        (checkout / "backend").mkdir()
+        (checkout / "backend/src").symlink_to("../shared/src", target_is_directory=True)
+    module.parent.mkdir(parents=True)
+    if layout == "linked-module":
+        module.with_name("implementation.py").touch()
+        module.symlink_to("implementation.py")
+    else:
+        module.touch()
+    state = checkout / "new" / "state"
+    with pytest.raises(ConfigurationError, match="outside the content and application repositories"):
+        owner_credentials(_settings(tmp_path / "content", state))
+    assert not state.parent.exists()
+
+
+def test_accepts_a_state_directory_under_an_unrelated_repository(tmp_path: Path) -> None:
+    home = tmp_path / "home"
+    _git(tmp_path, "init", str(home))  # e.g. a home directory that versions its dotfiles
+    state = home / ".local/state/cerebro"
+    owner_credentials(_settings(tmp_path / "content", state))
     assert state.is_dir()
 
 
@@ -120,60 +138,6 @@ def test_parent_sync_failure_prevents_first_provision(tmp_path: Path, monkeypatc
     verifier = owner_credentials(settings)
     verifier.provision(b"fixture")
     assert verifier.verify(b"fixture") is not None
-
-
-@pytest.mark.parametrize("installation", ["source", "wheel", "wheel-linked-module", "wheel-shared-src"])
-def test_refuses_explicit_application_worktree_without_gitfile(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, installation: str
-) -> None:
-    from cerebro.bootstrap import browser
-
-    checkout = tmp_path / "application"
-    checkout.mkdir()
-    git_dir = tmp_path / "metadata"
-    _git(tmp_path, "init", "--bare", str(git_dir))
-    module = checkout / "backend/src/cerebro/bootstrap/browser.py"
-    if installation == "wheel-shared-src":
-        shared = checkout / "shared/src"
-        shared.mkdir(parents=True)
-        (checkout / "backend").mkdir()
-        (checkout / "backend/src").symlink_to("../shared/src", target_is_directory=True)
-    module.parent.mkdir(parents=True)
-    if installation == "wheel-linked-module":
-        original = module.with_name("implementation.py")
-        original.write_text("# Fixture application source\n")
-        module.symlink_to(original.name)
-    else:
-        module.write_text("# Fixture application source\n")
-    if installation != "source":
-        (checkout / "backend/pyproject.toml").write_text('[project]\nname="cerebro"\n')
-    explicit = ["--git-dir", str(git_dir), "--work-tree", str(checkout)]
-    _git(tmp_path, *explicit, "add", "--", str(checkout / "backend"))
-    _git(tmp_path, *explicit, "-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "-m", "Test")
-    assert not (checkout / ".git").exists()
-    installed = module if installation == "source" else tmp_path / "venv/site-packages/cerebro/bootstrap/browser.py"
-    monkeypatch.setattr(browser, "__file__", str(installed))
-    state = checkout / "new" / "state"
-    with pytest.raises(ConfigurationError, match="outside repositories"):
-        owner_credentials(_settings(tmp_path / "content", state))
-    assert not state.parent.exists()
-
-
-def test_declared_sparse_checkout_is_excluded(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-
-    checkout = tmp_path / "sparse"
-    checkout.mkdir()
-    git_dir = tmp_path / "metadata"
-    _git(tmp_path, "init", "--bare", str(git_dir))
-    (checkout / "README.md").write_text("Fixture sparse tree\n")
-    explicit = ["--git-dir", str(git_dir), "--work-tree", str(checkout)]
-    _git(tmp_path, *explicit, "add", "--", str(checkout / "README.md"))
-    _git(tmp_path, *explicit, "-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "-m", "Test")
-    monkeypatch.chdir(tmp_path)
-    monkeypatch.setenv("GIT_WORK_TREE", "sparse")
-    with pytest.raises(ConfigurationError, match="outside repositories"):
-        owner_credentials(_settings(tmp_path / "content", checkout / "state"))
-    assert not (checkout / "state").exists()
 
 
 def test_backend_symlink_does_not_mark_its_parent_as_a_checkout(tmp_path: Path) -> None:

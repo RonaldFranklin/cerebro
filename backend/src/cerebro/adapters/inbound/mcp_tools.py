@@ -219,13 +219,14 @@ class MCPTools:
             ctx = authenticate()
             if ctx.is_owner or not ctx.can(tool_scope(name)):
                 raise PermissionDenied("call tool")
+            output: dict[str, object]
             if isinstance(request, GetOverviewRequest):
-                output = overview_view(self.get_overview.execute(request, ctx))
+                output = dict(overview_view(self.get_overview.execute(request, ctx)))
             elif isinstance(request, SearchNotesRequest):
                 output = {"results": search_view(self.search_notes.execute(request, ctx))}
             elif isinstance(request, ReadNoteRequest):
                 view = self.read_note.execute(request, ctx)
-                output = read_view(view)
+                output = dict(read_view(view))
                 if ctx.can(Scope.WRITE) and view.base_hash is not None:
                     output["base_hash"] = view.base_hash
             elif isinstance(request, AgentWriteRequest):
