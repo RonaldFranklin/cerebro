@@ -13,6 +13,7 @@ from starlette.types import ASGIApp, Receive, Scope, Send
 from cerebro.adapters.inbound.input_limits import MAX_INPUT_BYTES
 from cerebro.application.browser import AuthenticationFailed, BrowserAuth, BrowserBinding, CsrfRejected
 from cerebro.domain.access import AccessCeiling, AccessContext
+from cerebro.domain.enums import Sensitivity
 
 _NO_STORE = {"Cache-Control": "no-store"}
 _SESSION_PATHS = frozenset({"/api/login", "/api/logout", "/api/session"})
@@ -60,6 +61,25 @@ def _unique_object(pairs: list[tuple[str, object]]) -> dict[str, object]:
     return fields
 
 
+def _invalid_number(value: str) -> object:
+    raise ValueError("invalid JSON number")
+
+
+def _check_json(body: bytes) -> None:
+    value = json.loads(body.decode("utf-8"), object_pairs_hook=_unique_object, parse_constant=_invalid_number)
+    # Refuse lone surrogates, non-finite numbers and nested input outside the bounded write schema.
+    json.dumps(value, ensure_ascii=False, allow_nan=False).encode("utf-8")
+    pending = [(value, 0)]
+    while pending:
+        entry, depth = pending.pop()
+        if depth > 8:
+            raise ValueError("excessive JSON depth")
+        if isinstance(entry, dict):
+            pending.extend((item, depth + 1) for item in entry.values())
+        elif isinstance(entry, list):
+            pending.extend((item, depth + 1) for item in entry)
+
+
 def _password(body: bytes) -> bytes:
     fields = json.loads(body.decode("utf-8"), object_pairs_hook=_unique_object)
     if not isinstance(fields, dict) or fields.keys() != {"password"} or not isinstance(fields["password"], str):
@@ -100,6 +120,21 @@ def browser_api(auth: BrowserAuth, binding: BrowserBinding, ceiling: AccessCeili
             request.state.csrf_token = await asyncio.to_thread(auth.session, binding, session_id, csrf=csrf)
             request.state.ctx = AccessContext.for_owner(ceiling)
             request.state.session_id = session_id
+            inbox = path == "/api/inbox" or path.startswith("/api/inbox/")
+            note_write = path.startswith("/api/notes/") and request.method == "PUT"
+            if inbox or note_write:
+                if binding.listener != "private" or ceiling.level is not Sensitivity.RESTRICTED:
+                    return _error(403, "Access denied.")
+                if request.scope["query_string"]:
+                    return _error(422, "Invalid request.")
+                if request.method not in {"GET", "HEAD"}:
+                    media = _header(request, "content-type")
+                    if not media or media.lower() not in {"application/json", "application/json; charset=utf-8"}:
+                        return _error(415, "JSON required.")
+                    try:
+                        _check_json(await request.body())
+                    except ValueError, RecursionError:
+                        return _error(422, "Invalid request.")
         return await call_next(request)
 
     app.add_middleware(BrowserBodyLimit)

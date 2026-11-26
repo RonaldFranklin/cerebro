@@ -12,6 +12,7 @@ from datetime import date
 from cerebro.application.errors import ProposalNotApplicable
 from cerebro.application.ports.notes import NoteRepository
 from cerebro.domain.budgets import core_budget_findings, word_count
+from cerebro.domain.content_hash import content_hash
 from cerebro.domain.cross_note import cross_note_findings, inbound_link_sensitivity_findings
 from cerebro.domain.decision import DecisionKind
 from cerebro.domain.enums import Priority, Status
@@ -66,6 +67,12 @@ def commit_target(proposal: Proposal) -> NoteId:
     if proposal.target is None or (decision.target is not None and decision.target != proposal.target):
         raise ProposalNotApplicable("the decision targets a different note than the proposal")
     return proposal.target
+
+
+def stale_proposal_base(proposal: Proposal, current: Note | None) -> bool:
+    if proposal.kind is ProposalKind.CREATE:
+        return current is not None
+    return current is None or content_hash(current) != proposal.base_hash
 
 
 def _missing(field: str) -> Finding:

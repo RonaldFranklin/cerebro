@@ -70,6 +70,8 @@ class ApplyProposal:
         proposal = self._proposals.get(request.proposal_id)
         if proposal is None:
             raise ProposalNotFound(request.proposal_id)
+        if request.expected_revision is not None and request.expected_revision != proposal.revision:
+            raise ProposalConflict(proposal.id)
         if proposal.status is ProposalStatus.APPLIED:
             return ApplyProposalResult(
                 proposal_id=proposal.id,

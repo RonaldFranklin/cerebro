@@ -3,7 +3,11 @@ from dataclasses import fields, replace
 import pytest
 
 from cerebro.application.dto import AmendProposalRequest, ReviewAction, SubmitProposalRequest
-from cerebro.application.errors import PermissionDenied, ProposalConflict, ProposalNotApplicable
+from cerebro.application.errors import (
+    AmendmentValidationError,
+    PermissionDenied,
+    ProposalConflict,
+)
 from cerebro.application.use_cases import AdmitProposal, AmendProposal
 from cerebro.domain.content_hash import content_hash
 from cerebro.domain.decision import Decision
@@ -11,6 +15,7 @@ from cerebro.domain.enums import Sensitivity
 from cerebro.domain.errors import InvalidValueError
 from cerebro.domain.note import NoteId
 from cerebro.domain.proposal import Proposal, ProposalKind, ProposalLimits, ProposalStatus, ProposedContent
+from cerebro.domain.report import ViolationCode
 from tests.fakes.stores import FakeCurator
 from tests.unit.application.write_kit import Kit, agent_ctx, new_content, owner_ctx
 
@@ -81,8 +86,10 @@ def test_amend_validates_before_saving_and_preserves_provenance() -> None:
     for denied in (AGENT, owner_ctx(Sensitivity.INTERNAL)):
         with pytest.raises(PermissionDenied):
             amend.execute(req, denied)
-    with pytest.raises(ProposalNotApplicable):
+    with pytest.raises(AmendmentValidationError) as exc:
         amend.execute(replace(req, body="-----BEGIN PRIVATE KEY-----"), owner_ctx())
+    assert ViolationCode.SECRET_DETECTED in exc.value.report.codes
+    assert "PRIVATE KEY" not in str(exc.value)
     assert k.stored(original.id) == original
     amended = amend.execute(req, owner_ctx())
     assert amended.revision == 1

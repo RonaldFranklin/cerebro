@@ -6,9 +6,10 @@ from cerebro.application.errors import PermissionDenied, ProposalNotApplicable, 
 from cerebro.application.ports.notes import NoteRepository
 from cerebro.application.ports.proposals import ProposalStore
 from cerebro.application.ports.system import Clock
-from cerebro.application.proposal_support import build_candidate, provisional_note_id
+from cerebro.application.proposal_support import build_candidate, provisional_note_id, stale_proposal_base
 from cerebro.domain.access import AccessContext
 from cerebro.domain.enums import Sensitivity
+from cerebro.domain.note import Note
 from cerebro.domain.proposal import Proposal, ProposalKind, ProposalStatus
 
 
@@ -21,6 +22,14 @@ def _metadata(proposal: Proposal) -> InboxItem:
         source_agent=proposal.source_agent,
         target=proposal.target,
         conflict=proposal.conflict,
+    )
+
+
+def _preview_note(note: Note | None) -> NoteView | None:
+    if note is None:
+        return None
+    return NoteView.from_note(
+        note, body=note.body, hub=note.hub, related=note.related, superseded_by=note.superseded_by
     )
 
 
@@ -46,17 +55,17 @@ class ListProposals:
             target = (proposal.decision.target if proposal.decision else None) or provisional_note_id(
                 proposal.content.title
             )
-        base = self._notes.get(proposal.target) if proposal.target else None
+        current = self._notes.get(target) if target is not None else None
+        create = proposal.kind is ProposalKind.CREATE
+        base = None if create else current
+        stale = stale_proposal_base(proposal, current)
         candidate, _ = build_candidate(proposal, note_id=target, base=base, today=self._clock.now().date())
-        view = None
-        if candidate is not None:
-            view = NoteView.from_note(
-                candidate,
-                body=candidate.body,
-                hub=candidate.hub,
-                related=candidate.related,
-                superseded_by=candidate.superseded_by,
-            )
-        return InboxResult(
-            items=(_metadata(proposal),), preview=InboxPreview(decision=proposal.decision, candidate=view)
+        preview = InboxPreview(
+            decision=proposal.decision,
+            candidate=_preview_note(candidate),
+            base=_preview_note(base),
+            base_label="empty" if create else ("current" if stale else "base"),
+            stale_base=stale,
+            validation=proposal.validation,
         )
+        return InboxResult(items=(_metadata(proposal),), preview=preview)

@@ -2,13 +2,14 @@
 
 from cerebro.application.access import require_owner, visible_note
 from cerebro.application.dto import ProposalOutcome, ReviewAction, ReviewProposalRequest
-from cerebro.application.errors import ProposalConflict, ProposalNotFound
+from cerebro.application.errors import PermissionDenied, ProposalConflict, ProposalNotFound
 from cerebro.application.ports.notes import NoteRepository
 from cerebro.application.ports.proposals import ProposalStore
 from cerebro.application.ports.system import Clock
-from cerebro.application.proposal_support import commit_target, scrubbed
+from cerebro.application.proposal_support import commit_target, scrubbed, stale_proposal_base
 from cerebro.domain.access import AccessContext
 from cerebro.domain.commit_message import OWNER_APPROVER
+from cerebro.domain.enums import Sensitivity
 from cerebro.domain.errors import InvalidTransition
 from cerebro.domain.proposal import ProposalKind, ProposalStatus
 
@@ -30,6 +31,8 @@ class ReviewProposal:
 
     def execute(self, request: ReviewProposalRequest, ctx: AccessContext) -> ProposalOutcome:
         require_owner(ctx, "review proposals")
+        if request.require_fresh_base and ctx.ceiling.level is not Sensitivity.RESTRICTED:
+            raise PermissionDenied("review the proposal base")
         proposal = self._proposals.get(request.proposal_id)
         if proposal is None:
             raise ProposalNotFound(request.proposal_id)
@@ -45,11 +48,18 @@ class ReviewProposal:
                 raise InvalidTransition("approve", proposal.status.value)
             if request.override is not None:
                 proposal = proposal.override_decision(request.override, now)
-            commit_target(proposal)  # raises ProposalNotApplicable
-            if proposal.kind is not ProposalKind.CREATE and proposal.target is not None:
+            target = commit_target(proposal)
+            if request.require_fresh_base:
+                if stale_proposal_base(proposal, self._notes.get(target)):
+                    raise ProposalConflict(proposal.id)
+            elif proposal.kind is not ProposalKind.CREATE and proposal.target is not None:
                 visible_note(self._notes, proposal.target, ctx, include_history=True)
             result = proposal.approve(OWNER_APPROVER, now)
         result = self._proposals.save(result, expected_revision=expected)
         return ProposalOutcome(
-            proposal_id=result.id, status=result.status, decision=result.decision, conflict=result.conflict
+            proposal_id=result.id,
+            status=result.status,
+            decision=result.decision,
+            conflict=result.conflict,
+            revision=result.revision,
         )
