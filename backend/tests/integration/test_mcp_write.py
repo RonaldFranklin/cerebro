@@ -3,13 +3,15 @@
 import json
 from dataclasses import replace
 from pathlib import Path
+from typing import Any
 
 import pytest
 from mcp import types
 
+from cerebro.adapters.inbound.mcp_tools import MCPTools
 from cerebro.bootstrap.container import Container, build_container
 from cerebro.domain.access import AccessContext, Scope
-from tests.integration.content_kit import BROKEN_ID, SSH_ID, make_sample_repo
+from tests.integration.content_kit import BROKEN_ID, DOCKER_ID, HUB_ID, SSH_ID, make_sample_repo
 from tests.integration.test_mcp_tools import AGENT, tools_for
 
 WRITER = replace(AGENT, token_id="unit-write", scopes=frozenset({Scope.READ, Scope.WRITE}))
@@ -99,3 +101,62 @@ def test_partial_or_read_only_result_has_no_update_hash(
     result = tools_for(container).call("cerebro_read", args, lambda: ctx)
     assert not result.is_error
     assert "base_hash" not in result.structured_content
+
+
+_WRITABLE = (
+    "title",
+    "type",
+    "area",
+    "priority",
+    "sensitivity",
+    "status",
+    "summary",
+    "hub",
+    "related",
+    "superseded_by",
+    "lang",
+    "review_by",
+)
+
+
+def _read(tools: MCPTools, note_id: str) -> dict[str, Any]:
+    result = tools.call("cerebro_read", {"id": note_id}, lambda: WRITER)
+    assert not result.is_error
+    view: dict[str, Any] | None = result.structured_content
+    assert view is not None
+    return view
+
+
+def _update(tools: MCPTools, note_id: str, body: str | None = None, **changes: object) -> types.CallToolResult:
+    """Read the whole note as a writer and send it back with a new ``body`` or frontmatter ``changes``."""
+    view = _read(tools, note_id)
+    request = {
+        "operation": "update",
+        "target": note_id,
+        "base_hash": view["base_hash"],
+        "frontmatter": {**{field: view[field] for field in _WRITABLE}, **changes},
+        "body": view["body"] if body is None else body,
+    }
+    return tools.call("cerebro_write", request, lambda: WRITER)
+
+
+def test_notes_linking_archived_targets_and_hubs_stay_readable_and_updatable(container: Container) -> None:
+    tools = tools_for(container)
+    frontmatter = {**CREATE["frontmatter"], "related": [DOCKER_ID.value]}  # type: ignore[dict-item]
+    created = tools.call(
+        "cerebro_write", {**CREATE, "frontmatter": frontmatter, "body": "See [[docker-conventions]]."}, lambda: WRITER
+    )
+    assert not created.is_error, created.structured_content
+    assert created.structured_content is not None
+    note_id = created.structured_content["note_id"]
+
+    for target in (DOCKER_ID, HUB_ID):
+        archived = _update(tools, target.value, status="archived")
+        assert not archived.is_error, archived.structured_content
+        assert _read(tools, target.value)["status"] == "archived"
+
+    view = _read(tools, note_id)
+    expected = ("See [[docker-conventions]].", HUB_ID.value, [DOCKER_ID.value])
+    assert (view["body"], view["hub"], view["related"]) == expected
+    updated = _update(tools, note_id, body="Still see [[docker-conventions]].")
+    assert not updated.is_error, updated.structured_content

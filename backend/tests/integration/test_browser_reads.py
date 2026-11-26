@@ -113,9 +113,13 @@ def test_search_history_and_exact_filters(service: Service) -> None:
     history = client.get("/api/search", params={"type": "config", "history": "true"})
     assert [row["id"] for row in history.json()["results"]] == [OLD_ID.value]
     old = f"/api/notes/{OLD_ID.value}"
-    assert client.get(old).status_code == 404
-    assert client.get(old, params={"history": "true"}).json()["id"] == OLD_ID.value
-    assert client.get("/api/notes/missing-note").content == client.get(old).content
+    for params in ({}, {"history": "true"}):
+        read = client.get(old, params=params).json()
+        assert (read["id"], read["status"]) == (OLD_ID.value, "superseded")
+    assert client.get("/api/search", params={"type": "config"}).json() == {"results": []}
+    graph = {node["id"] for node in client.get("/api/graph").json()["nodes"]}
+    full = {node["id"] for node in client.get("/api/graph", params={"history": "true"}).json()["nodes"]}
+    assert (OLD_ID.value in graph, OLD_ID.value in full) == (False, True)
 
 
 def test_hidden_and_missing_are_identical_across_all_read_routes(service: Service) -> None:

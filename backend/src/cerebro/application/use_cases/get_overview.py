@@ -58,7 +58,10 @@ class GetOverview:
             words += count
             served.append(
                 CoreNote(
-                    id=note.id, title=note.title, summary=note.summary, body=redacted_body(self._notes, ctx, note.body)
+                    id=note.id,
+                    title=note.title,
+                    summary=note.summary,
+                    body=redacted_body(self._notes, ctx, note.body, include_history=True),
                 )
             )
         return tuple(served), words, False
