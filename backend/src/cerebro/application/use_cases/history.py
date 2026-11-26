@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from functools import lru_cache
 
 from cerebro.application.access import require_owner
+from cerebro.application.errors import NoteReadError
 from cerebro.application.history import (
     MAX_CHANGES,
     MAX_DIFF_CHARS,
@@ -86,11 +87,17 @@ class OwnerHistory:
             short_before or short_after or len(diff) > MAX_DIFF_CHARS,
         )
 
+    def _readable_current(self, note_id: NoteId) -> Note | None:
+        try:
+            return self._notes.get(note_id)
+        except NoteReadError:
+            return None
+
     def _authorized(self, revision: str, ctx: AccessContext) -> _Versions | None:
         info = self._history.change(revision)
         if info is None:
             return None
-        current = self._notes.get(info.note_id)
+        current = self._readable_current(info.note_id)
         if not current or not ctx.ceiling.allows(current.sensitivity):
             return None
         after = self._history.note_at(revision, info.note_id)
@@ -115,7 +122,7 @@ class OwnerHistory:
             if checked >= 32:
                 return False
             checked += 1
-            current = self._notes.get(note_id)
+            current = self._readable_current(note_id)
             if current is None or not ctx.ceiling.allows(current.sensitivity):
                 return False
             old = self._history.note_at(revision, note_id)

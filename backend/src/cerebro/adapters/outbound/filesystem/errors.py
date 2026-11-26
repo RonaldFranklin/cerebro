@@ -2,10 +2,12 @@
 
 from collections.abc import Sequence
 
+from cerebro.application.errors import NoteReadError
+
 _MAX_LISTED = 20
 
 
-class NoteFileError(Exception):
+class NoteFileError(NoteReadError):
     """A file of the content repository cannot be used as a note.
 
     ``path`` is relative to the content root (rendered with ``ascii()`` so a hostile file name cannot inject

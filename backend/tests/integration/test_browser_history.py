@@ -16,7 +16,7 @@ from cerebro.domain.commit_message import CommitMessage
 from cerebro.domain.content_hash import content_hash
 from cerebro.domain.enums import Sensitivity
 from cerebro.domain.note import NoteId
-from tests.integration.content_kit import VAULT_ID, make_sample_repo
+from tests.integration.content_kit import DOCKER_ID, VAULT_ID, make_sample_repo
 
 
 @pytest.mark.parametrize("listener", ["private", "public"])
@@ -66,9 +66,26 @@ def test_only_a_private_owner_can_list_and_read_an_encrypted_diff(tmp_path: Path
         assert payload["operation"] == "update"
         for invalid in ("HEAD", "HEAD~1", "--all", "f" * 40, revision[:12]):
             assert client.get(f"/api/changes/{invalid}").status_code == 404
+        clean = container.notes.get(DOCKER_ID)
+        assert clean
+        readable = container.notes.apply(
+            [
+                NoteChange(
+                    note=replace(clean, body=f"See [[{VAULT_ID.value}|alias]]."), expected_hash=content_hash(clean)
+                )
+            ],
+            CommitMessage.for_owner_edit(subject=f"Update note: {DOCKER_ID.value}", edit_id="owner-edit-5678"),
+        )
+        (sample.root / "notes" / f"{VAULT_ID.value}.md").write_bytes(b"invalid note")
+        assert client.get(endpoints[1]).json() == {"error": "Change unavailable."}
+        assert client.get(endpoints[1]).status_code == 404
+        clean_detail = client.get(f"/api/changes/{readable}")
+        assert clean_detail.status_code == 200
+        assert VAULT_ID.value not in clean_detail.json()["diff"]
+        assert [row["revision"] for row in client.get(endpoints[0]).json()["changes"]] == [readable]
         (sample.root / "notes" / f"{VAULT_ID.value}.md").unlink()
         assert client.get(endpoints[1]).status_code == 404
-        assert client.get(endpoints[0]).json() == {"changes": []}
+        assert [row["revision"] for row in client.get(endpoints[0]).json()["changes"]] == [readable]
 
 
 def test_legacy_create_identifies_its_agent_and_corrupt_history_fails_closed(tmp_path: Path) -> None:

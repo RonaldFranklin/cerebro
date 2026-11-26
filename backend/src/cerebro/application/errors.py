@@ -11,6 +11,10 @@ class ApplicationError(Exception):
     """Base class for every error raised by the application layer."""
 
 
+class NoteReadError(ApplicationError):
+    """Stored note data is unreadable or ambiguous."""
+
+
 class NoteNotFound(ApplicationError):  # noqa: N818
     """The note does not exist **or is not visible to the caller**; the two cases are indistinguishable.
 
