@@ -31,6 +31,7 @@ from pathlib import Path
 
 from cerebro.adapters.outbound.crypto import FernetCipher, load_keys
 from cerebro.adapters.outbound.filesystem import FilesystemNoteRepository, WriterBusyError, load_vocabulary
+from cerebro.adapters.outbound.filesystem.backup_status import BackupStatusFile
 from cerebro.adapters.outbound.filesystem.history import GitChangeHistory
 from cerebro.adapters.outbound.filesystem.lock import file_lock
 from cerebro.adapters.outbound.filesystem.quarantine import quarantine_changes
@@ -278,6 +279,7 @@ class Container:
                 clock,
                 vocabulary,
                 quarantines=lambda: sorted(p.name for p in state_dir.glob("quarantine-*") if p.is_dir()),
+                backup=BackupStatusFile(state_dir / "last-backup.json"),
             ),
             issue_agent_token=IssueAgentToken(self.tokens, clock, ids),
             list_agent_tokens=ListAgentTokens(self.tokens),

@@ -6,6 +6,7 @@ from cerebro.application.access import require_owner
 from cerebro.application.dto import HealthCode, HealthIssue, HealthReportRequest, HealthReportResult
 from cerebro.application.errors import NoteReadError, PermissionDenied
 from cerebro.application.index_state import index_is_stale
+from cerebro.application.ports.backup import BackupStatus
 from cerebro.application.ports.graph import GraphIndex
 from cerebro.application.ports.notes import FileProblem, NoteRepository
 from cerebro.application.ports.search import MAX_LIMIT, SearchIndex, SearchQuery
@@ -51,7 +52,10 @@ class HealthReport:
         clock: Clock,
         vocabulary: Vocabulary,
         quarantines: Callable[[], Iterable[str]] = tuple,
+        *,
+        backup: BackupStatus,
     ) -> None:
+        self._backup = backup
         self._quarantines = quarantines
         self._notes = notes
         self._search = search
@@ -64,6 +68,7 @@ class HealthReport:
         if ctx.ceiling.level is not Sensitivity.RESTRICTED:
             raise PermissionDenied("read the health report below the restricted ceiling")
         checked_at = self._clock.now()
+        last_backup = self._backup.last()
         issues = [
             HealthIssue(
                 subject=name,
@@ -90,6 +95,7 @@ class HealthReport:
                 notes_checked=0,
                 search_index_checked=False,
                 checked_at=checked_at,
+                last_backup=last_backup,
                 # A repository that cannot be scanned may not answer for its revision either: do not ask.
                 revision=None,
             )
@@ -126,6 +132,7 @@ class HealthReport:
             notes_checked=len(notes),
             search_index_checked=search_checked,
             checked_at=checked_at,
+            last_backup=last_backup,
             revision=revision,
         )
 

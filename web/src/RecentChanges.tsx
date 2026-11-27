@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ApiError, type ApiClient } from "./api";
 import { notePath } from "./Reader";
+import { author, dayKey, operations, type Operation } from "./changeFormat";
 import { colorFor } from "./graphAppearance";
 import { useVisibleGraph } from "./visibleGraph";
 import "./recentChanges.css";
@@ -12,7 +13,7 @@ interface Change {
   title: string;
   actor: string;
   timestamp: string;
-  operation: "create" | "update" | "superseded";
+  operation: Operation;
 }
 
 interface ChangeDetail extends Change {
@@ -23,11 +24,6 @@ interface ChangeDetail extends Change {
 // The interface is English only, so dates and times are too.
 const dayFormat = new Intl.DateTimeFormat("en", {weekday: "long", year: "numeric", month: "long", day: "numeric"});
 const timeFormat = new Intl.DateTimeFormat("en", {hour: "2-digit", minute: "2-digit", hourCycle: "h23"});
-
-/** The local calendar date as ``YYYY-MM-DD``: the identity of a day group. */
-function dayKey(moment: Date) {
-  return [moment.getFullYear(), moment.getMonth() + 1, moment.getDate()].map(part => String(part).padStart(2, "0")).join("-");
-}
 
 function dayName(key: string, today: Date) {
   if (key === dayKey(today)) return "Today";
@@ -47,12 +43,6 @@ function useToday() {
     return () => { window.clearTimeout(timer); document.removeEventListener("visibilitychange", renew); };
   }, [today]);
   return today;
-}
-
-const operations = {create: "Created", update: "Updated", superseded: "Superseded"};
-
-function author(actor: string) {
-  return actor === "owner" ? "Owner" : actor;
 }
 
 function ChangeDetails({api, revision, cursor}: {api: ApiClient; revision: string; cursor: string | null}) {

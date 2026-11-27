@@ -13,6 +13,7 @@ async function owner(page: Page, ceiling = "restricted") {
   await page.route("**/api/notes/a**", route => route.fulfill({json: note}));
   await page.route("**/api/notes/a/validate", route => route.fulfill({json: {validation: {ok: true, violations: []},
     budget: {words: 1, soft: 1500, hard: 3000}, broken_link_lines: [], sensitivity_lines: [], base_current: true}}));
+  await page.route("**/api/notes/a/changes**", route => route.fulfill({json: {changes: [], next_cursor: "more"}}));
   const linked = {...node, id: "c", title: "C"};
   await page.route("**/api/notes/a/neighbors**", route => route.fulfill({json: {nodes: [node, linked],
     edges: [{source: "a", target: "c", kind: "wikilink", section: null}], center: "a"}}));
@@ -137,7 +138,7 @@ for (const path of ["/", "/search", "/graph", "/editor/a", "/notes/a"]) {
     if (path === "/editor/a") await expect(page.getByRole("link", {name: "a", exact: true})).toBeVisible();
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
     const small = await page.evaluate(() => [...document.querySelectorAll<HTMLElement>(
-      "button, select, input:not([type=checkbox]):not([type=radio]), label:has(> input[type=checkbox]), label:has(> input[type=radio]), .topbar a, .rail a, .overview-notes a, .search-results h3 a, .graph-list li a, .editor-head a, .note-links a, .reader-aside nav a")]
+      "button, select, input:not([type=checkbox]):not([type=radio]), label:has(> input[type=checkbox]), label:has(> input[type=radio]), .topbar a, .rail a, .overview-notes a, .search-results h3 a, .graph-list li a, .editor-head a, .note-links a, .reader-aside nav a, .note-history a")]
       .filter(node => node.offsetParent !== null)
       .map(node => ({node: node.outerHTML.slice(0, 120), box: node.getBoundingClientRect()}))
       .filter(({box}) => box.height < 43.5 || box.width < 43.5)

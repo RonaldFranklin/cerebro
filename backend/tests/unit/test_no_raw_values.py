@@ -25,6 +25,7 @@ from cerebro.domain.report import AGENT_WRITE_POLICY, ValidationReport, Violatio
 from cerebro.domain.token_hash import TokenHash
 from cerebro.domain.validation import validate_note
 from cerebro.domain.vocabulary import HUB, Area, NoteType
+from tests.fakes.backup import FakeBackupStatus
 from tests.fakes.system import FixedClock
 from tests.unit.application.world import World, ctx
 from tests.unit.domain.builders import VOCABULARY, make_note, make_raw
@@ -185,7 +186,7 @@ def _hub_world() -> World:
 def test_health_report_messages_never_name_ids_of_chains_or_targets() -> None:
     world = _hub_world()
     clock = FixedClock()
-    report = HealthReport(world.notes, world.search, world.graph, clock, VOCABULARY).execute(
+    report = HealthReport(world.notes, world.search, world.graph, clock, VOCABULARY, backup=FakeBackupStatus()).execute(
         HealthReportRequest(), ctx(Sensitivity.RESTRICTED, owner=True)
     )
     codes = {i.code for i in report.issues}
