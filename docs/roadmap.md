@@ -82,7 +82,7 @@ Pre-deploy maintenance preserves dirty content checkouts under the state directo
   the bearer token. The public ceiling is `restricted`, so each token's ceiling decides
   ([ADR-0028](adr/0028-token-decides-public-access.md)). Agents need only the public URL and a token.
 - Backup pushes the content repository to a private GitHub remote, snapshots SQLite and copies the owner verifier. Escrow the Fernet key separately.
-- Scheduled jobs never run between 00:00 and 01:00 local time (server shuts down daily at 01:00).
+- Scheduled jobs are set outside the host's planned downtime.
 
 **Audit items addressed in deployment preparation**
 

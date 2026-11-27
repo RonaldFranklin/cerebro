@@ -2,8 +2,6 @@
 
 - **Status:** accepted
 - **Date:** 2026-11-24
-- **Note (2026-11-26):** the owner confirmed that the application repository is currently private. The ban below on
-  real notes, personal data and deployment details still applies, so the repository stays publishable.
 
 ## Context
 

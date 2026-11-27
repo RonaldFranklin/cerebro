@@ -5,8 +5,8 @@
 
 ## Context
 
-The owner develops in WSL on a workstation and runs services on a home server with Docker Compose. The server
-shuts down automatically every day at 01:00 local time and is powered on manually.
+The owner develops in WSL on a workstation and runs services on a home server with Docker Compose. The server is not
+guaranteed to be always on.
 
 ## Decision
 
@@ -19,7 +19,7 @@ shuts down automatically every day at 01:00 local time and is powered on manuall
 - Nothing of Cérebro runs on the workstation in hml/prod; agents there connect to the server.
 - When the server is off, Cérebro is unavailable. Agents receive a clear "offline" error and continue.
   No local mirror.
-- Scheduled jobs (reindex, backups, curator batches) never run between 00:00 and 01:00 local time.
+- Scheduled jobs (reindex, backups, curator batches) are set outside the host's planned downtime.
 - Compose conventions: explicit `-p`, `config --quiet` before `up`, healthchecks, restart policy, log
   rotation, no database ports published on the host.
 

@@ -4,7 +4,7 @@
 |---|---|---|
 | [0001](0001-hexagonal-architecture.md) | Hexagonal architecture with a dependency-free core | accepted |
 | [0002](0002-markdown-git-source-of-truth.md) | Markdown + git as source of truth, SQLite as derived index | accepted |
-| [0003](0003-two-repositories.md) | Two repositories — public application, private content | accepted (the application repository is currently private) |
+| [0003](0003-two-repositories.md) | Two repositories — public application, private content | accepted |
 | [0004](0004-priority-levels-and-context-budget.md) | Priority levels and context budgets | accepted, amended by [0020](0020-direct-agent-writes.md) and [0025](0025-core-word-budget.md) |
 | [0005](0005-sensitivity-and-access-ceiling.md) | Sensitivity levels and access ceiling by listener and token | accepted, amended by [0028](0028-token-decides-public-access.md) |
 | [0006](0006-write-path-inbox-curator.md) | Write path — Inbox, validation, curator, approval | superseded by [0020](0020-direct-agent-writes.md) |

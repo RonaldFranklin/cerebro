@@ -6,8 +6,7 @@
 ## Context
 
 Cérebro runs on a home server. Agents on the owner's workstation must reach it securely, inside and outside
-the home network. In the future, cloud-hosted agents may need access. The reference deployment already uses
-Tailscale and Cloudflare Tunnels for other services.
+the home network. In the future, cloud-hosted agents may need access.
 
 ## Decision
 
