@@ -11,13 +11,17 @@ interface Props {
   colorBy: "area" | "type";
   colorOf: (value: string) => string;
   selected: string;
+  active: ReadonlySet<string>;
   onSelect: (id: string) => void;
 }
 
-/** Names are drawn for hubs and the selected note only; hubs carry a white ring. */
-function emphasis(hub: boolean, selected: boolean) {
+/** Where the pulses of active notes are drawn, in viewport pixels. */
+interface Pulse { id: string; x: number; y: number; to: { x: number; y: number } | null }
+
+/** Names are drawn for hubs, the selected note and notes with live activity; hubs carry a white ring. */
+function emphasis(hub: boolean, selected: boolean, active: boolean) {
   return {
-    labelVisibility: hub || selected ? "visible" : "hidden",
+    labelVisibility: hub || selected || active ? "visible" : "hidden",
     ringVisibility: hub || selected ? "visible" : "hidden",
     ringColor: selected ? "#5ce1e6" : "#e6edf5",
     // The selection also differs in shape, not only in color: a wider ring further out.
@@ -26,7 +30,10 @@ function emphasis(hub: boolean, selected: boolean) {
   };
 }
 
-export function GraphCanvas({data, colorBy, colorOf, selected, onSelect}: Props) {
+export function GraphCanvas({data, colorBy, colorOf, selected, active, onSelect}: Props) {
+  const [pulses, setPulses] = useState<Pulse[]>([]);
+  const lively = useRef(active);
+  const place = useRef<() => void>(() => {});
   const surface = useRef<HTMLDivElement>(null);
   const renderer = useRef<Sigma | null>(null);
   const select = useRef(onSelect);
@@ -38,15 +45,17 @@ export function GraphCanvas({data, colorBy, colorOf, selected, onSelect}: Props)
   useLayoutEffect(() => {
     color.current = {colorBy, colorOf};
     chosen.current = selected;
+    lively.current = active;
     const graph = renderer.current?.getGraph();
     if (graph) graph.updateEachNodeAttributes((_key, attrs) => ({...attrs, color: colorOf(attrs[colorBy]),
-      ...emphasis(attrs.type === "hub", attrs.id === selected)}));
-  }, [colorBy, colorOf, selected]);
+      ...emphasis(attrs.type === "hub", attrs.id === selected, active.has(attrs.id))}));
+    place.current();
+  }, [colorBy, colorOf, selected, active]);
 
   useLayoutEffect(() => {
     const host = surface.current;
     if (!host) return;
-    let active = true;
+    let alive = true;
     let worker: Worker | undefined;
     let sigma: Sigma | undefined;
     let resize: ResizeObserver | undefined;
@@ -56,10 +65,12 @@ export function GraphCanvas({data, colorBy, colorOf, selected, onSelect}: Props)
       sigma?.kill();
       sigma = undefined;
       renderer.current = null;
+      place.current = () => {};
+      setPulses([]);
       host?.replaceChildren();
     }
     function fallback() {
-      if (!active) return;
+      if (!alive) return;
       dispose();
       setStatus("fallback");
     }
@@ -79,13 +90,13 @@ export function GraphCanvas({data, colorBy, colorOf, selected, onSelect}: Props)
         worker = undefined;
         try {
           const {default: SigmaRenderer} = await import("sigma");
-          if (!active) return;
+          if (!alive) return;
           if (positions.length !== data.nodes.length * 2 || !positions.every(Number.isFinite)) { fallback(); return; }
           const graph = new Graph({multi:true});
           data.nodes.forEach((node, i) => graph.addNode(i, {
             x:positions[i * 2], y:positions[i * 2 + 1], label:node.title, area:node.area, type:node.type, id:node.id,
             color:color.current.colorOf(node[color.current.colorBy]), size:sizeFor(node.priority),
-            ...emphasis(node.type === "hub", node.id === chosen.current),
+            ...emphasis(node.type === "hub", node.id === chosen.current, lively.current.has(node.id)),
           }));
           for (const [a,b] of edges) graph.addEdge(a,b);
           sigma = new SigmaRenderer(graph, host, {
@@ -107,21 +118,46 @@ export function GraphCanvas({data, colorBy, colorOf, selected, onSelect}: Props)
             },
           });
           renderer.current = sigma;
-          sigma.on("webglContextLost", () => { if (active) setStatus("fallback"); });
-          sigma.on("webglContextRestored", () => { if (active) setStatus("ready"); });
+          const shown = sigma;
+          place.current = () => {
+            if (!alive) return;
+            const at = (key: number) => shown.graphToViewport(
+              {x: graph.getNodeAttribute(key, "x") as number, y: graph.getNodeAttribute(key, "y") as number});
+            const next = [...lively.current].flatMap(id => {
+              const key = indexes.get(id);
+              if (key === undefined) return [];
+              // The synapse to the note's hub pulses when it has one, else to another neighbor.
+              const near = edges.flatMap(([a, b]) => a === key ? [b] : b === key ? [a] : []);
+              const other = near.find(index => data.nodes[index].type === "hub") ?? near[0];
+              return [{id, ...at(key), to: other === undefined ? null : at(other)}];
+            });
+            setPulses(current => current.length === 0 && next.length === 0 ? current : next);
+          };
+          sigma.on("afterRender", () => place.current());
+          // Events can arrive before the layout is ready, and the first frame precedes this listener.
+          place.current();
+          sigma.on("webglContextLost", () => { if (alive) setStatus("fallback"); });
+          sigma.on("webglContextRestored", () => { if (alive) setStatus("ready"); });
           sigma.on("clickNode", ({node}) => select.current(data.nodes[Number(node)].id));
-          resize = new ResizeObserver(() => { if (active) sigma?.resize(); });
+          resize = new ResizeObserver(() => { if (alive) sigma?.resize(); });
           resize.observe(host);
           setStatus("ready");
         } catch { fallback(); }
       };
       worker.postMessage({count:data.nodes.length, edges} satisfies LayoutInput);
     } catch { fallback(); }
-    return () => { active = false; dispose(); };
+    return () => { alive = false; dispose(); };
   }, [data]);
 
   return <div className="graph-canvas" data-renderer={status}>
     <div className="sigma-surface" ref={surface} aria-hidden="true"/>
+    {pulses.length > 0 && <svg className="graph-pulses" aria-hidden="true" focusable="false">
+      {pulses.map(pulse => <g key={pulse.id} data-note={pulse.id}>
+        {pulse.to && <line className="synapse" x1={pulse.to.x} y1={pulse.to.y} x2={pulse.x} y2={pulse.y}/>}
+        <circle className="halo" cx={pulse.x} cy={pulse.y} r="14"/>
+        <circle className="wave" cx={pulse.x} cy={pulse.y} r="14"/>
+      </g>)}
+    </svg>}
     {status !== "ready" && <p role="status" className="graph-canvas-state">
       {status === "loading" ? "Arranging graph…" : "Graph visualization unavailable. Use the node list to explore."}
     </p>}
