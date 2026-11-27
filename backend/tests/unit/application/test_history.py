@@ -93,6 +93,38 @@ def test_a_note_created_already_superseded_is_reported_as_created() -> None:
     assert [row.operation for row in history.list(ctx(owner=True)).changes] == ["create"]
 
 
+def test_the_history_of_one_note_lists_only_its_authorized_changes() -> None:
+    world = standard_world()
+    note = world.notes.get(NoteId("server-ssh-access"))
+    assert note
+    port = FakeHistory(note, replace(note, body="After."))
+    history = OwnerHistory(world.notes, port)
+    owner = ctx(owner=True)
+    assert [row.revision for row in history.list(owner, note_id=note.id).changes] == [port.revision]
+    other = history.list(owner, note_id=NoteId("docker-conventions"))
+    assert other.changes == ()
+    assert other.page_cursor is not None
+    with pytest.raises(PermissionDenied):
+        history.list(ctx(), note_id=note.id)
+    port.before = replace(note, sensitivity=Sensitivity.RESTRICTED)
+    assert history.list(owner, note_id=note.id).changes == ()
+
+
+def test_the_history_of_another_note_is_never_read() -> None:
+    world = standard_world()
+    note = world.notes.get(NoteId("server-ssh-access"))
+    assert note
+    port = FakeHistory(note, replace(note, body="After."))
+    # Reading either version would fail: the filter must discard the revision from its metadata alone.
+    port.unreadable.update({port.revision, port.parent})
+
+    def refuse(revision: str, note_id: NoteId) -> None:
+        raise AssertionError("versions of an unrelated note were read")
+
+    port.note_at = refuse  # type: ignore[method-assign]
+    assert OwnerHistory(world.notes, port).list(ctx(owner=True), note_id=NoteId("docker-conventions")).changes == ()
+
+
 def _detail(before_body: str, after_body: str) -> ChangeDetail:
     world = standard_world()
     base = make_note(id=NoteId("server-ssh-access"), sensitivity=Sensitivity.INTERNAL, body=before_body)

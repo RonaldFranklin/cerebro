@@ -1,6 +1,6 @@
 # ADR-0030: The backup job leaves a status record that Health reads
 
-- **Status:** proposed
+- **Status:** accepted
 - **Date:** 2026-11-27
 
 ## Context

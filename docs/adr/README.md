@@ -31,6 +31,6 @@
 | [0027](0027-container-loopback-publication.md) | Publish container ports only on host loopback | accepted |
 | [0028](0028-token-decides-public-access.md) | Agents use the public entrance and their token sets the ceiling | accepted, amended by [0029](0029-owner-browser-full-access-on-public-listener.md) |
 | [0029](0029-owner-browser-full-access-on-public-listener.md) | The owner can opt in to full browser access on the public listener | accepted |
-| [0030](0030-backup-status-record.md) | The backup job leaves a status record that Health reads | proposed |
+| [0030](0030-backup-status-record.md) | The backup job leaves a status record that Health reads | accepted |
 
 New decisions: copy [`0000-template.md`](0000-template.md), use the next number, add it to this table.

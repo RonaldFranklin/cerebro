@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import re
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
@@ -20,6 +21,8 @@ from cerebro.domain.errors import InvalidValueError
 
 _NO_STORE = {"Cache-Control": "no-store"}
 _SESSION_PATHS = frozenset({"/api/login", "/api/logout", "/api/session"})
+# Exactly one note segment: a note whose id is "changes" stays an ordinary note read.
+_NOTE_HISTORY = re.compile(r"/api/notes/[^/]+/changes")
 _COOKIE_NAMES = {"private": "__Host-cerebro_private", "public": "__Host-cerebro_public"}
 
 
@@ -115,6 +118,10 @@ def browser_api(auth: BrowserAuth, binding: BrowserBinding, ceiling: AccessCeili
         if len(request.scope["query_string"]) > 8192:
             return _error(422, "Invalid request.")
         path = request.scope["path"]
+        # The rules below compare the decoded path, while the router's end anchor also matches before a final line
+        # break. No route or note id contains a control character, so such a path is refused before either sees it.
+        if any(ord(char) < 32 or ord(char) == 127 for char in path):
+            return _error(422, "Invalid request.")
         if path in _SESSION_PATHS and request.scope["query_string"]:
             return _error(422, "Invalid request.")
         session_id = _session_cookie(request, cookie_name)
@@ -134,7 +141,7 @@ def browser_api(auth: BrowserAuth, binding: BrowserBinding, ceiling: AccessCeili
             request.state.ctx = AccessContext.for_owner(ceiling)
             request.state.session_id = session_id
             note_write = path.startswith("/api/notes/") and request.method == "PUT"
-            history = path == "/api/changes" or path.startswith("/api/changes/")
+            history = path == "/api/changes" or path.startswith("/api/changes/") or bool(_NOTE_HISTORY.fullmatch(path))
             if note_write or history:
                 if ceiling.level is not Sensitivity.RESTRICTED:
                     return _error(403, "Access denied.")

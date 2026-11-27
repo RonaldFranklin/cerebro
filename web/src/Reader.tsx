@@ -6,6 +6,7 @@ import { Markdown, markdownHeadings, TechnicalText } from "./Markdown";
 import { useVisibleGraph } from "./visibleGraph";
 import { Icon } from "./icons";
 import { NoteLinks } from "./NoteLinks";
+import { NoteHistory } from "./NoteHistory";
 import "./reader.css";
 
 interface Member {
@@ -60,8 +61,8 @@ function CopyId({ id }: { id: string }) {
   </>;
 }
 
-function Document({ api, note, history, outlineBody, outlineStatus, visibleIds, areas, hubTitle }: {
-  api: ApiClient; note: Note; history: boolean; outlineBody: string; outlineStatus?: ReactNode;
+function Document({ api, note, history, outlineBody, outlineStatus, visibleIds, areas, hubTitle, ownerHistory }: {
+  api: ApiClient; note: Note; history: boolean; outlineBody: string; outlineStatus?: ReactNode; ownerHistory: boolean;
   visibleIds: ReadonlySet<string>; areas: string[]; hubTitle: string | undefined;
 }) {
   const headings = useMemo(() => markdownHeadings(outlineBody), [outlineBody]);
@@ -114,12 +115,13 @@ function Document({ api, note, history, outlineBody, outlineStatus, visibleIds, 
           aria-current={note.section === heading.title ? "location" : undefined}>{heading.title}</a></li>
       )}</ul></nav>}
       <NoteLinks api={api} id={note.id} history={history} areas={areas} visibleIds={visibleIds}/>
+      {ownerHistory && <NoteHistory api={api} id={note.id}/>}
     </aside>
   </article>;
 }
 
-export function ReaderScreen({ api, id, history, section }: {
-  api: ApiClient; id: string; history: boolean; section: string | null;
+export function ReaderScreen({ api, id, history, section, ownerHistory }: {
+  api: ApiClient; id: string; history: boolean; section: string | null; ownerHistory: boolean;
 }) {
   const full = useQuery({
     queryKey: ["note", id, history, null],
@@ -148,5 +150,6 @@ export function ReaderScreen({ api, id, history, section }: {
     : <p role="status">Loading sections…</p>);
   const hub = graph.data?.nodes.find(node => node.id === result.data.hub);
   return <Document key={result.data.id} api={api} note={result.data} history={history} outlineBody={full.data?.body ?? result.data.body}
-    outlineStatus={outlineStatus} visibleIds={visibleIds} areas={graph.data?.nodes.map(node => node.area) ?? []} hubTitle={hub?.title}/>;
+    outlineStatus={outlineStatus} visibleIds={visibleIds} areas={graph.data?.nodes.map(node => node.area) ?? []} hubTitle={hub?.title}
+    ownerHistory={ownerHistory}/>;
 }
