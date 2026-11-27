@@ -77,7 +77,10 @@ Pre-deploy maintenance preserves dirty content checkouts under the state directo
 - Dockerfile(s), `deploy/compose.yaml` with `cerebro-hml` and `cerebro-prod` projects, healthchecks,
   restart policy, log rotation, separate volumes.
 - Finish on the server. Validate in hml, then promote the same image to prod (`cerebro-backend:git-<sha>`).
-- `tailscale serve` HTTPS in front of the private listener.
+- `tailscale serve` HTTPS in front of the private listener (owner browser).
+- Public listener behind a dedicated Cloudflare Tunnel: Access protects the web UI, `/mcp` bypasses Access and needs
+  the bearer token. The public ceiling is `restricted`, so each token's ceiling decides
+  ([ADR-0028](adr/0028-token-decides-public-access.md)). Agents need only the public URL and a token.
 - Backup pushes the content repository to a private GitHub remote, snapshots SQLite and copies the owner verifier. Escrow the Fernet key separately.
 - Scheduled jobs never run between 00:00 and 01:00 local time (server shuts down daily at 01:00).
 
@@ -88,10 +91,10 @@ Pre-deploy maintenance preserves dirty content checkouts under the state directo
 - **14. Operating documentation.** The README covers credentials, tokens and startup. The architecture inventory places the owner verifier under the state directory and lists the implemented adapters. [Quickstart](../README.md) · [Architecture](architecture.md)
 
 **Pending server and workstation acceptance:** hml and prod running on the server; Claude Code and Codex on the workstation use prod via
-Tailscale; restore of content + state tested on hml.
+the public URL and their tokens; restore of content + state tested on hml.
 
 ## ⬜ Phase 8 — Later
 
-- Public listener behind Cloudflare Tunnel + Cloudflare Access (service tokens), ceiling `internal`.
+- **Next:** OAuth on `/mcp` for cloud chat connectors (ChatGPT, claude.ai) that cannot send a static bearer header.
 - "Agent path" view in the graph (which notes an agent read in a session).
 - Semantic search (embeddings) as an additional `SearchIndex` adapter, if FTS proves insufficient.

@@ -73,10 +73,13 @@ def serving(
             process.wait(timeout=10)
 
 
-def post(port: int, secret: str, payload: bytes, *, path: str = "/mcp") -> tuple[int, bytes]:
+def post(
+    port: int, secret: str, payload: bytes, *, path: str = "/mcp", headers: dict[str, str] | None = None
+) -> tuple[int, bytes]:
     conn = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
     try:
         headers = {
+            **(headers or {}),
             "Accept": "application/json, text/event-stream",
             "Content-Type": "application/json",
             "Authorization": "Bearer " + secret,
@@ -186,6 +189,37 @@ def test_real_listener_credentials_limits_and_logs(tmp_path: Path) -> None:
         assert value.encode() not in logs
 
 
+@pytest.mark.parametrize(
+    ("ceiling", "visible"), [(None, False), ("public", False), ("internal", False), ("restricted", True)]
+)
+def test_public_listener_ceiling_is_explicit_and_tokens_still_lower_it(
+    tmp_path: Path, ceiling: str | None, visible: bool
+) -> None:
+    sample = make_sample_repo(tmp_path)
+    container = build_container(sample.settings)
+    config = tmp_path / "instance.toml"
+    config.write_text(SAMPLE.replace("keys/fernet.key", "secrets/cerebro.key"))
+    owner = AccessContext.for_owner(AccessCeiling(Sensitivity.RESTRICTED))
+    secrets = {
+        level: container.use_cases.issue_agent_token.execute(
+            IssueAgentTokenRequest(agent="fixture", scopes=frozenset({Scope.READ}), ceiling=AccessCeiling(level)),
+            owner,
+        ).secret
+        for level in (Sensitivity.INTERNAL, Sensitivity.RESTRICTED)
+    }
+    private, public = free_ports(2)
+    read = call("cerebro_read", {"id": VAULT_ID.value})
+    extra = () if ceiling is None else ("--public-ceiling", ceiling)
+    with serving(config, private, public, extra=extra):
+        restricted = post(public, secrets[Sensitivity.RESTRICTED], read, headers={"X-Forwarded-Port": str(private)})
+        assert restricted[0] == 200
+        assert (RESTRICTED_MARKER.encode() in restricted[1]) == visible
+        status, body = post(public, secrets[Sensitivity.INTERNAL], read)
+        assert status == 200
+        assert RESTRICTED_MARKER.encode() not in body
+        assert b"Not found." in body
+
+
 def test_stdio_sdk_contract_and_offline(tmp_path: Path) -> None:
     sample = make_sample_repo(tmp_path)
     config = tmp_path / "dev.toml"
@@ -244,7 +278,15 @@ def test_container_server_selects_only_ipv4_wildcard(monkeypatch: pytest.MonkeyP
         _arguments(stdio=False)
 
 
-@pytest.mark.parametrize("args", [("--host", "0.0.0.0"), ("--public-port", "7654", "--private-port", "7654")])
+@pytest.mark.parametrize(
+    "args",
+    [
+        ("--host", "0.0.0.0"),
+        ("--public-port", "7654", "--private-port", "7654"),
+        ("--public-ceiling", "secret"),
+        ("--public-ceiling", "RESTRICTED"),
+    ],
+)
 def test_invalid_socket_configuration_rejected_before_wiring(args: tuple[str, ...]) -> None:
     result = subprocess.run([SERVER, *args], capture_output=True, timeout=5)
     assert result.returncode == 2

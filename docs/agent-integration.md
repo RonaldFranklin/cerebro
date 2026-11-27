@@ -8,7 +8,7 @@ change those rules, such as your own Claude Code and Codex sessions, and always 
 (`token issue <agent> --scope read --scope write --scope core`). Hubs (P1) and regular notes need only
 `write`. Start with `cerebro_overview` once per session, search summaries, then read
 a selected section or follow a link. Each agent has its own bearer token. For access from another host use
-the private HTTPS URL supplied by Tailscale Serve. Loopback HTTP below is for a development instance on this host.
+the public URL and a bearer header as in [client setup](client-setup.md). Loopback HTTP below is for a development instance on this host.
 
 ## Project AGENTS.md snippet
 

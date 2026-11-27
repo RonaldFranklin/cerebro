@@ -200,17 +200,21 @@ agents and a browser; nothing of Cérebro runs there in hml/prod.
 Workstation                                    Server (docker compose: cerebro-<env>)
 ┌───────────────────┐                          ┌──────────────────────────────────────────┐
 │ Claude Code       │                          │ backend container                         │
-│ Codex             │── Tailscale (HTTPS) ────▶│   private listener  (ceiling: restricted) │
-│ Browser (web UI)  │                          │   public listener   (ceiling: internal)   │
-└───────────────────┘                          │ web (static, served by backend or proxy)  │
-(future) cloud agents ── Cloudflare Tunnel ───▶│ cloudflared ──▶ public listener only      │
-                         + Cloudflare Access   └──────────────────────────────────────────┘
+│ Browser (owner)   │── Tailscale (HTTPS) ────▶│   private listener  (ceiling: restricted) │
+└───────────────────┘                          │   public listener   (ceiling: configured) │
+any authorized agent ── Cloudflare Tunnel ────▶│ cloudflared ──▶ public listener only      │
+  (URL + bearer)        Access: UI only,       │ web (static, served by the backend)       │
+                        /mcp bypassed          └──────────────────────────────────────────┘
                                                  volumes: content repo (git), state (sqlite),
                                                           secrets (Fernet key)
 ```
 
 - The **private listener** is exposed only through `tailscale serve` (HTTPS, tailnet only).
-- The **public listener** is reachable only by the `cloudflared` container. Not enabled initially.
+- The **public listener** is reachable only through a dedicated Cloudflare Tunnel. Its ceiling is
+  `--public-ceiling` (default `internal`); the deployment sets `restricted`, so each agent's token ceiling decides.
+  Cloudflare Access protects its web UI; `/mcp` bypasses Access and requires the Cérebro bearer token
+  ([ADR-0028](adr/0028-token-decides-public-access.md), accepted risk: a leaked token works over the internet until
+  revoked). The owner's browser there is capped at `internal`; edits, history and health stay private.
 - The listener a request arrived on sets the maximum ceiling; the agent token can only lower it.
   See [ADR-0005](adr/0005-sensitivity-and-access-ceiling.md) and
   [ADR-0010](adr/0010-network-access.md).

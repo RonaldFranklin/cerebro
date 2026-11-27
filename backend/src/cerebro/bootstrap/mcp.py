@@ -28,10 +28,12 @@ from cerebro.application.browser import BrowserBinding
 from cerebro.bootstrap.container import build_container
 from cerebro.bootstrap.diagnostics import owner_message
 from cerebro.bootstrap.settings import load_settings
-from cerebro.domain.access import AccessCeiling
+from cerebro.domain.access import AccessCeiling, effective_ceiling
 from cerebro.domain.enums import Sensitivity
 
 _DOCKER_MARKER = Path("/.dockerenv")
+_PUBLIC_BROWSER_CEILING = AccessCeiling(Sensitivity.INTERNAL)
+"""The owner's browser on the public listener never exceeds this, whatever the public MCP ceiling (ADR-0028)."""
 
 
 def _loopback(value: str) -> str:
@@ -46,6 +48,10 @@ def _port(value: str) -> int:
     if not 1 <= port <= 65535:
         raise ValueError("invalid port")
     return port
+
+
+def _ceiling(value: str) -> AccessCeiling:
+    return AccessCeiling(Sensitivity(value))
 
 
 def _origin(value: str) -> str:
@@ -93,6 +99,12 @@ def _arguments(*, stdio: bool) -> argparse.Namespace:
         parser.add_argument("--config", type=Path)
         parser.add_argument("--public-port", type=_port, default=8766)
         parser.add_argument("--enable-public", action="store_true")
+        parser.add_argument(
+            "--public-ceiling",
+            type=_ceiling,
+            default=AccessCeiling(Sensitivity.INTERNAL),
+            help="MCP ceiling of the public listener: public, internal (default) or restricted",
+        )
         parser.add_argument("--private-origin", type=_origin, help="external private HTTPS origin")
         parser.add_argument("--public-origin", type=_origin, help="external public HTTPS origin")
         parser.add_argument("--web-dist", type=Path, help="directory containing the built browser application")
@@ -127,7 +139,7 @@ def serve() -> int:
     logging.disable(logging.CRITICAL)
     listeners = {options.private_port: AccessCeiling(Sensitivity.RESTRICTED)}
     if options.enable_public:
-        listeners[options.public_port] = AccessCeiling(Sensitivity.INTERNAL)
+        listeners[options.public_port] = options.public_ceiling
     try:
         with ExitStack() as stack:
             sockets = [
@@ -165,7 +177,9 @@ def serve() -> int:
                 binding = BrowserBinding(
                     "private" if private else "public", options.private_origin if private else options.public_origin
                 )
-                api = browser_api(auth, binding, ceiling)
+                api = browser_api(
+                    auth, binding, ceiling if private else effective_ceiling(ceiling, _PUBLIC_BROWSER_CEILING)
+                )
                 install_browser_history(api, cases.history)
                 install_browser_reads(api, reads)
                 install_browser_edit(api, cases.owner_edit_note)

@@ -1,10 +1,10 @@
-# Deploy Cérebro on a private tailnet
+# Deploy Cérebro with a private tailnet and a public agent entrance
 
-Run as the designated **non-root Linux operator** with access to local Docker, GitHub and Tailscale. Use Bash in a private terminal. The owner supplies the placeholders and approves the host, tailnet access policy and backup location. Run hml first. Record release SHAs and image IDs locally. Keep passwords, tokens and key material out of transcripts, Git and Compose environment files.
+Run as the designated **non-root Linux operator** with access to local Docker, GitHub, Tailscale and the host's `cloudflared`. Use Bash in a private terminal. The owner supplies the placeholders and approves the host, tailnet access policy and backup location. Run hml first. Record release SHAs and image IDs locally. Keep passwords, tokens and key material out of transcripts, Git and Compose environment files.
 
 ## Installation variables
 
-Run the entire definitions block in each operator shell, including for updates. These directory and port defaults are suggestions. Choose disjoint private trees on trusted filesystems and distinct ports. Set the server's SSH alias separately from its tailnet HTTPS name.
+Run the entire definitions block in each operator shell, including for updates. These directory and port defaults are suggestions. Choose disjoint private trees on trusted filesystems and distinct ports. Set the server's SSH alias separately from its tailnet HTTPS name. Each environment also has its own public hostname on the owner's Cloudflare zone. Agents use only that public URL and a bearer token ([ADR-0028](adr/0028-token-decides-public-access.md)). Tailscale Serve stays the owner's private browser entrance.
 
 ```bash
 set -euo pipefail
@@ -12,6 +12,7 @@ set +x
 umask 077
 SERVER_HOST='<server-ssh-alias>'
 TAILNET_URL='https://<machine>.<tailnet>.ts.net'
+HML_PUBLIC_ORIGIN='https://<hml-public-hostname>'; PROD_PUBLIC_ORIGIN='https://<prod-public-hostname>'
 GITHUB_OWNER='<private-content-repository-owner>'
 APP_REPOSITORY='<app-repository-owner>/cerebro'
 PROJECT_ROOT=/srv/projetos/cerebro
@@ -19,6 +20,7 @@ DATA_ROOT=/data/projetos/cerebro
 BACKUP_ROOT=/data/backups/cerebro
 BACKUP_MOUNT=''  # set to the expected mountpoint when backups use a dedicated filesystem
 HML_PORT=18765; PROD_PORT=28765
+HML_PUBLIC_PORT=18766; PROD_PUBLIC_PORT=28766
 HML_HTTPS=8443; PROD_HTTPS=443
 REPOS="$PROJECT_ROOT/repos"
 APP_REPO="$REPOS/cerebro"
@@ -28,13 +30,15 @@ test "$SERVICE_UID" -gt 0 && test "$SERVICE_GID" -gt 0 || exit 1
 select_env() {
   export ENVIRONMENT="$1"
   case "$1" in
-    hml) PRIVATE_PORT=$HML_PORT; HTTPS_PORT=$HML_HTTPS ;;
-    prod) PRIVATE_PORT=$PROD_PORT; HTTPS_PORT=$PROD_HTTPS ;;
+    hml) PRIVATE_PORT=$HML_PORT; HTTPS_PORT=$HML_HTTPS; PUBLIC_PORT=$HML_PUBLIC_PORT; PUBLIC_ORIGIN=$HML_PUBLIC_ORIGIN ;;
+    prod) PRIVATE_PORT=$PROD_PORT; HTTPS_PORT=$PROD_HTTPS; PUBLIC_PORT=$PROD_PUBLIC_PORT; PUBLIC_ORIGIN=$PROD_PUBLIC_ORIGIN ;;
     *) return 1 ;;
   esac
   PRIVATE_ORIGIN="${TAILNET_URL%/}"
   if [[ $HTTPS_PORT != 443 ]]; then PRIVATE_ORIGIN+=":$HTTPS_PORT"; fi
   export PRIVATE_ORIGIN PRIVATE_PORT DATA_DIR="$DATA_ROOT/$1"
+  # The token ceiling alone decides what each agent sees on the public entrance (ADR-0028).
+  export PUBLIC_ORIGIN PUBLIC_PORT PUBLIC_CEILING=restricted
   ENV_DIR="$PROJECT_ROOT/ambientes/$1"; BACKUP_DIR="$BACKUP_ROOT/$1"
   export CEREBRO_CONTENT_DIR="$DATA_DIR/content/repo" CEREBRO_STATE_DIR="$DATA_DIR/state"
   export CEREBRO_INDEX_DIR="$DATA_DIR/index" CEREBRO_KEY_FILE="$DATA_DIR/secrets/fernet.key"
@@ -69,7 +73,8 @@ start_release() {
   fi
   docker inspect --format '{{json .NetworkSettings.Ports}}' "$cid"
   test "$(curl -sS -o /dev/null -w '%{http_code}' "http://127.0.0.1:$PRIVATE_PORT/mcp")" = 401
-  ss -H -lnt "sport = :$PRIVATE_PORT"
+  test "$(curl -sS -o /dev/null -w '%{http_code}' "http://127.0.0.1:$PUBLIC_PORT/mcp")" = 401
+  ss -H -lnt "( sport = :$PRIVATE_PORT or sport = :$PUBLIC_PORT )"
 }
 record_release() {
   if [[ -f $ENV_DIR/current ]] && ! cmp -s "$ENV_DIR/current" <(printf '%s %s\n' "$APP_SHA" "$image_id"); then
@@ -94,6 +99,8 @@ docker ps --format '{{.Names}} {{.Ports}}'
 tailscale status --json
 tailscale serve status
 tailscale funnel status
+cloudflared --version
+systemctl status cloudflared --no-pager
 ss -H -lnt
 df -h
 git --version
@@ -105,7 +112,7 @@ gh repo view "$APP_REPOSITORY" --json nameWithOwner,visibility,viewerPermission
 gh repo list "$GITHUB_OWNER" --limit 1000 --json nameWithOwner,visibility --jq '.[] | select(.nameWithOwner | endswith("/cerebro-content"))'
 ```
 
-**Verify** the expected host and a local Unix Docker socket, Engine 28+ on Linux amd64/arm64, Compose with `--wait`, Git, Python with SQLite and uv 0.13.9. Confirm bind-mount ownership maps the operator UID and GID into the container. Stop for an owner-approved mapping if user namespace remapping is active. Confirm enough free space for two release images, Git history, both environments and backups. Inspect listening ports, existing Docker publications, Serve routes and Funnel. Confirm the tailnet is running, its DNS name matches the configured URL, HTTPS is enabled and its access rules limit the service to the owner's clients. Check read access to the app and permission to create or push to the private content repository.
+**Verify** the expected host and a local Unix Docker socket, Engine 28+ on Linux amd64/arm64, Compose with `--wait`, Git, Python with SQLite and uv 0.13.9. Confirm bind-mount ownership maps the operator UID and GID into the container. Stop for an owner-approved mapping if user namespace remapping is active. Confirm enough free space for two release images, Git history, both environments and backups. Inspect listening ports, existing Docker publications, Serve routes and Funnel. Confirm `cloudflared` runs as a host service, so it can reach host loopback, and identify the tunnel dedicated to Cérebro. Never route Cérebro through a tunnel shared with other services. Confirm the tailnet is running, its DNS name matches the configured URL, HTTPS is enabled and its access rules limit the service to the owner's clients. Check read access to the app and permission to create or push to the private content repository.
 
 **Stop and contact the owner** for missing prerequisites, inadequate storage, a different host or Docker endpoint, deployment overrides, conflicting listeners/routes, ambiguous GitHub identity or public access. A missing listing alone does not establish that the repository is available. [Docker port publication](https://docs.docker.com/engine/network/port-publishing/) · [Tailscale Serve](https://tailscale.com/docs/reference/tailscale-cli/serve)
 
@@ -224,7 +231,7 @@ if [[ $ENVIRONMENT = prod ]]; then test "$image_id" = "$accepted_id"; fi
 start_release
 ```
 
-**Verify** the image was built from the pinned sources on this host. The only publication is the environment port on IPv4 loopback. Docker can implement it with firewall rules and no socket visible in `ss`. Check for unexpected wildcard, LAN or IPv6 listeners. Enable the previously unused private HTTPS listener:
+**Verify** the image was built from the pinned sources on this host. The only publication is the environment port on IPv4 loopback. Docker can implement it with firewall rules and no socket visible in `ss`. Check for unexpected wildcard, LAN or IPv6 listeners. Expect exactly two publications: the private and public ports. Enable the previously unused private HTTPS listener:
 
 ```bash
 sudo tailscale serve --bg --https="$HTTPS_PORT" "http://127.0.0.1:$PRIVATE_PORT"
@@ -234,7 +241,44 @@ test "$(curl -sS -o /dev/null -w '%{http_code}' "$PRIVATE_ORIGIN/mcp")" = 401
 test "$(curl -sS -o /dev/null -w '%{http_code}' "$PRIVATE_ORIGIN/")" = 200
 ```
 
-**Stop** on unhealthy containers, tag or binding mismatch, public routes, unexpected Serve target, certificate errors or failed HTTP checks. Never publish a container port off host loopback or enable Funnel.
+**Stop** on unhealthy containers, tag or binding mismatch, Funnel or other public routes to the private port, unexpected Serve target, certificate errors or failed HTTP checks. Never publish a container port off host loopback or enable Funnel.
+
+## E2. Publish the public entrance through Cloudflare
+
+The dedicated Cérebro tunnel publishes **only the public listener**. Never point a tunnel at the private port. Add one ingress rule per environment to the tunnel's configuration (locally managed `config.yml` shown; set the same values in the dashboard for a remotely managed tunnel). Leave `httpHostHeader` unset: the web UI accepts only requests whose `Host` matches `PUBLIC_ORIGIN`. [Tunnel configuration](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/configure-tunnels/local-management/configuration-file/)
+
+```yaml
+tunnel: <cerebro-tunnel-id>
+credentials-file: /etc/cloudflared/<cerebro-tunnel-id>.json
+ingress:
+  - hostname: <hml-public-hostname>
+    service: http://127.0.0.1:18766   # HML_PUBLIC_PORT
+  - hostname: <prod-public-hostname>
+    service: http://127.0.0.1:28766   # PROD_PUBLIC_PORT
+  - service: http_status:404
+```
+
+Create the DNS route with `cloudflared tunnel route dns <cerebro-tunnel-id> <public-hostname>` and restart the service. In Cloudflare Zero Trust create **two** self-hosted Access applications per public hostname. [Access applications](https://developers.cloudflare.com/cloudflare-one/applications/configure-apps/self-hosted-public-app/) · [Application paths](https://developers.cloudflare.com/cloudflare-one/policies/access/app-paths/) · [Bypass](https://developers.cloudflare.com/cloudflare-one/policies/access/#bypass)
+
+1. **Web UI.** Domain: exactly the public hostname, path empty. One **Allow** policy for the owner's identity with MFA. This protects every path except the one below.
+2. **MCP.** Domain: exactly the same hostname, path exactly `mcp`. No wildcard in the hostname or path, no other paths and no query string. One **Bypass** policy including Everyone. The Cérebro bearer token protects this path. Bypass requests are not logged by Access.
+
+Cérebro serves MCP only at the exact path `/mcp`. If Access also bypasses longer paths such as `/mcp/x` or `/mcpx`, Cérebro answers them with 404 and serves no UI, API or assets there. Verify from a host outside the tailnet, for each environment:
+
+```bash
+PUBLIC_ORIGIN='https://<public-hostname>'  # the environment under test
+test "$(curl -sS -o /dev/null -w '%{http_code}' "$PUBLIC_ORIGIN/mcp")" = 401
+for path in / /search /api/session /assets/ /mcp/ /mcp/x /mcpx; do
+  read -r code location < <(curl -sS -o /dev/null -w '%{http_code} %{redirect_url}\n' "$PUBLIC_ORIGIN$path")
+  if [[ $code = 302 && $location == https://*.cloudflareaccess.com/* ]]; then echo "$path: Access"
+  elif [[ $path = /mcp?* && $code = 404 ]]; then echo "$path: bypassed, Cérebro 404"
+  else echo "$path: unexpected $code" >&2; false; fi
+done
+```
+
+Expect `401` for unauthenticated MCP and an Access redirect for every UI, API and asset path. Then open `PUBLIC_ORIGIN` in the owner's browser. Pass Access, then sign in with the owner password. The public session reports ceiling `internal`, whatever `PUBLIC_CEILING` is, and offers no Recent changes, editing or Health; use the private origin for those.
+
+**Stop** on any `200` without Access, a tunnel route to the private port, a wildcard bypass or a hostname shared with other services. **Accepted risk:** a leaked token works from the internet until it is revoked, up to its ceiling and scopes.
 
 ## F. Issue one token per client
 
@@ -246,14 +290,14 @@ dc exec -T backend cerebro token issue codex --ceiling internal --scope read --s
 dc exec -T backend cerebro token list
 ```
 
-**Verify** separate Claude Code and Codex identities with all three scopes. The example grants an internal sensitivity ceiling. Configure each client on the workstation using [client setup](client-setup.md).
+**Verify** separate Claude Code and Codex identities with all three scopes. The token ceiling alone limits what each client sees through the public entrance. The example grants `internal`; issue `--ceiling restricted` only to a client that needs restricted notes. Configure each client on the workstation using [client setup](client-setup.md).
 
 **Stop** if a credential was exposed or lost. Revoke the affected token using its ID from the list (`dc exec -T backend cerebro token revoke "<token-id>"`) before issuing its replacement.
 
 ## G. Accept hml before promoting to prod
 
-1. From WSL, follow the commands in [client setup](client-setup.md) and use each configured client to call `cerebro_overview` and `cerebro_write_guide`. Check the correct environment and authenticated results. In hml ask Claude Code to create an internal P2 fixture in the `validation` area using the write guide. Ask Codex to read it by ID. Record the ID and confirm the Git attribution in Recent changes.
-2. Open the private HTTPS origin in the owner's browser, sign in, read the fixture, inspect Recent changes and health. Use separate browser profiles for hml and prod, which share a hostname. Verify the tailnet access policy with the owner.
+1. From WSL, follow the commands in [client setup](client-setup.md) with the hml public URL and use each configured client to call `cerebro_overview` and `cerebro_write_guide`. Check the correct environment and authenticated results. In hml ask Claude Code to create an internal P2 fixture in the `validation` area using the write guide. Ask Codex to read it by ID. Record the ID and confirm the Git attribution in Recent changes.
+2. Open the private HTTPS origin in the owner's browser, sign in, read the fixture, inspect Recent changes and health. Use separate browser profiles for hml and prod, which share a hostname. Verify the tailnet access policy with the owner. Repeat the public UI checks in E2.
 3. On the host run the following. After restart, repeat the authenticated MCP read and browser login/read. Check the same commit and data persisted.
 
 ```bash
@@ -370,7 +414,7 @@ backup
 start_release
 ```
 
-Verify private HTTPS, both MCP reads and owner login before `record_release`. **Stop** on missing images, incompatible schema or mismatched keys. Consult the owner about isolated recovery using the backup procedure before replacing any data.
+Verify private HTTPS, the public checks in E2, both MCP reads and owner login before `record_release`. **Stop** on missing images, incompatible schema or mismatched keys. Consult the owner about isolated recovery using the backup procedure before replacing any data.
 
 **Uninstall.** Confirm the environment with the owner. Quiesce writes and take a final backup. Identify and remove only this environment's scheduled jobs in `crontab -e`.
 
@@ -381,12 +425,13 @@ use_release "$sha"
 crontab -l
 crontab -e
 sudo tailscale serve --https="$HTTPS_PORT" off
+# Remove this environment's tunnel ingress rule, DNS route and both Access applications first.
 dc stop backend
 backup
 dc down
 tailscale serve status
 docker ps --format '{{.Names}} {{.Ports}}'
-ss -H -lnt "sport = :$PRIVATE_PORT"
+ss -H -lnt "( sport = :$PRIVATE_PORT or sport = :$PUBLIC_PORT )"
 ```
 
-**Verify** the chosen route and publication are gone and the other environment still passes its HTTPS check. Retain release images, secrets, backups and bind-mounted data. **Stop** and obtain separate owner authorization for permanent deletion.
+**Verify** the chosen routes and publications are gone and the other environment still passes its HTTPS check. Retain release images, secrets, backups and bind-mounted data. **Stop** and obtain separate owner authorization for permanent deletion.
