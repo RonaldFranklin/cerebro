@@ -102,19 +102,18 @@ test("a concurrent owner edit survives inspection of a conflicted draft", async 
   await expect(page.getByText("Changes saved.",{exact:true})).toBeVisible();
 });
 
-test("the lower-ceiling listener denies the owner editor and health views", async ({page, demo}) => {
-  const privateRequests: string[] = [];
-  page.on("request", req => {
-    const path = new URL(req.url()).pathname;
-    if (path === "/api/health" || path === "/api/notes/server-ssh-access") privateRequests.push(path);
-  });
+test("the owner edits a restricted-session note through the public listener", async ({page, demo}) => {
   await page.goto(demo.public_origin + "/editor/server-ssh-access");
   await page.getByLabel("Password",{exact:true}).fill(demo.password);
   await page.getByLabel("Password",{exact:true}).press("Enter");
-  await expect(page.getByText("This view requires the private listener.")).toBeVisible();
-  await page.goto(demo.public_origin + "/health");
-  await expect(page.getByText("This view requires the private listener.")).toBeVisible();
-  expect(privateRequests).toEqual([]);
+  const summary = "Edited by the owner through the public listener of this disposable fixture.";
+  await page.getByLabel("Summary",{exact:true}).fill(summary);
+  const saved = page.waitForResponse(res => res.request().method() === "PUT");
+  await page.getByRole("button",{name:"Save changes",exact:true}).click();
+  expect((await saved).status()).toBe(200);
+  await expect(page.getByText("Changes saved.",{exact:true})).toBeVisible();
+  const message = execFileSync("git",["-C",demo.content_repo,"log","-1","--format=%B"],{encoding:"utf8"});
+  expect(message).toContain("Written-by: owner");
 });
 
 test("a suspended editor drops its draft after another tab replaces the session", async ({page, context, demo}) => {

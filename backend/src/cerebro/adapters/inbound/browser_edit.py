@@ -1,4 +1,4 @@
-"""Private browser edits of a complete, previously inspected note."""
+"""Owner browser edits of a complete, previously inspected note."""
 
 from datetime import date
 from typing import Annotated

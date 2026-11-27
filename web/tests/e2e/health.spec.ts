@@ -8,7 +8,7 @@ async function signIn(page: Page, origin: string, password: string) {
   await input.press("Enter");
 }
 
-test("private health findings link to their notes and stay off the public listener", async ({page, context, demo}) => {
+test("health findings link to their notes for the signed-in owner on both listeners", async ({page, context, demo}) => {
   const violations: string[] = [];
   await page.exposeFunction("recordHealthViolation", (directive: string) => violations.push(directive));
   await page.addInitScript(() => document.addEventListener("securitypolicyviolation", event =>
@@ -35,22 +35,15 @@ test("private health findings link to their notes and stay off the public listen
   await expect(page.getByRole("heading",{name:"Broken link note",exact:true})).toBeVisible();
   expect(violations).toEqual([]);
 
-  const lower = await context.newPage();
-  const requests: string[] = [];
-  lower.on("request", req => {
-    if (new URL(req.url()).pathname === "/api/health") requests.push(req.method());
+  const remote = await context.newPage();
+  await signIn(remote, demo.public_origin, demo.password);
+  await expect(remote.getByRole("heading", {name:"Health", exact:true})).toBeVisible();
+  await expect(remote.getByRole("link", {name:"Health", exact:true})).toBeVisible();
+  await expect(remote.locator('a[href="/notes/fixture-vault-catalog?history=true"]').first()).toBeVisible();
+  const anonymous = await remote.evaluate(async () => {
+    const response = await fetch("/api/health", {credentials:"omit"});
+    return {status:response.status, text:await response.text()};
   });
-  await signIn(lower, demo.public_origin, demo.password);
-  await expect(lower.getByText("This view requires the private listener.")).toBeVisible();
-  await expect(lower.getByRole("link", {name:"Health", exact:true})).toHaveCount(0);
-  expect(requests).toEqual([]);
-  for (const headers of [undefined, {"X-Forwarded-Host":"private.example.invalid","X-Forwarded-Proto":"https"}]) {
-    const denied = await lower.evaluate(async extra => {
-      const response = await fetch("/api/health", {headers:extra});
-      return {status:response.status, text:await response.text()};
-    }, headers);
-    expect(denied.status).toBe(403);
-    expect(denied.text).not.toContain("fixture-vault-catalog");
-  }
-  await expect(lower.locator("body")).not.toContainText("fixture-vault-catalog");
+  expect(anonymous.status).toBe(401);
+  expect(anonymous.text).not.toContain("fixture-vault-catalog");
 });

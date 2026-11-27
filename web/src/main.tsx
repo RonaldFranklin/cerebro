@@ -81,7 +81,7 @@ function App() {
       return <QueryClientProvider key={state.generation} client={state.queries}>
         {state.checking && <Status>Checking session…</Status>}
         <div hidden={state.checking}><Shell path={home ? "/" : path} ceiling={state.session.ceiling} onNavigate={navigate} onLogout={manager.signOut}>
-          {denied ? <section className="pending-view"><h1>{title}</h1><p>This view requires the private listener.</p>
+          {denied ? <section className="pending-view"><h1>{title}</h1><p>This view requires a restricted session.</p>
             <a href="/">Back to overview</a></section> : home ? <Home api={state.api}/> :
             path === "/changes" ? <Suspense fallback={<p role="status">Loading recent changes…</p>}><RecentChangesScreen api={state.api}/></Suspense> :
             path === "/health" ? <Suspense fallback={<p role="status">Loading health report…</p>}><HealthScreen api={state.api}/></Suspense> :

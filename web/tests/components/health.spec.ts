@@ -50,7 +50,7 @@ test("health distinguishes errors, empty reports and partially checked reports o
   await expect(page.getByText("No findings in the completed checks.")).toBeVisible();
 });
 
-test("the public listener never requests the health report", async ({page}) => {
+test("a lower-ceiling session never requests the health report", async ({page}) => {
   await owner(page,"internal");
   let reads = 0;
   await page.route("**/api/health", route => { reads++; return route.fulfill({json:clean}); });

@@ -45,7 +45,7 @@ test("the production worker lays out a selectable WebGL graph under the served C
   expect(violations).toEqual([]);
 });
 
-test("the public graph stays navigable without WebGL and omits restricted notes", async ({page, demo}) => {
+test("the public graph stays navigable without WebGL and includes the owner's restricted notes", async ({page, demo}) => {
   await page.addInitScript(() => {
     const original = HTMLCanvasElement.prototype.getContext;
     HTMLCanvasElement.prototype.getContext = function(this: HTMLCanvasElement, ...args: Parameters<typeof original>) {
@@ -57,10 +57,10 @@ test("the public graph stays navigable without WebGL and omits restricted notes"
   await signIn(page, demo.public_origin, demo.password);
   const data = await (await graphResponse).text();
   expect(data).toContain("infrastructure");
-  expect(data).not.toContain("fixture-vault-catalog");
+  expect(data).toContain("fixture-vault-catalog");
   await expect(page.locator("[data-renderer='fallback']")).toBeVisible();
-  await expect(page.locator("body")).not.toContainText("Synthetic vault catalog");
-  await expect(page.getByRole("combobox",{name:"Area",exact:true}).getByRole("option", {name:"security", exact:true})).toHaveCount(0);
+  await expect(page.getByRole("button", {name:"Explore Synthetic vault catalog"})).toBeVisible();
+  await expect(page.getByRole("combobox",{name:"Area",exact:true}).getByRole("option", {name:"security", exact:true})).toHaveCount(1);
   await page.setViewportSize({width:390,height:844});
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   const explore = page.getByRole("button", {name:"Explore Infrastructure",exact:true});

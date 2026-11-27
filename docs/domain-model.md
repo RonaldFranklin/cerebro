@@ -196,7 +196,8 @@ effective_ceiling = min(listener_ceiling, token_ceiling)
 
 - **Listener ceiling:** private listener (Tailscale) = `restricted`; public listener (Cloudflare) = configured,
   default `internal` ([ADR-0028](adr/0028-token-decides-public-access.md)). The deployment sets `restricted` so the
-  token ceiling decides for agents. The owner's browser on the public listener is capped at `internal`.
+  token ceiling decides for agents. The listener ceiling above applies to tokens; the signed-in owner's browser
+  is `restricted` on both listeners ([ADR-0029](adr/0029-owner-browser-full-access-on-public-listener.md)).
 - **Token ceiling:** set when the owner issues the agent token.
 - Notes above the effective ceiling are **invisible**: not in search, not in hubs, not in neighbors, not in
   the graph. Reading one by id returns "not found" (no existence leak).
@@ -360,7 +361,7 @@ literal Unicode, ISO dates and absent optionals omitted. The repository compares
 the expected hash during apply. A concurrent update against the same base can succeed only once.
 A committed change is durable even if a derived index needs rebuilding.
 
-The private owner's Recent changes view reads git history. It shows the authenticated writer, time, note
+The owner's Recent changes view reads git history. It shows the authenticated writer, time, note
 and bounded diff. Exposing a change requires visibility of the current note and all note versions represented
 in the diff, including the parent version for updates. Historical data receives the same link redaction as
 current content. Only commits with a valid `Written-by` trailer are listed: an agent name, or `owner` for an

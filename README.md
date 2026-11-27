@@ -81,7 +81,9 @@ dc() { docker compose --env-file "$CEREBRO_HOME/prod.env" -f deploy/compose.yaml
 ```
 
 The stack also opens a second, "public" listener on `127.0.0.1:8766`, used by the
-[server deployment](docs/deploy.md). Both ports are published on loopback only.
+[server deployment](docs/deploy.md). Both ports are published on loopback only. The signed-in owner has full access
+through either one, so never expose the public port without the identity layer described there
+([ADR-0029](docs/adr/0029-owner-browser-full-access-on-public-listener.md)).
 
 ### 3. Build and initialize
 

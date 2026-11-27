@@ -28,15 +28,15 @@ from cerebro.application.browser import BrowserBinding
 from cerebro.bootstrap.container import build_container
 from cerebro.bootstrap.diagnostics import owner_message
 from cerebro.bootstrap.settings import load_settings
-from cerebro.domain.access import AccessCeiling, effective_ceiling
+from cerebro.domain.access import AccessCeiling
 from cerebro.domain.enums import Sensitivity
 
 _DOCKER_MARKER = Path("/.dockerenv")
 MAX_CONCURRENCY = 128
 """Open connections plus running requests across both listeners; beyond it new requests get 503. A single owner's
 clients use a handful, and the bound stays above cloudflared's default pool of 100 idle origin connections."""
-_PUBLIC_BROWSER_CEILING = AccessCeiling(Sensitivity.INTERNAL)
-"""The owner's browser on the public listener never exceeds this, whatever the public MCP ceiling (ADR-0028)."""
+_BROWSER_CEILING = AccessCeiling(Sensitivity.RESTRICTED)
+"""The signed-in owner's browser on either listener, independent of the public MCP ceiling (ADR-0029)."""
 
 
 def _loopback(value: str) -> str:
@@ -175,14 +175,12 @@ def serve() -> int:
                 health_report=cases.health_report,
             )
             browsers = {}
-            for port, ceiling in listeners.items():
+            for port in listeners:
                 private = port == options.private_port
                 binding = BrowserBinding(
                     "private" if private else "public", options.private_origin if private else options.public_origin
                 )
-                api = browser_api(
-                    auth, binding, ceiling if private else effective_ceiling(ceiling, _PUBLIC_BROWSER_CEILING)
-                )
+                api = browser_api(auth, binding, _BROWSER_CEILING)
                 install_browser_history(api, cases.history)
                 install_browser_reads(api, reads)
                 install_browser_edit(api, cases.owner_edit_note)

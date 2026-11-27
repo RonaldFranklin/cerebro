@@ -136,7 +136,7 @@ def browser_api(auth: BrowserAuth, binding: BrowserBinding, ceiling: AccessCeili
             note_write = path.startswith("/api/notes/") and request.method == "PUT"
             history = path == "/api/changes" or path.startswith("/api/changes/")
             if note_write or history:
-                if binding.listener != "private" or ceiling.level is not Sensitivity.RESTRICTED:
+                if ceiling.level is not Sensitivity.RESTRICTED:
                     return _error(403, "Access denied.")
                 if request.scope["query_string"] and (
                     not history or len(request.query_params.getlist("cursor")) != 1 or len(request.query_params) != 1

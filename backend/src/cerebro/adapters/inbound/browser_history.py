@@ -1,4 +1,4 @@
-"""Bounded private owner history. The browser authentication middleware enforces the private listener."""
+"""Bounded owner history. The browser authentication middleware requires a restricted owner session."""
 
 from dataclasses import asdict
 

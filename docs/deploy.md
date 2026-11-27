@@ -294,9 +294,11 @@ for path in / /search /api/session /assets/ /mcp/ /mcp/x /mcpx; do
 done
 ```
 
-Expect `401` for unauthenticated MCP, an HTTPS redirect with HSTS, and an Access redirect for every UI, API and asset path. Then open `PUBLIC_ORIGIN` in the owner's browser. Pass Access, then sign in with the owner password. The public session reports ceiling `internal`, whatever `PUBLIC_CEILING` is, and offers no Recent changes, editing or Health; use the private origin for those.
+Expect `401` for unauthenticated MCP, an HTTPS redirect with HSTS, and an Access redirect for every UI, API and asset path. Then open `PUBLIC_ORIGIN` in the owner's browser. Pass Access, then sign in with the owner password. The public session reports ceiling `restricted`, whatever `PUBLIC_CEILING` is, and offers editing, Recent changes and Health ([ADR-0029](adr/0029-owner-browser-full-access-on-public-listener.md)).
 
-**Stop** on any `200` without Access, a tunnel route to the private port, a wildcard bypass or a hostname shared with other services. **Accepted risk:** a leaked token works from the internet until it is revoked, up to its ceiling and scopes.
+Run these checks again after every change to Access or the tunnel: Cérebro does not verify Access, and without it only the owner password protects restricted notes and edits.
+
+**Stop** on any `200` without Access, a tunnel route to the private port, a wildcard bypass or a hostname shared with other services. If any of these appears on a running instance, remove the public route first. **Accepted risk:** a leaked token works from the internet until it is revoked, up to its ceiling and scopes.
 
 ## F. Issue one token per client
 

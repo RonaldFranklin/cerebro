@@ -1,6 +1,6 @@
 # ADR-0019: Same-origin owner browser API and local web toolchain
 
-- **Status:** accepted, amended by [ADR-0020](0020-direct-agent-writes.md); container binding amended by [ADR-0027](0027-container-loopback-publication.md)
+- **Status:** accepted, amended by [ADR-0020](0020-direct-agent-writes.md); container binding amended by [ADR-0027](0027-container-loopback-publication.md); private-only writes and health amended by [ADR-0029](0029-owner-browser-full-access-on-public-listener.md)
 - **Date:** 2026-11-25
 
 ## Context

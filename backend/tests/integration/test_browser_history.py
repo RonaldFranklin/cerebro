@@ -21,7 +21,10 @@ from tests.integration.content_kit import DOCKER_ID, VAULT_ID, make_sample_repo
 
 
 @pytest.mark.parametrize("listener", ["private", "public"])
-def test_only_a_private_owner_can_list_and_read_an_encrypted_diff(tmp_path: Path, listener: str) -> None:
+@pytest.mark.parametrize("ceiling", [Sensitivity.RESTRICTED, Sensitivity.INTERNAL])
+def test_only_a_restricted_owner_session_can_list_and_read_an_encrypted_diff(
+    tmp_path: Path, listener: str, ceiling: Sensitivity
+) -> None:
     sample = make_sample_repo(tmp_path)
     container = build_container(sample.settings)
     before = container.notes.get(VAULT_ID)
@@ -34,9 +37,8 @@ def test_only_a_private_owner_can_list_and_read_an_encrypted_diff(tmp_path: Path
     )
     owner_credentials(sample.settings).provision(b"history-fixture")
     origin = f"https://{listener}.example.invalid"
-    # Even a deliberately wide public ceiling cannot turn a public socket into the private listener.
-    binding = BrowserBinding("private" if listener == "private" else "public", origin)
-    app = browser_api(container.browser_auth, binding, AccessCeiling(Sensitivity.RESTRICTED))
+    binding = BrowserBinding(listener, origin)
+    app = browser_api(container.browser_auth, binding, AccessCeiling(ceiling))
     install_browser_history(app, container.use_cases.history)
     with TestClient(app, base_url=origin) as client:
         endpoints = ("/api/changes", f"/api/changes/{revision}", f"/api/changes?cursor={revision}")
@@ -48,9 +50,9 @@ def test_only_a_private_owner_can_list_and_read_an_encrypted_diff(tmp_path: Path
             ).status_code
             == 200
         )
-        if listener == "public":
+        if ceiling is not Sensitivity.RESTRICTED:
             for endpoint in endpoints:
-                assert client.get(endpoint, headers={"X-Forwarded-Host": "private"}).status_code == 403
+                assert client.get(endpoint, headers={"X-Ceiling": "restricted"}).status_code == 403
             return
         assert client.get(endpoints[2]).status_code == 404
         assert client.get("/api/changes", params={"cursor": "é"}).status_code == 404

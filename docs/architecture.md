@@ -104,7 +104,7 @@ backend/
 | `Cipher` | encrypt/decrypt restricted note payloads (used by the filesystem adapter only); `DecryptionError` on tampering | Fernet |
 | `TokenStore` | `add`, `get`, `find_by_hash` (also returns revoked tokens), `save`, `all`; tokens are stored hashed | SQLite |
 | `WriteAttemptStore` | Atomically reserve a rolling-hour slot for an authenticated token; a refusal leaves state unchanged | SQLite; in-memory fake |
-| `ChangeHistory` | Return recent first-parent revisions, attribution and note versions for private owner history | Git/filesystem; in-memory fake |
+| `ChangeHistory` | Return recent first-parent revisions, attribution and note versions for owner history | Git/filesystem; in-memory fake |
 | `Credentials`, `LoginAttempts`, `SessionStore` | Owner browser login: password verifier, shared attempt throttle, listener-bound sessions ([ADR-0019](adr/0019-owner-browser-api.md)) | crypto, SQLite, in-memory sessions; fakes |
 | `Clock`, `IdGenerator` | `now()`; note ids, token ids and token secrets, for deterministic tests | system / fixed fakes |
 
@@ -214,7 +214,9 @@ any authorized agent ── Cloudflare Tunnel ────▶│ cloudflared ─
   `--public-ceiling` (default `internal`); the deployment sets `restricted`, so each agent's token ceiling decides.
   Cloudflare Access protects its web UI; `/mcp` bypasses Access and requires the Cérebro bearer token
   ([ADR-0028](adr/0028-token-decides-public-access.md), accepted risk: a leaked token works over the internet until
-  revoked). The owner's browser there is capped at `internal`; edits, history and health stay private.
+  revoked). The signed-in owner's browser is `restricted` there too, with edits, history and health
+  ([ADR-0029](adr/0029-owner-browser-full-access-on-public-listener.md));
+  Cérebro does not verify Access, so it is a deployment requirement.
 - The listener a request arrived on sets the maximum ceiling; the agent token can only lower it.
   See [ADR-0005](adr/0005-sensitivity-and-access-ceiling.md) and
   [ADR-0010](adr/0010-network-access.md).
