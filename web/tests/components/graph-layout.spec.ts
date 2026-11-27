@@ -29,3 +29,16 @@ test("named areas keep their theme color and other areas never share one", () =>
   expect(colors[3]).toBe("#5ce1e6");
   expect(new Set(colors).size).toBe(areas.length);
 });
+
+test("many unlinked notes spread over a band instead of piling on one circle", () => {
+  const count = 300;
+  const positions = layout({count, edges: []});
+  const points = Array.from({length: count}, (_, i) => [positions[i * 2], positions[i * 2 + 1]]);
+  const radius = Math.max(...points.map(([x, y]) => Math.hypot(x, y)));
+  let closest = Infinity;
+  for (let i = 0; i < count; i++) for (let j = i + 1; j < count; j++) {
+    closest = Math.min(closest, Math.hypot(points[i][0] - points[j][0], points[i][1] - points[j][1]));
+  }
+  // Dots of a graph this size stay about a dot apart.
+  expect(closest / radius).toBeGreaterThan(.025);
+});

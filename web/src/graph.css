@@ -7,7 +7,9 @@
 .graph-controls fieldset { gap: .7rem; border: 0; margin: 0; padding: 0; color: var(--muted); font-size: .85rem; }
 .graph-controls legend { float: left; margin-right: .3rem; }
 .graph-view button { color: var(--accent); background: var(--surface); border: 1px solid var(--line-strong); border-radius: .6rem; padding: .4rem .75rem; }
-.graph-select[aria-pressed="true"] { border-color: var(--accent); }
+.graph-select[aria-current] { border-color: var(--accent); }
+/* The heading is only for assistive technology until focus returns to it. */
+.graph-view > h1:focus-visible { position: fixed; top: calc(var(--topbar) + .5rem); left: 5.5rem; z-index: 4; width: auto; height: auto; clip-path: none; padding: .4rem .9rem; font-size: 1.1rem; background: var(--raised); border-radius: .5rem; }
 .graph-layout { display: grid; grid-template-columns: minmax(0, 1fr) minmax(17rem, 22rem); grid-template-areas: "map panel" "list panel"; gap: 1rem; align-items: start; }
 .graph-map { grid-area: map; min-width: 0; }
 .graph-map-heading { justify-content: space-between; gap: .7rem; margin-bottom: .6rem; }
@@ -17,7 +19,7 @@
 .graph-legend > span { gap: .4rem; }
 .graph-size-key { margin-left: auto; }
 .graph-empty { color: var(--muted); padding: 4rem 1.2rem; text-align: center; }
-.note-panel { grid-area: panel; position: sticky; top: calc(var(--topbar) + 1rem); min-width: 0; padding: 1.25rem; background: var(--surface); border: 1px solid var(--line); border-radius: .9rem; overflow-wrap: anywhere; }
+.note-panel { grid-area: panel; position: sticky; top: calc(var(--topbar) + 1rem); max-height: calc(100svh - var(--topbar) - 2rem); overflow: auto; min-width: 0; padding: 1.25rem; background: var(--surface); border: 1px solid var(--line); border-radius: .9rem; overflow-wrap: anywhere; }
 .note-panel p { margin-top: .8rem; line-height: 1.6; }
 .note-panel .note-panel-class { gap: .45rem; margin-top: 0; color: var(--accent); font-size: .75rem; letter-spacing: .08em; text-transform: uppercase; }
 .note-panel h2 { margin-top: .75rem; font-size: 1.35rem; }
@@ -42,7 +44,7 @@
 .graph-connections li { display: block; color: var(--muted); overflow-wrap: anywhere; }
 @media(max-width: 64rem) {
   .graph-layout { grid-template-columns: minmax(0, 1fr); grid-template-areas: "map" "panel" "list"; }
-  .note-panel { position: static; }
+  .note-panel { position: static; max-height: none; }
 }
 @media(max-width: 35rem) {
   .graph-controls > label:not(.graph-check) { flex: 1 1 40%; }

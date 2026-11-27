@@ -39,11 +39,14 @@ export function layout({count, edges}: LayoutInput): Float32Array {
   const ring = Math.max(radius, 10) * 1.3;
   let loose = 0;
   const alone = count - graph.order;
+  // More loose notes need more room: they take turns on concentric rings of a widening band.
+  const rings = Math.ceil(alone / 60);
   for (let i = 0; i < count; i++) {
     if (linked.has(i)) continue;
     // Evenly spread, with a small repeatable wobble so the ring does not look drawn.
     const angle = loose / alone * 2 * Math.PI + .35;
-    const distance = count === 1 ? 0 : ring * (1 + .09 * Math.sin(loose * goldenAngle * 3));
+    const wobble = (rings > 1 ? .03 : .09) * Math.sin(loose * goldenAngle * 3);
+    const distance = count === 1 ? 0 : ring * (1 + (loose % rings) * .13 + wobble);
     positions.set([distance * Math.cos(angle), distance * Math.sin(angle)], i * 2);
     loose++;
   }

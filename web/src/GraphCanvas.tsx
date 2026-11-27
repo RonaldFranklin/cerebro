@@ -20,6 +20,9 @@ function emphasis(hub: boolean, selected: boolean) {
     labelVisibility: hub || selected ? "visible" : "hidden",
     ringVisibility: hub || selected ? "visible" : "hidden",
     ringColor: selected ? "#5ce1e6" : "#e6edf5",
+    // The selection also differs in shape, not only in color: a wider ring further out.
+    ringWidth: selected ? 3 : 2,
+    ringPadding: selected ? 5 : 2,
   };
 }
 
@@ -97,7 +100,8 @@ export function GraphCanvas({data, colorBy, colorOf, selected, onSelect}: Props)
                 labelColor:"#e6edf5", labelSize:13, labelPosition:"below", cursor:"pointer",
                 labelVisibility:{attribute:"labelVisibility"},
                 backdropVisibility:{attribute:"ringVisibility"}, backdropArea:"node", backdropColor:"rgba(0, 0, 0, 0)",
-                backdropShadowBlur:0, backdropPadding:2, backdropBorderWidth:2, backdropBorderColor:{attribute:"ringColor"},
+                backdropShadowBlur:0, backdropPadding:{attribute:"ringPadding"}, backdropBorderWidth:{attribute:"ringWidth"},
+                backdropBorderColor:{attribute:"ringColor"},
               },
               edges: { color:"#5a6b82", size:1.3 },
             },

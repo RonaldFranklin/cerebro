@@ -33,6 +33,8 @@ independent review, and keeps backend and browser tests green.
 
 ## Graph and sign-in decisions (step 3)
 
+Step 3a (#110): graph and sign-in, implemented and tested.
+
 - Filters keep every former dimension and start at "all", including status.
 - A click selects a note; the neighborhood view opens from the panel or the note list, which stays below the graph
   as the keyboard and no-WebGL path.

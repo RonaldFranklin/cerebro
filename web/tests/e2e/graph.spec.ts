@@ -27,7 +27,7 @@ test("the production worker lays out a selectable WebGL graph under the served C
   expect(await surface.locator("canvas").evaluateAll(items => items.some(canvas =>
     canvas instanceof HTMLCanvasElement && (canvas.getContext("webgl2") || canvas.getContext("webgl"))))).toBe(true);
   await expect(page.getByRole("button", {name:"Explore Synthetic vault catalog"})).toBeVisible();
-  await expect(page.getByRole("combobox", {name:"Area",exact:true}).getByRole("option", {name:"security", exact:true})).toHaveCount(1);
+  await expect(page.getByRole("combobox", {name:"Area",exact:true}).getByRole("option", {name:"Area: security", exact:true})).toHaveCount(1);
   await page.getByRole("button", {name:"Explore Infrastructure", exact:true}).click();
   await expect(page.getByRole("button", {name:"Back to global graph"})).toBeVisible();
   await expect(surface).toBeVisible();
@@ -61,7 +61,7 @@ test("the public graph stays navigable without WebGL and omits restricted notes"
   expect(data).not.toContain("fixture-vault-catalog");
   await expect(page.locator("[data-renderer='fallback']")).toBeVisible();
   await expect(page.locator("body")).not.toContainText("Synthetic vault catalog");
-  await expect(page.getByRole("combobox",{name:"Area",exact:true}).getByRole("option", {name:"security", exact:true})).toHaveCount(0);
+  await expect(page.getByRole("combobox",{name:"Area",exact:true}).getByRole("option", {name:"Area: security", exact:true})).toHaveCount(0);
   await page.setViewportSize({width:390,height:844});
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   const explore = page.getByRole("button", {name:"Explore Infrastructure",exact:true});

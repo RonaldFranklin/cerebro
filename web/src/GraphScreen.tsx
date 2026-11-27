@@ -99,14 +99,21 @@ export default function GraphScreen({api}: {api: ApiClient}) {
   const source = local ? nearby : catalog;
   const graph = useMemo(() => source.data && filterGraph(source.data, view.filters), [source.data, view.filters]);
   const legend = useMemo(() => [...new Set(graph?.nodes.map(node => node[view.colorBy]))].sort(), [graph, view.colorBy]);
-  // Colors come from every visible value, so filtering never recolors what stays.
+  // Colors come from every visible value, so filtering never recolors what stays. The shown graph joins the domain
+  // because a neighborhood can answer before, or without, the catalog.
   const colorOf = useMemo(() => {
-    const domain = catalog.data?.nodes.map(node => node[view.colorBy]) ?? [];
+    const domain = [...catalog.data?.nodes ?? [], ...source.data?.nodes ?? []].map(node => node[view.colorBy]);
     return (value: string) => colorFor(value, domain);
-  }, [catalog.data, view.colorBy]);
+  }, [catalog.data, source.data, view.colorBy]);
   const visibleIds = useMemo(() => new Set(catalog.data?.nodes.map(node => node.id)), [catalog.data]);
   const chosen = graph?.nodes.find(node => node.id === selected);
-  const select = useCallback((id: string) => setWorkspace(current => ({...current, selected: id})), []);
+  // Each selection by the owner moves focus to the panel once, which also scrolls it into view.
+  const [reveal, setReveal] = useState(false);
+  const revealed = useCallback(() => setReveal(false), []);
+  const select = useCallback((id: string) => {
+    setWorkspace(current => ({...current, selected: id}));
+    setReveal(true);
+  }, []);
   const center = local && graph?.nodes.find(node => node.id === local.center);
   useEffect(() => { client.setQueryData(graphState, workspace); }, [client, workspace]);
   function changeView(next: View) {
@@ -132,8 +139,8 @@ export default function GraphScreen({api}: {api: ApiClient}) {
         return <label key={key}><span className="visually-hidden">{name}</span>
           <select value={view.filters[key]} onChange={event => changeView({...view, filters: {...view.filters, [key]: event.target.value}})}>
             <option value="">{name}: all</option>
-            {view.filters[key] && !options[key].includes(view.filters[key]) && <option>{view.filters[key]}</option>}
-            {options[key].map(value => <option translate="no" key={value}>{value}</option>)}
+            {view.filters[key] && !options[key].includes(view.filters[key]) && <option value={view.filters[key]}>{name}: {view.filters[key]}</option>}
+            {options[key].map(value => <option translate="no" key={value} value={value}>{name}: {value}</option>)}
           </select>
         </label>;
       })}
@@ -146,7 +153,7 @@ export default function GraphScreen({api}: {api: ApiClient}) {
       {local && <fieldset><legend>Neighborhood depth</legend>{([1, 2] as const).map(hops =>
         <label key={hops}><input type="radio" name="depth" checked={local.hops === hops} onChange={() =>
           setWorkspace({...workspace, local: {...local, hops}})}/>{hops === 1 ? "1 hop" : "2 hops"}</label>)}</fieldset>}
-      {local && <button type="button" className="graph-action" onClick={back}>Back to global graph</button>}
+      {local && <button type="button" onClick={back}>Back to global graph</button>}
     </div>
     {local && catalog.isError && <p role="alert">Filter options are unavailable. <button onClick={() => void catalog.refetch()}>Retry filters</button></p>}
     {source.isError ? <p role="alert">{local ? "Neighborhood is unavailable." : "Graph is unavailable."} <button onClick={() => void source.refetch()}>Retry</button></p> :
@@ -163,15 +170,15 @@ export default function GraphScreen({api}: {api: ApiClient}) {
         </div>}
       </section>
       <NotePanel api={api} note={chosen} color={chosen && colorOf(chosen[view.colorBy])} history={view.history}
-        visibleIds={visibleIds} onExplore={explore}/>
+        visibleIds={visibleIds} reveal={reveal} onRevealed={revealed} onExplore={local?.center === chosen?.id ? undefined : explore}/>
       <section className="graph-list" aria-labelledby="graph-notes"><h2 id="graph-notes">Notes</h2>
         {graph.edges.length > 0 && <Connections graph={graph}/>}
         <ul>{graph.nodes.map(node => <li key={node.id}>
           <Dot color={colorOf(node[view.colorBy])}/><div><a href={notePath(node.id, view.history)}>{node.title}</a>
             <span translate="no">{node.area} · {node.priority}</span></div>
-          <button type="button" className="graph-action graph-select" aria-label={`Select ${node.title}`}
-            aria-pressed={node.id === selected} onClick={() => select(node.id)}>Select</button>
-          <button type="button" className="graph-action" aria-label={`Explore ${node.title}`} onClick={() => explore(node.id)}>Explore</button>
+          <button type="button" className="graph-select" aria-label={`Select ${node.title}`}
+            aria-current={node.id === selected ? "true" : undefined} onClick={() => select(node.id)}>Select</button>
+          <button type="button" aria-label={`Explore ${node.title}`} onClick={() => explore(node.id)}>Explore</button>
         </li>)}</ul>
       </section></div>}
   </article>;
