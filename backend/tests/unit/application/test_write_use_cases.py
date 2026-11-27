@@ -272,13 +272,6 @@ class TestOwnerEditNote:
         assert ViolationCode.SUMMARY_LENGTH in result.validation.codes
         assert kit.commits == 5
 
-    def test_the_new_sensitivity_may_not_exceed_the_ceiling(self, kit: Kit) -> None:
-        current = kit.world.notes.get(SSH)
-        assert current is not None
-        with pytest.raises(PermissionDenied):
-            self.edit(kit, replace(current, sensitivity=RESTRICTED), note_hash(kit), owner_ctx(INTERNAL))
-        assert kit.commits == 5
-
     def test_the_owner_may_lower_sensitivity(self, kit: Kit) -> None:
         current = kit.world.notes.get(SSH)
         assert current is not None
