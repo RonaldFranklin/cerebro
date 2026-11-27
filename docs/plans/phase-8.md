@@ -21,4 +21,4 @@ independent review, and keeps backend and browser tests green.
 
 | Step | Pull request | State |
 |---|---|---|
-| 1 | | Implemented and tested; awaiting owner review |
+| 1 | #107 | Implemented, tested and independently reviewed; awaiting owner review |

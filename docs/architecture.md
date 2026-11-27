@@ -202,9 +202,9 @@ Workstation                                    Server (docker compose: cerebro-<
 │ Claude Code       │                          │ backend container                         │
 │ Browser (owner)   │── Tailscale (HTTPS) ────▶│   private listener  (ceiling: restricted) │
 └───────────────────┘                          │   public listener   (ceiling: configured) │
-any authorized agent ── Cloudflare Tunnel ────▶│ cloudflared ──▶ public listener only      │
-  (URL + bearer)        Access: UI only,       │ web (static, served by the backend)       │
-                        /mcp bypassed          └──────────────────────────────────────────┘
+owner browser, agents ─ Cloudflare Tunnel ────▶│ cloudflared ──▶ public listener only      │
+  UI: Access + password  Access: UI only,      │ web (static, served by the backend)       │
+  /mcp: bearer token     /mcp bypassed         └──────────────────────────────────────────┘
                                                  volumes: content repo (git), state (sqlite),
                                                           secrets (Fernet key)
 ```
@@ -217,7 +217,7 @@ any authorized agent ── Cloudflare Tunnel ────▶│ cloudflared ─
   revoked). The signed-in owner's browser is `restricted` there too, with edits, history and health
   ([ADR-0029](adr/0029-owner-browser-full-access-on-public-listener.md));
   Cérebro does not verify Access, so it is a deployment requirement.
-- The listener a request arrived on sets the maximum ceiling; the agent token can only lower it.
+- For tokens, the listener a request arrived on sets the maximum ceiling; the agent token can only lower it.
   See [ADR-0005](adr/0005-sensitivity-and-access-ceiling.md) and
   [ADR-0010](adr/0010-network-access.md).
 
@@ -311,7 +311,7 @@ an error naming its path and version, and is never deleted, upgraded or repaired
   color by area or type (toggle), filters by priority/status/area/sensitivity, local graph (N hops) on click.
 - **Reader:** notes rendered as real HTML with `lang` set so browser translation works. Code blocks, inline
   code, paths, commands, note ids and links carry `translate="no"`.
-- **Recent changes:** the private, restricted owner session sees who changed each note, when, and a bounded
+- **Recent changes:** a restricted owner session sees who changed each note, when, and a bounded
   diff. History reads require visibility of the current note and both sides of an edit. Links in historical
   content receive the same visibility protection as links in the reader.
 - **Editor (owner):** CodeMirror 6 with `[[link]]` autocomplete; saves go through `OwnerEditNote`.
