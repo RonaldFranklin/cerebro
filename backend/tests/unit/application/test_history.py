@@ -5,7 +5,7 @@ import pytest
 from cerebro.application.errors import PermissionDenied
 from cerebro.application.history import MAX_DIFF_CHARS, ChangeDetail, ChangeUnavailable, HistoryRequest
 from cerebro.application.use_cases.history import OwnerHistory
-from cerebro.domain.enums import Sensitivity
+from cerebro.domain.enums import Sensitivity, Status
 from cerebro.domain.note import NoteId
 from tests.fakes.history import FakeHistory
 from tests.unit.application.world import ctx, standard_world
@@ -58,6 +58,39 @@ def test_an_unreadable_version_is_left_out_of_the_list_and_unavailable_in_detail
     assert history.list(ctx(owner=True)).changes == ()
     with pytest.raises(ChangeUnavailable):
         history.detail(HistoryRequest(port.revision), ctx(owner=True))
+
+
+@pytest.mark.parametrize(
+    ("before", "after", "operation"),
+    [
+        (Status.CURRENT, Status.SUPERSEDED, "superseded"),
+        (Status.ARCHIVED, Status.SUPERSEDED, "superseded"),
+        (Status.SUPERSEDED, Status.SUPERSEDED, "update"),
+        (Status.SUPERSEDED, Status.CURRENT, "update"),
+        (Status.CURRENT, Status.ARCHIVED, "update"),
+    ],
+)
+def test_a_change_that_supersedes_a_note_is_reported_as_superseded(
+    before: Status, after: Status, operation: str
+) -> None:
+    world = standard_world()
+    base = make_note(id=NoteId("server-ssh-access"), sensitivity=Sensitivity.INTERNAL)
+    replaced = NoteId("gone-note")
+    old = replace(base, status=before, superseded_by=replaced if before is Status.SUPERSEDED else None)
+    new = replace(base, status=after, superseded_by=replaced if after is Status.SUPERSEDED else None, body="Next.")
+    port = FakeHistory(old, new)
+    history = OwnerHistory(world.notes, port)
+    owner = ctx(owner=True)
+    assert [row.operation for row in history.list(owner).changes] == [operation]
+    assert history.detail(HistoryRequest(port.revision), owner).change.operation == operation
+
+
+def test_a_note_created_already_superseded_is_reported_as_created() -> None:
+    world = standard_world()
+    base = make_note(id=NoteId("server-ssh-access"), sensitivity=Sensitivity.INTERNAL)
+    created = replace(base, status=Status.SUPERSEDED, superseded_by=NoteId("gone-note"))
+    history = OwnerHistory(world.notes, FakeHistory(None, created))
+    assert [row.operation for row in history.list(ctx(owner=True)).changes] == ["create"]
 
 
 def _detail(before_body: str, after_body: str) -> ChangeDetail:

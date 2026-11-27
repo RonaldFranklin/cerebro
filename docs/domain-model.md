@@ -363,7 +363,8 @@ the expected hash during apply. A concurrent update against the same base can su
 A committed change is durable even if a derived index needs rebuilding.
 
 The owner's Recent changes view reads git history. It shows the authenticated writer, time, note
-and bounded diff. Exposing a change requires visibility of the current note and all note versions represented
+and bounded diff. A change whose new version is `superseded`, and whose previous version was not, is reported as
+`superseded`. Exposing a change requires visibility of the current note and all note versions represented
 in the diff, including the parent version for updates. Historical data receives the same link redaction as
 current content. Only commits with a valid `Written-by` trailer are listed: an agent name, or `owner` for an
 owner edit, which always updates an existing note ([ADR-0023](adr/0023-no-legacy-compatibility.md)). Any other
