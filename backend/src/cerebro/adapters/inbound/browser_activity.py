@@ -10,6 +10,8 @@ import asyncio
 import contextlib
 import json
 from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor
+from functools import partial
 from typing import Final
 
 from starlette.requests import Request
@@ -43,8 +45,14 @@ def _frame(event: ActivityEvent) -> bytes:
 
 
 async def _disconnected(receive: Receive) -> None:
-    while (await receive())["type"] != "http.disconnect":
-        pass
+    # A receive channel that fails is a lost client too.
+    with contextlib.suppress(Exception):
+        while (await receive())["type"] != "http.disconnect":
+            pass
+
+
+STREAM_WORKERS: Final = 2
+"""Session and visibility checks of a listener's streams share these threads, never the ones that serve agents."""
 
 
 def activity_stream(
@@ -63,6 +71,10 @@ def activity_stream(
     """``api`` with the activity stream of one listener in front of it."""
     cookie = COOKIE_NAMES[binding.listener]
     open_streams = 0
+    workers = ThreadPoolExecutor(max_workers=STREAM_WORKERS, thread_name_prefix="activity-stream")
+
+    async def work[Result](call: Callable[[], Result]) -> Result:
+        return await asyncio.get_running_loop().run_in_executor(workers, call)
 
     async def app(scope: Scope, receive: Receive, send: Send) -> None:
         nonlocal open_streams
@@ -78,7 +90,7 @@ def activity_stream(
             session_id = session_cookie(Request(scope), cookie)
             if not session_id:
                 raise AuthenticationFailed()
-            await asyncio.to_thread(auth.check, binding, session_id)
+            await work(lambda: auth.check(binding, session_id))
         except AuthenticationFailed:
             await refuse(401, "Authentication required.")
             return
@@ -90,7 +102,11 @@ def activity_stream(
             await refuse(403, "Access denied.")
         elif scope["method"] != "GET":
             await refuse(405, "Method not allowed.")
-        elif scope["query_string"]:
+        elif (
+            scope["query_string"]
+            or "transfer-encoding" in (headers := Request(scope).headers)
+            or headers.get("content-length", "0") != "0"
+        ):
             await refuse(422, "Invalid request.")
         elif open_streams >= MAX_STREAMS:
             await refuse(429, "Too many open streams.")
@@ -115,9 +131,22 @@ def activity_stream(
         async def write(body: bytes) -> None:
             await send({"type": "http.response.body", "body": body, "more_body": True})
 
+        async def deliver(events: tuple[ActivityEvent, ...]) -> bool:
+            """Send what is visible now; false once the session has ended."""
+            for event in events:
+                if not await session_open():
+                    return False
+                request = VisibleActivityRequest(event=event)
+                if await work(partial(visible.execute, request, ctx)):
+                    # Checked again: the session may have ended while the note was being read.
+                    if not await session_open():
+                        return False
+                    await write(_frame(event))
+            return True
+
         async def session_open() -> bool:
             try:
-                await asyncio.to_thread(auth.check, binding, session_id)
+                await work(lambda: auth.check(binding, session_id))
             except Exception:
                 return False
             return True
@@ -136,19 +165,16 @@ def activity_stream(
                     await write(b": keep-alive\n\n")
                     next_tick += tick
                 woken.clear()
-                events = subscription.take()
-                if events:
-                    if not await session_open():
+                if events := subscription.take():
+                    if not await deliver(events):
                         break
-                    for event in events:
-                        request = VisibleActivityRequest(event=event)
-                        if await asyncio.to_thread(visible.execute, request, ctx):
-                            await write(_frame(event))
                     continue
                 wait = max(0.0, min(poll, next_tick - loop.time(), started + max_age - loop.time()))
                 waiter = asyncio.ensure_future(woken.wait())
-                await asyncio.wait({waiter, gone}, timeout=wait, return_when=asyncio.FIRST_COMPLETED)
-                waiter.cancel()
+                try:
+                    await asyncio.wait({waiter, gone}, timeout=wait, return_when=asyncio.FIRST_COMPLETED)
+                finally:
+                    waiter.cancel()
         except Exception as error:
             log_failure("activity stream", error)
         finally:

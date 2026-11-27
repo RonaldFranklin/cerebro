@@ -69,7 +69,7 @@ function Connections({graph}: {graph: GraphData}) {
 
 export default function GraphScreen({api, live}: {api: ApiClient; live: boolean}) {
   const activity = useLiveActivity(live);
-  const now = useNow(1000);
+  const now = useNow(live ? 1000 : null);
   // Notes an agent touched moments ago. The text key keeps the set's identity while its members stay.
   const activeKey = [...new Set(activity.events.filter(event => now - new Date(event.at).getTime() < ACTIVE_FOR)
     .map(event => event.note_id))].sort().join(" ");

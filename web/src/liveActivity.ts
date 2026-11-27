@@ -61,10 +61,11 @@ export function useLiveActivity(enabled: boolean) {
 /** How long an event keeps its note highlighted in the graph. */
 export const ACTIVE_FOR = 10_000;
 
-/** The current time, renewed every ``interval`` while mounted. */
-export function useNow(interval: number) {
+/** The current time, renewed every ``interval`` while mounted; ``null`` stops the clock. */
+export function useNow(interval: number | null) {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
+    if (interval === null) return;
     setNow(Date.now());
     const timer = window.setInterval(() => setNow(Date.now()), interval);
     return () => window.clearInterval(timer);
