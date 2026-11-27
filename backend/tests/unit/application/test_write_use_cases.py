@@ -144,16 +144,23 @@ class TestOwnerEditNote:
             self.edit(kit, replace(current, body="mine\n"), stale)
         assert kit.commits == commits
 
-    def test_missing_and_hidden_notes_are_not_found(self, kit: Kit) -> None:
+    def test_a_missing_note_is_not_found(self, kit: Kit) -> None:
         current = kit.world.notes.get(SSH)
         assert current is not None
         ghost = replace(current, id=NID("ghost-note"))
         with pytest.raises(NoteNotFound):
             self.edit(kit, ghost, "a" * 64)
-        hidden = kit.world.notes.get(NID("vault-layout"))
-        assert hidden is not None
-        with pytest.raises(NoteNotFound):
-            self.edit(kit, hidden, content_hash(hidden), owner_ctx(PUBLIC))
+
+    @pytest.mark.parametrize("level", [PUBLIC, INTERNAL])
+    def test_an_owner_below_restricted_edits_nothing(self, kit: Kit, level: Sensitivity) -> None:
+        current = kit.world.notes.get(SSH)
+        assert current is not None
+        commits = kit.commits
+        # Refused before the note is looked up: a visible note and an absent one answer alike.
+        for note in (replace(current, body="Edited.\n"), replace(current, id=NID("ghost-note"))):
+            with pytest.raises(PermissionDenied):
+                self.edit(kit, note, note_hash(kit), owner_ctx(level))
+        assert kit.commits == commits
 
     @pytest.mark.parametrize("where", ["title", "summary", "body"])
     def test_secrets_in_frontmatter_and_body_are_errors(self, kit: Kit, where: str) -> None:
@@ -263,13 +270,6 @@ class TestOwnerEditNote:
         result = self.edit(kit, replace(current, summary="short"), note_hash(kit))
         assert result.revision is None
         assert ViolationCode.SUMMARY_LENGTH in result.validation.codes
-        assert kit.commits == 5
-
-    def test_the_new_sensitivity_may_not_exceed_the_ceiling(self, kit: Kit) -> None:
-        current = kit.world.notes.get(SSH)
-        assert current is not None
-        with pytest.raises(PermissionDenied):
-            self.edit(kit, replace(current, sensitivity=RESTRICTED), note_hash(kit), owner_ctx(INTERNAL))
         assert kit.commits == 5
 
     def test_the_owner_may_lower_sensitivity(self, kit: Kit) -> None:
