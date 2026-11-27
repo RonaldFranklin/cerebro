@@ -115,6 +115,10 @@ def browser_api(auth: BrowserAuth, binding: BrowserBinding, ceiling: AccessCeili
         if len(request.scope["query_string"]) > 8192:
             return _error(422, "Invalid request.")
         path = request.scope["path"]
+        # The rules below compare the decoded path, while the router's end anchor also matches before a final line
+        # break. No route or note id contains a control character, so such a path is refused before either sees it.
+        if any(ord(char) < 32 or ord(char) == 127 for char in path):
+            return _error(422, "Invalid request.")
         if path in _SESSION_PATHS and request.scope["query_string"]:
             return _error(422, "Invalid request.")
         session_id = _session_cookie(request, cookie_name)
