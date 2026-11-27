@@ -95,7 +95,18 @@ def test_two_https_origins_share_service_but_isolate_sessions(
                 assert status == 200
                 full = ceilings[port] == "restricted"
                 assert (VAULT_ID.value in {node["id"] for node in json.loads(graph)["nodes"]}) == full
-                assert request(client, port, "GET", "/api/health", forwarded)[0] == (200 if full else 403)
+                status, _, body = request(client, port, "GET", "/api/health", forwarded)
+                assert status == (200 if full else 403)
+                if full:
+                    assert json.loads(body)["listeners"] == [
+                        {"name": "private", "mcp_ceiling": "restricted", "browser_ceiling": "restricted"},
+                        {"name": "public", "mcp_ceiling": mcp_ceiling or "internal", "browser_ceiling": expected},
+                    ]
+                    # Configuration only: no origin, address or port.
+                    assert str(private_port).encode() not in body
+                    assert b"localhost" not in body
+                else:
+                    assert b"listeners" not in body
                 assert request(client, port, "GET", "/api/changes", forwarded)[0] == (200 if full else 403)
             # Owner edits on the public listener need its own origin and CSRF token, and the opt-in to get further.
             note = f"/api/notes/{VAULT_ID.value}"

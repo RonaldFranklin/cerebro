@@ -466,6 +466,9 @@ class HealthReportResult:
     notes_checked: int
     search_index_checked: bool
     """False when the repository has more notes than one search page can list: only the graph index was compared."""
+    checked_at: datetime
+    revision: str | None
+    """The content revision read after the scan; ``None`` without commits or when the files could not be scanned."""
 
     @property
     def errors(self) -> tuple[HealthIssue, ...]:

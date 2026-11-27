@@ -63,6 +63,7 @@ class HealthReport:
         require_owner(ctx, "read the health report")
         if ctx.ceiling.level is not Sensitivity.RESTRICTED:
             raise PermissionDenied("read the health report below the restricted ceiling")
+        checked_at = self._clock.now()
         issues = [
             HealthIssue(
                 subject=name,
@@ -88,8 +89,12 @@ class HealthReport:
                 ),
                 notes_checked=0,
                 search_index_checked=False,
+                checked_at=checked_at,
+                # A repository that cannot be scanned may not answer for its revision either: do not ask.
+                revision=None,
             )
         notes = scan.notes
+        revision = self._notes.head()
         now = self._clock.now()
         issues.extend(map(_file_issue, scan.problems))
         issues.extend(self._note_issues(notes))
@@ -120,6 +125,8 @@ class HealthReport:
             issues=tuple(issues),
             notes_checked=len(notes),
             search_index_checked=search_checked,
+            checked_at=checked_at,
+            revision=revision,
         )
 
     def _note_issues(self, notes: tuple[Note, ...]) -> Iterable[HealthIssue]:

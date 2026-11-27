@@ -58,6 +58,7 @@ def editor(tmp_path: Path, request: pytest.FixtureRequest) -> Iterator[tuple[Tes
             get_neighbors=cases.get_neighbors,
             get_graph=cases.get_graph,
             health_report=cases.health_report,
+            listeners=(),
         ),
     )
     install_browser_edit(app, cases.owner_edit_note)

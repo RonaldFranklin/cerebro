@@ -1,8 +1,19 @@
 """Allowlisted response schemas and projections shared by the read adapters."""
 
+from collections.abc import Sequence
+from dataclasses import dataclass
 from typing import NotRequired, TypedDict
 
-from cerebro.application.dto import HealthReportResult, HubMember, NoteSummary, NoteView, Overview, SearchResults
+from cerebro.application.dto import (
+    HealthCode,
+    HealthReportResult,
+    HubMember,
+    NoteSummary,
+    NoteView,
+    Overview,
+    SearchResults,
+)
+from cerebro.domain.access import AccessCeiling
 
 
 class Summary(TypedDict):
@@ -93,6 +104,48 @@ class HealthResponse(TypedDict):
     notes_checked: int
     search_index_checked: bool
     issues: list[HealthIssue]
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class ListenerCeilings:
+    """One started listener, from configuration only: no origin, address or port."""
+
+    name: str
+    mcp: AccessCeiling
+    browser: AccessCeiling
+
+
+class ContentView(TypedDict):
+    revision: str | None
+    state: str
+
+
+class ListenerView(TypedDict):
+    name: str
+    mcp_ceiling: str
+    browser_ceiling: str
+
+
+class BrowserHealthResponse(HealthResponse):
+    """The browser also reports when and what was checked, and the configured entrances."""
+
+    checked_at: str
+    content: ContentView
+    listeners: list[ListenerView]
+
+
+def browser_health_view(report: HealthReportResult, listeners: Sequence[ListenerCeilings]) -> BrowserHealthResponse:
+    file_problems = {HealthCode.NOTE_FILE_EXCLUDED, HealthCode.NOTE_FILE_BLOCKING}
+    attention = any(issue.code in file_problems for issue in report.issues)
+    return {
+        **health_view(report),
+        "checked_at": report.checked_at.isoformat(),
+        "content": {"revision": report.revision, "state": "attention" if attention else "clean"},
+        "listeners": [
+            {"name": item.name, "mcp_ceiling": item.mcp.level.value, "browser_ceiling": item.browser.level.value}
+            for item in listeners
+        ],
+    }
 
 
 def _summary(note: NoteSummary | HubMember) -> Summary:

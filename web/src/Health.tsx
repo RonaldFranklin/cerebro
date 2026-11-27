@@ -12,6 +12,9 @@ interface HealthReport {
   notes_checked: number;
   search_index_checked: boolean;
   issues: Finding[];
+  checked_at: string;
+  content: {revision: string | null; state: "clean" | "attention"};
+  listeners: {name: "private" | "public"; mcp_ceiling: string; browser_ceiling: string}[];
 }
 
 const descriptions: Record<string,string> = {
@@ -43,7 +46,8 @@ function cards(report: HealthReport): Card[] {
     !differs && !checked ? {id, name, value: "Not checked", detail: "Compared with the content repository", tone: "warning"}
       : {id, name, value: differs ? other : same, detail: "Compared with the content repository", tone: differs ? "error" : "ok"};
   const quarantined = report.issues.filter(issue => issue.code === "changes_quarantined").length;
-  const files = codes.has("note_file_blocking") || codes.has("note_file_excluded");
+  const files = report.content.state === "attention";
+  const head = report.content.revision ? `HEAD ${report.content.revision.slice(0, 7)}` : "Revision unavailable";
   return [
     index("revision", "Repository revision", codes.has("index_stale"), ["Matches indexes", "Out of date"], !unread),
     index("graph", "Graph index", codes.has("graph_index_stale"), ["Entries match", "Entries differ"], !blocked),
@@ -51,7 +55,7 @@ function cards(report: HealthReport): Card[] {
       report.search_index_checked),
     {id: "content", name: "Content repository", value: files ? "Needs attention" : "Clean", tone: files ? "error" : "ok",
       // About the files only: content findings are listed below and set the overall status.
-      detail: `${report.notes_checked} ${report.notes_checked === 1 ? "note" : "notes"} checked${files ? "" : " · all files committed and valid"}`},
+      detail: `${head} · ${report.notes_checked} ${report.notes_checked === 1 ? "note" : "notes"} checked${files ? "" : " · all files committed and valid"}`},
     {id: "quarantine", name: "Quarantine", tone: quarantined ? "warning" : "ok",
       value: quarantined ? `${quarantined} ${quarantined === 1 ? "folder" : "folders"}` : "None",
       detail: quarantined ? "Plaintext — review and remove by hand" : "No uncommitted changes were set aside"},
@@ -59,6 +63,21 @@ function cards(report: HealthReport): Card[] {
 }
 
 const checkedFormat = new Intl.DateTimeFormat("en", {hour: "2-digit", minute: "2-digit", hourCycle: "h23", timeZoneName: "short"});
+
+function Ceiling({label, value}: {label: string; value: string}) {
+  return <p>{label} <strong translate="no" data-tone={value === "restricted" ? "warning" : undefined}>{value}</strong></p>;
+}
+
+/** The configured entrances. Cérebro cannot see what protects them, so nothing is said about that. */
+function Entrances({listeners}: {listeners: HealthReport["listeners"]}) {
+  return <section className="health-entrances" aria-labelledby="entrances-title"><h2 id="entrances-title">Entrances</h2>
+    <ul>{listeners.map(listener => <li key={listener.name}>
+      <h3>{listener.name === "private" ? "Private" : "Public"}</h3>
+      <Ceiling label="MCP ceiling" value={listener.mcp_ceiling}/>
+      <Ceiling label="Owner browser" value={listener.browser_ceiling}/>
+    </li>)}</ul>
+  </section>;
+}
 
 export function HealthScreen({api}: {api:ApiClient}) {
   const report = useQuery({queryKey:["health"],queryFn:({signal})=>api.read<HealthReport>("/api/health",signal)});
@@ -81,7 +100,7 @@ export function HealthScreen({api}: {api:ApiClient}) {
   return <article className="health-view">
     <header className="health-heading"><div className="health-title"><h1>Health</h1>
       <strong className="health-pill" data-tone={tone}>{summary}</strong></div>
-      <p>Checked <time dateTime={new Date(report.dataUpdatedAt).toISOString()}>{checkedFormat.format(report.dataUpdatedAt)}</time></p>
+      <p>Checked <time dateTime={data.checked_at}>{checkedFormat.format(new Date(data.checked_at))}</time></p>
       <button type="button" disabled={report.isFetching} onClick={()=>{void report.refetch(); void graph.refetch();}}>
         {report.isFetching ? "Refreshing…" : "Refresh report"}</button></header>
     <section className="health-cards" aria-label="Report summary">
@@ -89,6 +108,7 @@ export function HealthScreen({api}: {api:ApiClient}) {
         <h2>{card.name}</h2><strong>{card.value}</strong><p>{card.detail}</p></div>)}
     </section>
     {!data.search_index_checked && data.notes_checked > 0 && !data.issues.some(issue => issue.code === "note_file_blocking") && <p className="health-note">The repository exceeds the search comparison limit.</p>}
+    <Entrances listeners={data.listeners}/>
     <section className="health-findings"><header><div><h2>Findings</h2><p>{errors} {errors === 1 ? "error" : "errors"} · {warnings} {warnings === 1 ? "warning" : "warnings"}</p></div>
       <label>Severity <select value={severity} onChange={event=>setSeverity(event.target.value)}>
         <option value="all">All severities</option><option value="error">Errors</option><option value="warning">Warnings</option>

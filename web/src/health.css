@@ -16,6 +16,13 @@
 .health-cards p { color: var(--muted); font-size: .82rem; line-height: 1.45; }
 .health-cards > div[data-tone="warning"], .health-cards > div[data-tone="error"] { background: color-mix(in srgb, var(--tone) 8%, var(--surface)); border-color: color-mix(in srgb, var(--tone) 45%, transparent); }
 .health-cards > div:is([data-tone="warning"], [data-tone="error"]) :is(h2, strong) { color: var(--tone); }
+.health-entrances { margin-top: 2rem; }
+.health-entrances ul { display: grid; grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr)); gap: .9rem; margin: .9rem 0 0; padding: 0; list-style: none; }
+.health-entrances li { padding: 1.1rem 1.2rem; background: var(--surface); border: 1px solid var(--line); border-radius: .75rem; }
+.health-entrances h3 { font-size: 1rem; }
+.health-entrances p { margin-top: .5rem; color: var(--muted); font-size: .88rem; }
+.health-entrances strong { color: var(--text); font-weight: 500; }
+.health-entrances strong[data-tone="warning"] { color: var(--amber); }
 .health-findings { margin-top: 2rem; }
 .health-findings header p { margin-top: .3rem; font-size: .88rem; }
 .health-findings select { margin-left: .4rem; padding: .5rem; border: 1px solid var(--line-strong); border-radius: .4rem; color: var(--text); background: var(--surface); }

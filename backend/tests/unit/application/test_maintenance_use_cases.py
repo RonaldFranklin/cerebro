@@ -406,6 +406,30 @@ class TestHealthReport:
         assert report.ok
         assert (report.notes_checked, report.search_index_checked) == (3, True)
 
+    def test_the_report_says_when_it_was_made_and_of_which_revision(self) -> None:
+        kit = HealthKit()
+        report = kit.run()
+        assert report.checked_at == kit.clock.now()
+        assert report.revision == kit.world.notes.head()
+
+    def test_a_repository_that_cannot_be_read_is_still_reported_without_asking_for_its_revision(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        kit = HealthKit()
+
+        def unreadable() -> None:
+            raise NoteReadError(problems=[("notes", "cannot be listed")])
+
+        def broken_history() -> None:
+            raise RuntimeError("git refused the checkout")
+
+        monkeypatch.setattr(kit.world.notes, "scan", unreadable)
+        monkeypatch.setattr(kit.world.notes, "head", broken_history)
+        report = kit.run()
+        assert (report.notes_checked, report.revision) == (0, None)
+        assert report.checked_at == kit.clock.now()
+        assert HealthCode.NOTE_FILE_BLOCKING in codes(report)
+
     def test_problem_files_are_listed_and_the_other_notes_still_checked(self) -> None:
         kit = HealthKit()
         kit.world.notes.problems.append(FileProblem("notes/broken.md", "invalid frontmatter", stable=True))
