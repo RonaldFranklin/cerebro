@@ -24,7 +24,7 @@ exist only with `--public-browser-ceiling restricted`. None is reachable through
 | Field | Source |
 |---|---|
 | `checked_at` | server clock |
-| `content.revision` | repository `head()` |
+| `content.revision` | repository `head()` after a successful scan; empty otherwise |
 | `content.state` | `clean`, or `attention` when the report lists excluded or blocking note files |
 | `listeners` | for each started listener: `name` (`private`, `public`), MCP ceiling, browser ceiling |
 

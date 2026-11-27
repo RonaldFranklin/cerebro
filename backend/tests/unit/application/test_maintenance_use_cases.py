@@ -412,7 +412,7 @@ class TestHealthReport:
         assert report.checked_at == kit.clock.now()
         assert report.revision == kit.world.notes.head()
 
-    def test_a_report_of_files_that_cannot_be_scanned_still_names_the_revision(
+    def test_a_repository_that_cannot_be_read_is_still_reported_without_asking_for_its_revision(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         kit = HealthKit()
@@ -420,10 +420,15 @@ class TestHealthReport:
         def unreadable() -> None:
             raise NoteReadError(problems=[("notes", "cannot be listed")])
 
+        def broken_history() -> None:
+            raise RuntimeError("git refused the checkout")
+
         monkeypatch.setattr(kit.world.notes, "scan", unreadable)
+        monkeypatch.setattr(kit.world.notes, "head", broken_history)
         report = kit.run()
-        assert (report.notes_checked, report.revision) == (0, kit.world.notes.head())
+        assert (report.notes_checked, report.revision) == (0, None)
         assert report.checked_at == kit.clock.now()
+        assert HealthCode.NOTE_FILE_BLOCKING in codes(report)
 
     def test_problem_files_are_listed_and_the_other_notes_still_checked(self) -> None:
         kit = HealthKit()

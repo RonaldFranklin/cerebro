@@ -49,7 +49,7 @@ class BrowserReads:
     get_neighbors: ContextUseCase[GetNeighborsRequest, GraphView]
     get_graph: ContextUseCase[GetGraphRequest, GraphView]
     health_report: ContextUseCase[HealthReportRequest, HealthReportResult]
-    listeners: tuple[ListenerCeilings, ...] = ()
+    listeners: tuple[ListenerCeilings, ...]
 
 
 class Parameters(BaseModel):

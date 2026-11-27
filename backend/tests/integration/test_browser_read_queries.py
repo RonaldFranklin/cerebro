@@ -35,7 +35,13 @@ def api() -> Iterator[TestClient]:
     install_browser_reads(
         app,
         BrowserReads(
-            get_overview=stub, search_notes=stub, read_note=stub, get_graph=stub, get_neighbors=stub, health_report=stub
+            get_overview=stub,
+            search_notes=stub,
+            read_note=stub,
+            get_graph=stub,
+            get_neighbors=stub,
+            health_report=stub,
+            listeners=(),
         ),
     )
     with TestClient(app, base_url=ORIGIN) as client:

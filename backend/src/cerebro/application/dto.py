@@ -468,7 +468,7 @@ class HealthReportResult:
     """False when the repository has more notes than one search page can list: only the graph index was compared."""
     checked_at: datetime
     revision: str | None
-    """The content revision when the report started; ``None`` for a repository without commits."""
+    """The content revision read after the scan; ``None`` without commits or when the files could not be scanned."""
 
     @property
     def errors(self) -> tuple[HealthIssue, ...]:

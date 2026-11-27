@@ -51,6 +51,7 @@ def service(tmp_path_factory: pytest.TempPathFactory) -> Iterator[Service]:
         get_graph=cases.get_graph,
         get_neighbors=cases.get_neighbors,
         health_report=cases.health_report,
+        listeners=(),
     )
     with ExitStack() as stack:
         clients = []

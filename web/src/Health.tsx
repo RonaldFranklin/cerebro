@@ -47,7 +47,7 @@ function cards(report: HealthReport): Card[] {
       : {id, name, value: differs ? other : same, detail: "Compared with the content repository", tone: differs ? "error" : "ok"};
   const quarantined = report.issues.filter(issue => issue.code === "changes_quarantined").length;
   const files = report.content.state === "attention";
-  const head = report.content.revision ? `HEAD ${report.content.revision.slice(0, 7)}` : "No commit";
+  const head = report.content.revision ? `HEAD ${report.content.revision.slice(0, 7)}` : "Revision unavailable";
   return [
     index("revision", "Repository revision", codes.has("index_stale"), ["Matches indexes", "Out of date"], !unread),
     index("graph", "Graph index", codes.has("graph_index_stale"), ["Entries match", "Entries differ"], !blocked),
