@@ -3,7 +3,7 @@ import { test } from "./fixture";
 
 async function signIn(page: Page, origin: string, password: string) {
   await page.goto(origin + "/graph");
-  const input = page.getByLabel("Password", {exact:true});
+  const input = page.getByLabel("Owner password", {exact:true});
   await input.fill(password);
   await input.press("Enter");
   await expect(page.getByRole("heading", {name:"Graph", exact:true})).toBeVisible();
@@ -39,8 +39,9 @@ test("the production worker lays out a selectable WebGL graph under the served C
   await expect(page.getByRole("button", {name:/^Explore /})).toHaveCount(1);
   await expect(surface).toBeVisible();
   await surface.click();
-  await expect(page.getByRole("button", {name:"Back to global graph"})).toBeVisible();
-  await page.getByRole("link", {name:"Core rules", exact:true}).click();
+  const panel = page.getByRole("complementary", {name:"Selected note"});
+  await expect(panel.getByRole("heading", {name:"Core rules", exact:true})).toBeVisible();
+  await panel.getByRole("link", {name:"Open note", exact:true}).click();
   await expect(page.getByRole("heading", {name:"Core rules", exact:true})).toBeVisible();
   expect(violations).toEqual([]);
 });

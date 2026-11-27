@@ -131,3 +131,27 @@ test("connections mount on request and distinguish notes sharing a title", async
   }
   await expect(row).toContainText("Index (guide) → Index (catalog)");
 });
+
+test("selecting a note shows its panel with open, edit and neighborhood actions", async ({page}) => {
+  await session(page);
+  await page.route("**/api/graph**", route => route.fulfill({json:{nodes:[guide, hub], edges:[edge], center:null}}));
+  await page.route("**/api/notes/guide**", route => route.fulfill({json:{...guide, updated:"2026-11-20", content_hash:"a".repeat(64)}}));
+  await page.route("**/api/notes/guide/neighbors**", route => route.fulfill({json:{nodes:[guide, hub], edges:[edge], center:"guide"}}));
+  await page.goto("/graph");
+  const panel = page.getByRole("complementary", {name:"Selected note"});
+  await expect(panel).toContainText("Select a note");
+  const select = page.getByRole("button", {name:"Select Field guide", exact:true});
+  await select.click();
+  await expect(select).toHaveAttribute("aria-pressed", "true");
+  await expect(panel.getByRole("heading", {name:"Field guide", exact:true})).toBeVisible();
+  for (const text of ["research · guide", "P1", "internal", "verified"]) await expect(panel.getByText(text, {exact:true})).toBeVisible();
+  await expect(panel.locator("time")).toHaveAttribute("datetime", "2026-11-20");
+  await expect(panel.getByRole("link", {name:"Open note"})).toHaveAttribute("href", "/notes/guide");
+  await expect(panel.getByRole("link", {name:"Edit"})).toHaveAttribute("href", "/editor/guide");
+  // A filter that hides the selected note clears the panel.
+  await page.getByRole("combobox", {name:"Type", exact:true}).selectOption("hub");
+  await expect(panel).toContainText("Select a note");
+  await page.getByRole("combobox", {name:"Type", exact:true}).selectOption("");
+  await panel.getByRole("button", {name:"Show neighborhood"}).click();
+  await expect(page.getByRole("button", {name:"Back to global graph"})).toBeVisible();
+});

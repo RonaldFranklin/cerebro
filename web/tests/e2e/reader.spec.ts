@@ -10,7 +10,7 @@ test("search, inspect sections and follow visible hub members", async ({ page, d
     );
   });
   await page.goto(demo.private_origin + "/search");
-  const password = page.getByLabel("Password", { exact: true });
+  const password = page.getByLabel("Owner password", { exact: true });
   await password.fill(demo.password);
   await password.press("Enter");
   const results = page.getByRole("region", { name: "Results" });

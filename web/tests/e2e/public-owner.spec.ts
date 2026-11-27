@@ -6,7 +6,7 @@ test.use({ publicBrowserCeiling: "restricted" });
 
 async function signIn(page: Page, url: string, password: string) {
   await page.goto(url);
-  const input = page.getByLabel("Password", {exact:true});
+  const input = page.getByLabel("Owner password", {exact:true});
   await input.fill(password);
   await input.press("Enter");
 }

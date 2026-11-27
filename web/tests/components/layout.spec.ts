@@ -51,7 +51,7 @@ test("the top bar shows the session ceiling and signs out", async ({page}) => {
   const bar = page.getByRole("banner");
   await expect(bar.getByText("restricted · owner")).toBeVisible();
   await bar.getByRole("button", {name: "Sign out"}).click();
-  await expect(page.getByLabel("Password")).toBeVisible();
+  await expect(page.getByLabel("Owner password")).toBeVisible();
 });
 
 test("slash focuses the top search, which runs on the search page and again from it", async ({page}) => {
