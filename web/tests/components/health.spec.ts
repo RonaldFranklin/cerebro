@@ -12,7 +12,8 @@ const entrances = [
   {name:"public",mcp_ceiling:"internal",browser_ceiling:"internal"},
 ];
 const summary = {checked_at:"2026-11-27T08:31:00+00:00",content:{revision:"0123456789abcdef".repeat(2) + "01234567",state:"clean"},listeners:entrances,
-  last_backup:{state:"recorded",completed_at:"2026-11-27T03:00:00+00:00",content_revision:"f".repeat(40)}};
+  last_backup:{state:"recorded",completed_at:"2026-11-27T03:00:00+00:00",content_revision:"f".repeat(40)},
+  tokens:[]};
 const clean = {...summary,ok:true,notes_checked:4,search_index_checked:true,issues:[]};
 function issue(code: string, subject: string, severity: string, message = `${code} fixture message`) {
   return {code,subject,severity,field:null,message};
@@ -177,4 +178,60 @@ test.describe("backup record", () => {
       await expect(page.getByText("All systems normal")).toBeVisible();
     });
   }
+});
+
+test.describe("agent tokens", () => {
+  test.use({timezoneId: "UTC"});
+  const hours = (last: number) => [...Array(23).fill(0), last];
+  const token = (client: string, extra = {}) => ({client, ceiling:"internal", scopes:["read"], state:"active", usage_known:true,
+    last_used:"2026-11-27T08:30:20+00:00", activity:hours(3), ...extra});
+
+  test("active tokens are listed with their use, revoked ones stay collapsed", async ({page}) => {
+    await owner(page);
+    await page.route("**/api/health", route => route.fulfill({json:{...clean,tokens:[
+      token("claude-code", {ceiling:"restricted", scopes:["core","read","write"]}),
+      token("codex", {last_used:"2026-11-25T17:05:00+00:00", activity:hours(0)}),
+      token("gpt", {last_used:null, activity:hours(0)}),
+      token("old-agent", {state:"revoked"}),
+    ]}}));
+    await page.goto("/health");
+    const section = page.getByRole("region", {name:"Agent tokens"});
+    const table = section.getByRole("table", {name:"Active"});
+    await expect(table.getByRole("columnheader")).toHaveText(["Client","Ceiling","Scopes","Last used","Activity · 24 h"]);
+    const rows = table.locator("tbody tr");
+    await expect(rows).toHaveCount(3);
+    await expect(rows.nth(0)).toContainText("claude-code");
+    await expect(rows.nth(0)).toContainText("core, read, write");
+    await expect(rows.nth(0).locator("[data-tone=warning]")).toHaveText("restricted");
+    await expect(rows.nth(0).locator("[data-tone=ok]")).toHaveText("now");
+    await expect(rows.nth(0)).toContainText("3 requests");
+    await expect(rows.nth(0).locator("polyline")).toHaveCount(1);
+    await expect(rows.nth(1)).toContainText("2026-11-25 17:05");
+    await expect(rows.nth(2)).toContainText("Never");
+    await expect(section.getByText("old-agent")).toBeHidden();
+    await expect(section.getByText("Expired", {exact:false})).toHaveCount(0);
+    await section.getByText("Revoked · 1", {exact:true}).click();
+    await expect(section.getByRole("table", {name:"Revoked"})).toContainText("old-agent");
+  });
+
+  test("an expired group appears only when there is one, and unknown use is said plainly", async ({page}) => {
+    await owner(page);
+    await page.route("**/api/health", route => route.fulfill({json:{...clean,tokens:[
+      token("codex", {usage_known:false, last_used:null, activity:[]}), token("temporary", {state:"expired"}),
+    ]}}));
+    await page.goto("/health");
+    const section = page.getByRole("region", {name:"Agent tokens"});
+    await expect(section.getByRole("table", {name:"Active"}).locator("tbody tr")).toContainText("Unavailable");
+    await expect(section.getByText("Expired · 1", {exact:true})).toBeVisible();
+    await expect(section.getByText("Revoked", {exact:false})).toHaveCount(0);
+    await page.setViewportSize({width:360, height:780});
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  });
+
+  test("an instance without tokens says so", async ({page}) => {
+    await owner(page);
+    await page.route("**/api/health", route => route.fulfill({json:clean}));
+    await page.goto("/health");
+    await expect(page.getByRole("region", {name:"Agent tokens"})).toContainText("No active tokens.");
+  });
 });

@@ -558,6 +558,36 @@ class AgentTokenSummary:
     revoked_at: datetime | None
 
 
+USAGE_HOURS = 24
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class TokenUsage:
+    """``hourly`` counts ``USAGE_HOURS`` clock hours, oldest first; the last one is the current hour."""
+
+    last_used: datetime
+    hourly: tuple[int, ...]
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class TokenActivityRequest:
+    pass
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class TokenActivityRow:
+    """One credential as the owner's Health shows it: no id, secret or hash. ``usage_known`` is false when the
+    counters cannot be read; then there is no last use and no hourly count."""
+
+    agent: str
+    ceiling: AccessCeiling
+    scopes: frozenset[Scope]
+    state: Literal["active", "revoked", "expired"]
+    usage_known: bool
+    last_used: datetime | None
+    hourly: tuple[int, ...]
+
+
 @dataclass(frozen=True, slots=True, kw_only=True)
 class RevokeAgentTokenRequest:
     token_id: str

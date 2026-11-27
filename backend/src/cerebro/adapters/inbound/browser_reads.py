@@ -32,6 +32,8 @@ from cerebro.application.dto import (
     ReadNoteRequest,
     SearchNotesRequest,
     SearchResults,
+    TokenActivityRequest,
+    TokenActivityRow,
 )
 from cerebro.application.errors import NoteNotFound, PermissionDenied, SectionNotFound
 from cerebro.application.use_case import ContextUseCase
@@ -50,6 +52,7 @@ class BrowserReads:
     get_graph: ContextUseCase[GetGraphRequest, GraphView]
     health_report: ContextUseCase[HealthReportRequest, HealthReportResult]
     listeners: tuple[ListenerCeilings, ...]
+    token_activity: ContextUseCase[TokenActivityRequest, tuple[TokenActivityRow, ...]]
 
 
 class Parameters(BaseModel):
@@ -203,6 +206,7 @@ def install_browser_reads(app: FastAPI, cases: BrowserReads) -> None:
     def health(request: Request, params: Annotated[Parameters, Query()]) -> BrowserHealthResponse:
         # The use case authorizes the owner first: a refused caller learns nothing about the entrances either.
         report = cases.health_report.execute(HealthReportRequest(), request.state.ctx)
-        return browser_health_view(report, cases.listeners)
+        tokens = cases.token_activity.execute(TokenActivityRequest(), request.state.ctx)
+        return browser_health_view(report, cases.listeners, tokens)
 
     app.include_router(router)

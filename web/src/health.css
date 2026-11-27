@@ -23,6 +23,20 @@
 .health-entrances p { margin-top: .5rem; color: var(--muted); font-size: .88rem; }
 .health-entrances strong { color: var(--text); font-weight: 500; }
 .health-entrances strong[data-tone="warning"] { color: var(--amber); }
+.health-tokens { margin-top: 2rem; }
+.health-tokens > p { margin-top: .8rem; color: var(--muted); }
+.health-tokens details { margin-top: .8rem; }
+.health-tokens summary { width: fit-content; display: flex; align-items: center; cursor: pointer; color: var(--accent); }
+.token-scroll { margin-top: .8rem; overflow-x: auto; background: var(--surface); border: 1px solid var(--line); border-radius: .75rem; }
+.token-scroll table { width: 100%; border-collapse: collapse; font-size: .88rem; }
+.token-scroll th, .token-scroll td { padding: .8rem 1rem; text-align: left; white-space: nowrap; border-bottom: 1px solid var(--line); }
+.token-scroll tbody tr:last-child > * { border-bottom: 0; }
+.token-scroll thead th { color: var(--muted); font-weight: 400; }
+.token-scroll tbody th { font-weight: 500; }
+.token-scroll [data-tone="warning"] { color: var(--amber); }
+.token-scroll [data-tone="ok"] { color: var(--success); }
+.token-activity { display: inline-flex; align-items: center; gap: .7rem; color: var(--accent); }
+.token-activity span { color: var(--muted); }
 .health-findings { margin-top: 2rem; }
 .health-findings header p { margin-top: .3rem; font-size: .88rem; }
 .health-findings select { margin-left: .4rem; padding: .5rem; border: 1px solid var(--line-strong); border-radius: .4rem; color: var(--text); background: var(--surface); }

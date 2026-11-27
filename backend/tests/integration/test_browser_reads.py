@@ -52,6 +52,7 @@ def service(tmp_path_factory: pytest.TempPathFactory) -> Iterator[Service]:
         get_neighbors=cases.get_neighbors,
         health_report=cases.health_report,
         listeners=(),
+        token_activity=cases.token_activity,
     )
     with ExitStack() as stack:
         clients = []
@@ -183,7 +184,8 @@ def test_health_requires_restricted_listener(service: Service) -> None:
     report = service.container.use_cases.health_report.execute(HealthReportRequest(), ctx)
     body = service.private.get("/api/health").json()
     assert {key: body[key] for key in health_view(report)} == health_view(report)
-    assert body.keys() - health_view(report).keys() == {"checked_at", "content", "listeners", "last_backup"}
+    assert body.keys() - health_view(report).keys() == {"checked_at", "content", "listeners", "last_backup", "tokens"}
+    assert body["tokens"] == []
     assert body["last_backup"] == {"state": "never", "completed_at": None, "content_revision": None}
     assert datetime.fromisoformat(body["checked_at"]).utcoffset() == timedelta(0)
     assert body["content"] == {"revision": report.revision, "state": "clean"}

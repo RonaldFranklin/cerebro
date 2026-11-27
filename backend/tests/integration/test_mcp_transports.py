@@ -11,6 +11,7 @@ import sys
 import time
 from collections.abc import Iterator
 from contextlib import contextmanager
+from datetime import UTC, datetime
 from pathlib import Path
 
 import httpx2
@@ -19,6 +20,7 @@ from mcp.client import Client
 from mcp.client.stdio import StdioServerParameters
 from mcp.client.streamable_http import streamable_http_client
 
+from cerebro.adapters.outbound.sqlite.usage import SqliteUsageCounters
 from cerebro.application.dto import IssueAgentTokenRequest, RevokeAgentTokenRequest
 from cerebro.bootstrap.container import build_container
 from cerebro.domain.access import AccessCeiling, AccessContext, Scope
@@ -406,3 +408,45 @@ def test_the_bridge_waits_longer_than_a_writer_may_wait_for_its_locks() -> None:
     (writer_lock,) = (f.default for f in fields(Settings) if f.name == "writer_lock_timeout")
     assert isinstance(writer_lock, float)
     assert 2 * (writer_lock + DEFAULT_LOCK_TIMEOUT) < REPLY_TIMEOUT
+
+
+def test_each_authenticated_request_is_counted_once_and_refusals_never(tmp_path: Path) -> None:
+    sample = make_sample_repo(tmp_path)
+    container = build_container(sample.settings)
+    config = tmp_path / "instance.toml"
+    config.write_text(SAMPLE.replace("keys/fernet.key", "secrets/cerebro.key"))
+    owner = AccessContext.for_owner(AccessCeiling(Sensitivity.RESTRICTED))
+    issued = container.use_cases.issue_agent_token.execute(
+        IssueAgentTokenRequest(
+            agent="counted", scopes=frozenset({Scope.READ}), ceiling=AccessCeiling(Sensitivity.INTERNAL)
+        ),
+        owner,
+    )
+    private, public = free_ports(2)
+    listing = json.dumps({"jsonrpc": "2.0", "id": 1, "method": "tools/list"}).encode()
+    with serving(config, private, public):
+        assert post(private, issued.secret, call("cerebro_overview", {}))[0] == 200
+        assert post(private, issued.secret, listing)[0] == 200
+        assert post(public, issued.secret, b"not json")[0] == 400
+        assert post(private, "invalid", listing)[0] == 401
+        # A token without the needed scope is a refused credential.
+        write = call(
+            "cerebro_write",
+            {
+                "operation": "update",
+                "body": "x",
+                "frontmatter": {
+                    "area": "a",
+                    "type": "b",
+                    "title": "c",
+                    "priority": "P2",
+                    "sensitivity": "internal",
+                    "summary": "d",
+                },
+            },
+        )
+        assert post(private, issued.secret, write)[0] == 403
+    counters = SqliteUsageCounters(sample.settings.state_dir / "usage.sqlite")
+    summary = counters.summary(datetime.now(UTC))
+    assert summary is not None
+    assert {token: sum(usage.hourly) for token, usage in summary.items()} == {issued.token_id: 3}

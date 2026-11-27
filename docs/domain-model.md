@@ -377,8 +377,9 @@ commit is not attributed.
 
 - One token per agent (e.g. `claude-code@workstation`, `codex@workstation`).
 - Attributes: id, agent name, newly issued scopes (`read`, `write`, `core`; at least one, and `core` only with `write`), ceiling, created, optional expiry,
-  optional revocation time, token hash. (`last_used` is operational data kept by the token store, not part of the
-  domain entity.)
+  optional revocation time, token hash. (Last use and hourly request counts are disposable operational data kept apart
+  from the token store, not part of the domain entity: [ADR-0031](adr/0031-usage-counters-and-live-activity.md). Only a
+  `restricted` owner reads them.)
 - A token is valid when it is not revoked and `now < expires_at`; `now` is always passed explicitly, never read
   from the system clock. A token created more than five minutes ahead of the verifier clock also fails
   authentication. An invalid token never yields an `AccessContext`.

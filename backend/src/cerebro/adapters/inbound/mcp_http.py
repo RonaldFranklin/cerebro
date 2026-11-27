@@ -3,7 +3,7 @@
 import asyncio
 import json
 import re
-from collections.abc import AsyncIterator, Mapping
+from collections.abc import AsyncIterator, Callable, Mapping
 from contextlib import asynccontextmanager
 
 from mcp.server.streamable_http_manager import StreamableHTTPSessionManager
@@ -58,6 +58,7 @@ def http_app(
     tools: MCPTools,
     authenticate: AnonymousUseCase[AuthenticateTokenRequest, AccessContext],
     listeners: Mapping[int, AccessCeiling],
+    observe: Callable[[AccessContext], None] | None = None,
 ) -> Router:
     ceilings = dict(listeners)
 
@@ -77,6 +78,15 @@ def http_app(
     manager = StreamableHTTPSessionManager(
         tools.server(agent), stateless=True, json_response=True, max_request_body_size=MAX_INPUT_BYTES
     )
+
+    async def _observed(ctx: AccessContext) -> None:
+        """Once for each authenticated request that is not refused for its scopes. The SDK authenticates again while
+        serving it; those calls are not observed. An observer's failure never changes the response."""
+        if observe is not None:
+            try:
+                await asyncio.to_thread(observe, ctx)
+            except Exception as error:
+                log_failure("mcp observation", error)
 
     async def handle(scope: Scope, receive: Receive, send: Send) -> None:
         request = Request(scope, receive)
@@ -112,10 +122,13 @@ def http_app(
                     await Response("Access denied.", status_code=403)(scope, receive, send)
                     return
         except InvalidToolArguments as error:
+            await _observed(ctx)
             response: Response = JSONResponse(invalid_arguments(rpc_id, error), status_code=400)
         except ValueError, RecursionError:
+            await _observed(ctx)
             response = Response("Invalid request.", status_code=400)
         else:
+            await _observed(ctx)
             if request.method != "POST":
                 response = Response(status_code=405, headers={"Allow": "POST"})
             elif "last-event-id" in request.headers or "mcp-session-id" in request.headers:
