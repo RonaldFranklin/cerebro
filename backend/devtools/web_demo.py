@@ -142,6 +142,12 @@ def main() -> int:
     parser.add_argument(
         "--automation", action="store_true", help="take a disposable password line on stdin; stop at EOF"
     )
+    parser.add_argument(
+        "--public-browser-ceiling",
+        choices=("internal", "restricted"),
+        default="internal",
+        help="owner browser ceiling on the public listener fixture",
+    )
     args = parser.parse_args()
     dist: Path = args.dist.resolve()
     if not (dist / "index.html").is_file():
@@ -180,6 +186,8 @@ def main() -> int:
                 private_origin,
                 "--public-origin",
                 public_origin,
+                "--public-browser-ceiling",
+                args.public_browser_ceiling,
                 "--web-dist",
                 str(dist),
             ]

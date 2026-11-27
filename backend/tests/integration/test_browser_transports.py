@@ -28,9 +28,24 @@ def request(
         conn.close()
 
 
-# The owner's browser is restricted on both listeners, whatever the public MCP ceiling is (ADR-0029).
-@pytest.mark.parametrize("public_ceiling", [(), ("--public-ceiling", "public"), ("--public-ceiling", "restricted")])
-def test_two_https_origins_share_service_but_isolate_sessions(tmp_path: Path, public_ceiling: tuple[str, ...]) -> None:
+# The owner's browser on the public listener is restricted only by explicit opt-in, whatever the public MCP ceiling
+# is. Otherwise it stays at the lower of that ceiling and internal (ADR-0029).
+@pytest.mark.parametrize(
+    ("mcp_ceiling", "browser_ceiling", "expected"),
+    [
+        (None, None, "internal"),
+        ("public", None, "public"),
+        ("restricted", None, "internal"),
+        ("restricted", "internal", "internal"),
+        ("public", "internal", "public"),
+        (None, "restricted", "restricted"),
+        ("public", "restricted", "restricted"),
+        ("restricted", "restricted", "restricted"),
+    ],
+)
+def test_two_https_origins_share_service_but_isolate_sessions(
+    tmp_path: Path, mcp_ceiling: str | None, browser_ceiling: str | None, expected: str
+) -> None:
     fixture = make_sample_repo(tmp_path)
     owner_credentials(fixture.settings).provision(b"synthetic-owner-password")
     config = tmp_path / "instance.toml"
@@ -44,8 +59,11 @@ def test_two_https_origins_share_service_but_isolate_sessions(tmp_path: Path, pu
         origins = {p: f"https://localhost:{p}" for p in (private, public)}
         options = (
             *("--private-origin", origins[private], "--public-origin", origins[public]),
-            *("--web-dist", str(dist), *public_ceiling),
+            *("--web-dist", str(dist)),
+            *(() if mcp_ceiling is None else ("--public-ceiling", mcp_ceiling)),
+            *(() if browser_ceiling is None else ("--public-browser-ceiling", browser_ceiling)),
         )
+        ceilings = {private: "restricted", public: expected}
         with serving(config, private_port, public_port, extra=options):
             cookies: dict[int, str] = {}
             tokens: dict[int, str] = {}
@@ -66,28 +84,29 @@ def test_two_https_origins_share_service_but_isolate_sessions(tmp_path: Path, pu
                 assert not value["domain"]
                 cookies[port] = f"{value.key}={value.value}"
                 tokens[port] = json.loads(body)["csrf_token"]
-                assert json.loads(body)["ceiling"] == "restricted"
+                assert json.loads(body)["ceiling"] == ceilings[port]
             both = "; ".join(cookies.values())
             for port in (private, public):
                 forwarded = {"X-Forwarded-Host": "privileged.invalid", "X-Forwarded-Proto": "https", "Cookie": both}
                 status, _, body = request(client, port, "GET", "/api/session", forwarded)
                 assert status == 200
-                assert json.loads(body)["ceiling"] == "restricted"
+                assert json.loads(body)["ceiling"] == ceilings[port]
                 status, _, graph = request(client, port, "GET", "/api/graph", forwarded)
                 assert status == 200
-                assert VAULT_ID.value in {node["id"] for node in json.loads(graph)["nodes"]}
-                assert request(client, port, "GET", "/api/health", forwarded)[0] == 200
-                assert request(client, port, "GET", "/api/changes", forwarded)[0] == 200
-            # Owner edits are wired on the public listener and still require its own origin and CSRF token.
+                full = ceilings[port] == "restricted"
+                assert (VAULT_ID.value in {node["id"] for node in json.loads(graph)["nodes"]}) == full
+                assert request(client, port, "GET", "/api/health", forwarded)[0] == (200 if full else 403)
+                assert request(client, port, "GET", "/api/changes", forwarded)[0] == (200 if full else 403)
+            # Owner edits on the public listener need its own origin and CSRF token, and the opt-in to get further.
             note = f"/api/notes/{VAULT_ID.value}"
             session = {"Cookie": both, "Content-Type": "application/json", "X-CSRF-Token": tokens[public]}
-            for headers, expected in (
+            for headers, status_expected in (
                 (session, 403),
                 ({**session, "Origin": origins[private]}, 403),
                 ({**session, "Origin": origins[public], "X-CSRF-Token": tokens[private]}, 403),
-                ({**session, "Origin": origins[public]}, 422),
+                ({**session, "Origin": origins[public]}, 422 if expected == "restricted" else 403),
             ):
-                assert request(client, public, "PUT", note, headers, b"{}")[0] == expected
+                assert request(client, public, "PUT", note, headers, b"{}")[0] == status_expected
             assert request(client, public, "GET", "/api/health", {})[0] == 401
             replay = cookies[private].replace("cerebro_private=", "cerebro_public=")
             assert request(client, public, "GET", "/api/session", {"Cookie": replay})[0] == 401

@@ -23,6 +23,8 @@ BACKUP_ROOT=/var/backups/cerebro
 BACKUP_MOUNT=''  # set to the expected mountpoint when backups use a dedicated filesystem
 HML_PORT=8775; PROD_PORT=8765
 HML_PUBLIC_PORT=8776; PROD_PUBLIC_PORT=8766
+# Owner browser on the public entrance. Keep internal until the Access checks of E2 pass.
+HML_PUBLIC_BROWSER_CEILING=internal; PROD_PUBLIC_BROWSER_CEILING=internal
 HML_HTTPS=8443; PROD_HTTPS=443
 REPOS="$PROJECT_ROOT/repos"
 APP_REPO="$REPOS/cerebro"
@@ -32,15 +34,17 @@ test "$SERVICE_UID" -gt 0 && test "$SERVICE_GID" -gt 0 || exit 1
 select_env() {
   export ENVIRONMENT="$1"
   case "$1" in
-    hml) PRIVATE_PORT=$HML_PORT; HTTPS_PORT=$HML_HTTPS; PUBLIC_PORT=$HML_PUBLIC_PORT; PUBLIC_ORIGIN=$HML_PUBLIC_ORIGIN ;;
-    prod) PRIVATE_PORT=$PROD_PORT; HTTPS_PORT=$PROD_HTTPS; PUBLIC_PORT=$PROD_PUBLIC_PORT; PUBLIC_ORIGIN=$PROD_PUBLIC_ORIGIN ;;
+    hml) PRIVATE_PORT=$HML_PORT; HTTPS_PORT=$HML_HTTPS; PUBLIC_PORT=$HML_PUBLIC_PORT; PUBLIC_ORIGIN=$HML_PUBLIC_ORIGIN
+         PUBLIC_BROWSER_CEILING=$HML_PUBLIC_BROWSER_CEILING ;;
+    prod) PRIVATE_PORT=$PROD_PORT; HTTPS_PORT=$PROD_HTTPS; PUBLIC_PORT=$PROD_PUBLIC_PORT; PUBLIC_ORIGIN=$PROD_PUBLIC_ORIGIN
+          PUBLIC_BROWSER_CEILING=$PROD_PUBLIC_BROWSER_CEILING ;;
     *) return 1 ;;
   esac
   PRIVATE_ORIGIN="${TAILNET_URL%/}"
   if [[ $HTTPS_PORT != 443 ]]; then PRIVATE_ORIGIN+=":$HTTPS_PORT"; fi
   export PRIVATE_ORIGIN PRIVATE_PORT DATA_DIR="$DATA_ROOT/$1"
   # The token ceiling alone decides what each agent sees on the public entrance (ADR-0028).
-  export PUBLIC_ORIGIN PUBLIC_PORT PUBLIC_CEILING=restricted
+  export PUBLIC_ORIGIN PUBLIC_PORT PUBLIC_CEILING=restricted PUBLIC_BROWSER_CEILING
   ENV_DIR="$PROJECT_ROOT/ambientes/$1"; BACKUP_DIR="$BACKUP_ROOT/$1"
   export CEREBRO_CONTENT_DIR="$DATA_DIR/content/repo" CEREBRO_STATE_DIR="$DATA_DIR/state"
   export CEREBRO_INDEX_DIR="$DATA_DIR/index" CEREBRO_KEY_FILE="$DATA_DIR/secrets/fernet.key"
@@ -294,9 +298,18 @@ for path in / /search /api/session /assets/ /mcp/ /mcp/x /mcpx; do
 done
 ```
 
-Expect `401` for unauthenticated MCP, an HTTPS redirect with HSTS, and an Access redirect for every UI, API and asset path. Then open `PUBLIC_ORIGIN` in the owner's browser. Pass Access, then sign in with the owner password. The public session reports ceiling `restricted`, whatever `PUBLIC_CEILING` is, and offers editing, Recent changes and Health ([ADR-0029](adr/0029-owner-browser-full-access-on-public-listener.md)).
+Expect `401` for unauthenticated MCP, an HTTPS redirect with HSTS, and an Access redirect for every UI, API and asset path. Then open `PUBLIC_ORIGIN` in the owner's browser. Pass Access, then sign in with the owner password. With the default `PUBLIC_BROWSER_CEILING=internal` the public session reports ceiling `internal` and offers no Recent changes, editing or Health; use the private origin for those.
 
-Run these checks again after every change to Access or the tunnel: Cérebro does not verify Access, and without it only the owner password protects restricted notes and edits.
+**Optional: full owner UI on the public entrance** ([ADR-0029](adr/0029-owner-browser-full-access-on-public-listener.md)). Only after every check above passes, and with the owner's approval, set this environment's `*_PUBLIC_BROWSER_CEILING` to `restricted` in the installation variables (keep it there for later shells and updates), then apply it and repeat the checks:
+
+```bash
+select_env "$ENVIRONMENT"
+test "$PUBLIC_BROWSER_CEILING" = restricted
+dc stop backend
+start_release
+```
+
+The public session then reports ceiling `restricted`, whatever `PUBLIC_CEILING` is, and offers editing, Recent changes and Health. Run the Access checks again after every change to Access or the tunnel: Cérebro does not verify Access, and without it only the owner password protects restricted notes and edits. To turn the access off, set `internal` and start the release again.
 
 **Stop** on any `200` without Access, a tunnel route to the private port, a wildcard bypass or a hostname shared with other services. If any of these appears on a running instance, remove the public route first. **Accepted risk:** a leaked token works from the internet until it is revoked, up to its ceiling and scopes.
 

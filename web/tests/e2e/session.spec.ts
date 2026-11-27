@@ -28,8 +28,12 @@ test("owner sessions stay on their issuing HTTPS listener", async ({ page, conte
     ceiling: (await (await fetch("/api/session")).json()).ceiling,
     healthStatus: (await fetch("/api/health")).status,
   }));
-  expect(publicChecks).toEqual({ ceiling: "restricted", healthStatus: 200 });
-  await expect(publicPage.getByText(marker, { exact: true })).toBeVisible();
+  expect(publicChecks).toEqual({ ceiling: "internal", healthStatus: 403 });
+  const publicOverview = await publicPage.evaluate(async () => (await fetch("/api/overview")).json());
+  expect(JSON.stringify(publicOverview).includes(marker)).toBe(false);
+  expect(JSON.stringify(publicOverview).includes("fixture-vault-catalog")).toBe(false);
+  await expect(publicPage.locator("body")).not.toContainText(marker);
+  await expect(publicPage.locator("body")).not.toContainText("zebrafruit");
 
   const signOut = page.getByRole("button", { name: "Sign out", exact: true });
   await signOut.focus();

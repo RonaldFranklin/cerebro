@@ -214,9 +214,10 @@ owner browser, agents ─ Cloudflare Tunnel ────▶│ cloudflared ─�
   `--public-ceiling` (default `internal`); the deployment sets `restricted`, so each agent's token ceiling decides.
   Cloudflare Access protects its web UI; `/mcp` bypasses Access and requires the Cérebro bearer token
   ([ADR-0028](adr/0028-token-decides-public-access.md), accepted risk: a leaked token works over the internet until
-  revoked). The signed-in owner's browser is `restricted` there too, with edits, history and health
+  revoked). The owner's browser there is capped at `internal`, without edits, history or health, unless
+  `--public-browser-ceiling restricted` enables them
   ([ADR-0029](adr/0029-owner-browser-full-access-on-public-listener.md));
-  Cérebro does not verify Access, so it is a deployment requirement.
+  Cérebro does not verify Access, so it is a requirement of that setting.
 - For tokens, the listener a request arrived on sets the maximum ceiling; the agent token can only lower it.
   See [ADR-0005](adr/0005-sensitivity-and-access-ceiling.md) and
   [ADR-0010](adr/0010-network-access.md).

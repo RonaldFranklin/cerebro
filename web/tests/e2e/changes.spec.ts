@@ -1,7 +1,7 @@
 import { expect } from "@playwright/test";
 import { test } from "./fixture";
 
-test("the owner can trace the agent update from history to its note", async ({page, context, demo}) => {
+test("the private owner can trace the agent update from history to its note", async ({page, context, demo}) => {
   await page.goto(demo.private_origin);
   const password = page.getByLabel("Password", {exact:true});
   await password.fill(demo.password);
@@ -22,14 +22,14 @@ test("the owner can trace the agent update from history to its note", async ({pa
   await expect(page.getByRole("heading", {name:"Island hub",exact:true})).toBeVisible();
   await expect(page.getByText("Collect the infrastructure handover notes here.", {exact:false}).first()).toBeVisible();
 
-  const remote = await context.newPage();
-  await remote.goto(demo.public_origin + "/changes");
-  await remote.getByLabel("Password", {exact:true}).fill(demo.password);
-  await remote.getByLabel("Password", {exact:true}).press("Enter");
-  await expect(remote.getByRole("button", {name:/Island hub.*fixture-agent/})).toBeVisible();
-  await expect(remote.getByRole("navigation").getByRole("link", {name:"Recent changes"})).toBeVisible();
+  const lower = await context.newPage();
+  await lower.goto(demo.public_origin + "/changes");
+  await lower.getByLabel("Password", {exact:true}).fill(demo.password);
+  await lower.getByLabel("Password", {exact:true}).press("Enter");
+  await expect(lower.getByText("This view requires the private listener.")).toBeVisible();
+  await expect(lower.getByRole("navigation").getByRole("link", {name:"Recent changes"})).toHaveCount(0);
   for (const path of ["/api/changes",new URL(detail.url()).pathname]) {
-    const status = await remote.evaluate(async path => (await fetch(path, {credentials:"omit"})).status, path);
-    expect(status).toBe(401);
+    const status = await lower.evaluate(async path => (await fetch(path)).status, path);
+    expect(status).toBe(403);
   }
 });

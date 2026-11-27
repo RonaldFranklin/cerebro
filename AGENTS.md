@@ -58,8 +58,8 @@ See [the roadmap](docs/roadmap.md) for pending checkpoints. Update this section 
 - No hostnames, IPs, domains or tailnet names of any real deployment in this repo. Everything is configuration.
 - The effective sensitivity ceiling of a request is `min(listener_ceiling, token_ceiling)`. Never derive the
   listener from request headers. The public listener's ceiling is configuration (default `internal`,
-  [ADR-0028](docs/adr/0028-token-decides-public-access.md)). It applies to tokens; the signed-in owner's browser is
-  `restricted` on both listeners
+  [ADR-0028](docs/adr/0028-token-decides-public-access.md)). It applies to tokens; the owner's browser there stays at most
+  `internal` unless the owner opts in to `restricted`
   ([ADR-0029](docs/adr/0029-owner-browser-full-access-on-public-listener.md)).
 
 **Language**

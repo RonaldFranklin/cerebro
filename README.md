@@ -74,6 +74,7 @@ PRIVATE_ORIGIN=https://localhost:8443
 PUBLIC_PORT=8766
 PUBLIC_ORIGIN=https://localhost:8444
 PUBLIC_CEILING=internal
+PUBLIC_BROWSER_CEILING=internal
 CEREBRO_GIT_NAME="Cerebro Service"
 CEREBRO_GIT_EMAIL=cerebro@example.invalid
 EOF
@@ -81,8 +82,8 @@ dc() { docker compose --env-file "$CEREBRO_HOME/prod.env" -f deploy/compose.yaml
 ```
 
 The stack also opens a second, "public" listener on `127.0.0.1:8766`, used by the
-[server deployment](docs/deploy.md). Both ports are published on loopback only. The signed-in owner has full access
-through either one, so never expose the public port without the identity layer described there
+[server deployment](docs/deploy.md). Both ports are published on loopback only. The owner's browser on the public one
+stays at `internal`; set `PUBLIC_BROWSER_CEILING=restricted` only behind the identity layer described there
 ([ADR-0029](docs/adr/0029-owner-browser-full-access-on-public-listener.md)).
 
 ### 3. Build and initialize

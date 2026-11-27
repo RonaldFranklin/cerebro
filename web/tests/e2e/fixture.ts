@@ -14,12 +14,14 @@ interface Demo {
   content_repo: string;
 }
 
-export const test = base.extend<{ demo: Demo }>({
-  demo: async ({}, use) => {
+export const test = base.extend<{ demo: Demo; publicBrowserCeiling: "internal" | "restricted" }>({
+  publicBrowserCeiling: ["internal", { option: true }],
+  demo: async ({ publicBrowserCeiling }, use) => {
     const backend = fileURLToPath(new URL("../../../backend/", import.meta.url));
     const password = randomBytes(32).toString("base64url");
     const child = spawn(join(backend, ".venv/bin/python"), [
       "-m", "devtools.web_demo", "--dist", "../web/dist", "--automation",
+      "--public-browser-ceiling", publicBrowserCeiling,
     ], { cwd: backend, stdio: ["pipe", "pipe", "inherit"] });
     const lines = createInterface({ input: child.stdout });
     const exited = once(child, "close");

@@ -24,6 +24,8 @@ services:
       - "${PUBLIC_ORIGIN:?set PUBLIC_ORIGIN}"
       - --public-ceiling
       - "${PUBLIC_CEILING:-internal}"
+      - --public-browser-ceiling
+      - "${PUBLIC_BROWSER_CEILING:-internal}"
       - --web-dist
       - /opt/cerebro/web
     environment:

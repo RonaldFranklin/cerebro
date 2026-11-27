@@ -310,6 +310,9 @@ def test_container_server_selects_only_ipv4_wildcard(monkeypatch: pytest.MonkeyP
         ("--public-port", "7654", "--private-port", "7654"),
         ("--public-ceiling", "secret"),
         ("--public-ceiling", "RESTRICTED"),
+        ("--public-browser-ceiling", "public"),
+        ("--public-browser-ceiling", "RESTRICTED"),
+        ("--public-browser-ceiling", "secret"),
     ],
 )
 def test_invalid_socket_configuration_rejected_before_wiring(args: tuple[str, ...]) -> None:
