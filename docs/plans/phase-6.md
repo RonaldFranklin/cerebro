@@ -43,5 +43,6 @@ the failure. After correcting the runtime check, the image was built again from
 | Browser | Chromium 159.0.8154.6 used a disposable local HTTPS proxy, signed in as the owner, opened the seeded note from Overview and displayed its body in a restricted session. |
 | Restart | After a Compose restart the container had a new start time and returned to healthy. The Git HEAD, note, read token and owner login persisted. A fresh Chromium session read the same note. The temporary stack was then removed. |
 
-The server agent still needs to verify Tailscale HTTPS, restore a backup on hml and validate hml before
-promoting to prod. The workstation's Claude Code and Codex connections to prod are a separate checkpoint.
+At the time of this acceptance the server steps were still ahead. Update (2026-11-26): the owner confirmed that the
+server deployment is done and in production; the restore drill on hml is the one checkpoint still pending
+([roadmap](../roadmap.md#pending-owner-actions)).

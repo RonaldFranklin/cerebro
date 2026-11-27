@@ -8,7 +8,7 @@ documentation, configurations, architecture decisions and know-how in one place,
 updates the same curated context, instead of you pasting the same Markdown file into every new chat.
 
 > **Status:** early software. Agents read and write through MCP, and the owner browses, edits and audits notes in a
-> web UI. Deployment acceptance is still in progress; see the [roadmap](docs/roadmap.md).
+> web UI. See the [roadmap](docs/roadmap.md) for what is done and what is pending.
 
 ## Who it is for
 
