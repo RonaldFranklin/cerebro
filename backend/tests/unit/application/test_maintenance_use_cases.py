@@ -11,6 +11,7 @@ from cerebro.application.dto import (
     HealthReportRequest,
     HealthReportResult,
     IssueAgentTokenRequest,
+    LastBackup,
     ListAgentTokensRequest,
     RebuildIndexRequest,
     RevokeAgentTokenRequest,
@@ -40,6 +41,7 @@ from cerebro.domain.errors import InvalidValueError
 from cerebro.domain.report import Finding, Severity, ViolationCode
 from cerebro.domain.secrets import secret_message
 from cerebro.domain.vocabulary import CORE, HUB
+from tests.fakes.backup import FakeBackupStatus
 from tests.fakes.stores import InMemoryTokenStore
 from tests.fakes.system import FixedClock, SequentialIdGenerator
 from tests.unit.application.world import MESSAGE, NID, World, ctx
@@ -389,9 +391,12 @@ class HealthKit:
     def __init__(self, world: World | None = None) -> None:
         self.world = world or healthy_world()
         self.clock = FixedClock()
+        self.backup = FakeBackupStatus()
 
     def run(self, c: Any = None) -> HealthReportResult:
-        use_case = HealthReport(self.world.notes, self.world.search, self.world.graph, self.clock, VOCABULARY)
+        use_case = HealthReport(
+            self.world.notes, self.world.search, self.world.graph, self.clock, VOCABULARY, backup=self.backup
+        )
         return use_case.execute(HealthReportRequest(), c or owner())
 
 
@@ -429,6 +434,19 @@ class TestHealthReport:
         assert (report.notes_checked, report.revision) == (0, None)
         assert report.checked_at == kit.clock.now()
         assert HealthCode.NOTE_FILE_BLOCKING in codes(report)
+
+    def test_the_report_carries_the_last_backup_whether_or_not_the_notes_can_be_read(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        kit = HealthKit()
+        kit.backup.record = LastBackup(state="recorded", completed_at=kit.clock.now(), content_revision="a" * 40)
+        assert kit.run().last_backup == kit.backup.record
+
+        def unreadable() -> None:
+            raise NoteReadError(problems=[("notes", "cannot be listed")])
+
+        monkeypatch.setattr(kit.world.notes, "scan", unreadable)
+        assert kit.run().last_backup == kit.backup.record
 
     def test_problem_files_are_listed_and_the_other_notes_still_checked(self) -> None:
         kit = HealthKit()
