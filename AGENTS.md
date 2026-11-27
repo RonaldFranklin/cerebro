@@ -135,5 +135,5 @@ uv run lint-imports                             # import contracts
 
 CI (`.github/workflows/ci.yml`) runs the same checks with `uv sync --locked`, so a stale `uv.lock` fails the
 build. From `web/`, run `pnpm install --frozen-lockfile`, `pnpm run typecheck`, `pnpm run build`,
-`pnpm run test:component` and `pnpm run test:e2e`. Browser tests use the pinned Chromium from
+`pnpm run test:component` (CI repeats it with `TZ=America/Sao_Paulo`) and `pnpm run test:e2e`. Browser tests use the pinned Chromium from
 `pnpm exec playwright install chromium` and E2E uses the locked backend installation.

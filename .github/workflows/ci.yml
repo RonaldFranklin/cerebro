@@ -89,4 +89,6 @@ jobs:
           pnpm run typecheck
           pnpm run build
           pnpm run test:component
+          # The runner is in UTC, which hides tests that mix the machine's zone with the browser's.
+          TZ=America/Sao_Paulo pnpm run test:component
           pnpm run test:e2e
