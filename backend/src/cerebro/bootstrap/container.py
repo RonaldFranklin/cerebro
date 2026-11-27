@@ -268,7 +268,8 @@ class Container:
             owner_edit_note=Serialized(
                 Refreshed(OwnerEditNote(notes, search, graph, clock, vocabulary), fresh_locked), lock
             ),
-            check_owner_edit=Refreshed(CheckOwnerEdit(notes, clock, vocabulary), fresh),
+            # Reads the repository alone: no index to refresh, and a check must not write.
+            check_owner_edit=CheckOwnerEdit(notes, clock, vocabulary),
             rebuild_index=Serialized(Refreshed(self._rebuild, self._quarantine), lock),
             health_report=HealthReport(
                 notes,

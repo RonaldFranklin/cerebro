@@ -7,7 +7,7 @@ const seed = {
   created:"2026-01-01",updated:"2026-01-01",section:null,members:null,body:"Original body.",content_hash:oldHash,
 };
 
-const passing = {validation:{ok:true,violations:[]}, budget:{words:2,soft:1500,hard:3000}, link_lines:[], base_current:true};
+const passing = {validation:{ok:true,violations:[]}, budget:{words:2,soft:1500,hard:3000}, broken_link_lines:[], sensitivity_lines:[], base_current:true};
 
 async function session(page: Page) {
   await page.route("**/api/session", route => route.fulfill({json:{ceiling:"restricted",csrf_token:"fixture",absolute_remaining_seconds:28800}}));
@@ -169,7 +169,7 @@ test("saving waits for the checks and stays blocked while one fails, broken link
     expect(route.request().headers()["x-csrf-token"]).toBe("fixture");
     asked.push(body);
     const text: string = body.note.body;
-    return route.fulfill({json: text.includes("broken") ? {...passing, link_lines:[1],
+    return route.fulfill({json: text.includes("broken") ? {...passing, broken_link_lines:[1],
       validation:{ok:true,violations:[violation("broken_link","warning")]}}
       : text.includes("long") ? {...passing, budget:{words:1600,soft:1500,hard:3000},
         validation:{ok:true,violations:[violation("body_over_soft_limit","warning")]}} : passing});
@@ -185,6 +185,7 @@ test("saving waits for the checks and stays blocked while one fails, broken link
   await expect(panel.getByRole("listitem").filter({hasText:"Links: Failed"}).first()).toContainText("Line 1 of the body");
   await expect(save).toBeDisabled();
   await page.keyboard.press("Control+s");
+  await expect(page.getByText("Saving is blocked until the checks pass.")).toBeVisible();
   await editor.fill("A long note.");
   await expect(panel.getByRole("listitem").filter({hasText:"Word budget · P2: Warning"}).first()).toContainText("1,600 / 1,500 soft · 3,000 hard");
   await expect(save).toBeEnabled();
@@ -220,5 +221,18 @@ test("a change made elsewhere opens the comparison before any save", async ({pag
   await page.goto("/editor/example");
   await page.getByLabel("Title",{exact:true}).fill("Mine");
   await expect(page.getByRole("region",{name:"Conflict recovery"})).toBeVisible();
+  await expect(page.getByRole("button", {name:"Save & commit"})).toBeDisabled();
+});
+
+test("a field outside the request limits is explained without a useless retry", async ({page}) => {
+  await session(page);
+  await page.route("**/api/notes/example*", route => route.fulfill({json:seed}));
+  await page.route("**/api/notes/example/validate", route => route.request().postDataJSON().note.hub
+    ? route.fulfill({status:422,json:{error:"Invalid request."}}) : route.fulfill({json:passing}));
+  await page.goto("/editor/example");
+  await expect(page.getByText("All checks pass.")).toBeVisible();
+  await page.getByLabel("Hub",{exact:true}).fill("a".repeat(200));
+  await expect(page.getByText("A field is outside its limits. Saving is blocked.")).toBeVisible();
+  await expect(page.getByRole("button", {name:"Retry checks"})).toHaveCount(0);
   await expect(page.getByRole("button", {name:"Save & commit"})).toBeDisabled();
 });

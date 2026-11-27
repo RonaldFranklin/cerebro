@@ -41,7 +41,7 @@ def test_a_clean_draft_passes_and_nothing_is_written() -> None:
     result = check.execute(OwnerEditNoteRequest(note=note, expected_hash=stored_hash(world)), OWNER)
     assert result.validation.ok
     assert result.base_current
-    assert result.link_lines == ()
+    assert (result.broken_link_lines, result.sensitivity_lines) == ((), ())
     assert (result.soft_limit, result.hard_limit) == (1500, 3000)
     assert result.words == len(note.body.split())
     assert world.notes.head() == before
@@ -56,7 +56,7 @@ def test_every_problem_is_reported_with_its_line_and_never_its_value() -> None:
     )
     codes = {violation.code for violation in result.validation.violations}
     assert {ViolationCode.BROKEN_LINK, ViolationCode.SECRET_DETECTED} <= codes
-    assert result.link_lines == (2, 4)
+    assert (result.broken_link_lines, result.sensitivity_lines) == ((2, 4), ())
     assert not result.base_current
     assert all(SECRET not in violation.message for violation in result.validation.violations)
 
@@ -67,7 +67,26 @@ def test_a_link_to_a_more_sensitive_note_names_its_line() -> None:
     changed = replace(note, body=f"One.\nTwo [[{hidden.id.value}]].")
     result = check.execute(OwnerEditNoteRequest(note=changed, expected_hash=content_hash(note)), OWNER)
     assert not result.validation.ok
-    assert result.link_lines == (2,)
+    assert (result.broken_link_lines, result.sensitivity_lines) == ((), (2,))
+
+
+def test_link_lines_follow_the_rule_that_reports_each_problem() -> None:
+    world, check, note = kit()
+    hidden = next(n for n in world.notes.scan().notes if n.sensitivity > note.sensitivity)
+    body = "\n".join(
+        [
+            "`[[code-span]]` and [[alias-form|text]]",  # neither is a link for the broken-link rule
+            "```",
+            "[[fenced-example]]",
+            "```",
+            f"`[[{hidden.id.value}]]` in code still reveals the id",
+            "A real [[missing-target]] after `inline code`.",
+            f"Itself: [[{note.id.value}]]",
+        ]
+    )
+    result = check.execute(OwnerEditNoteRequest(note=replace(note, body=body), expected_hash=stored_hash(world)), OWNER)
+    assert result.broken_link_lines == (6,)
+    assert result.sensitivity_lines == (5,)
 
 
 @pytest.mark.parametrize(("words", "ok"), [(1501, True), (3001, False)])

@@ -410,7 +410,8 @@ class CheckOwnerEditResult:
     words: int
     soft_limit: int | None
     hard_limit: int
-    link_lines: tuple[int, ...]
+    broken_link_lines: tuple[int, ...]
+    sensitivity_lines: tuple[int, ...]
     base_current: bool
 
 

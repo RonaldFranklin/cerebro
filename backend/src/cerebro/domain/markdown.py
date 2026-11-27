@@ -25,10 +25,13 @@ def fenced_flags(lines: list[str]) -> list[bool]:
     return flags
 
 
-def strip_code(text: str) -> str:
-    """``text`` with fenced code blocks and inline code spans blanked out."""
-    lines = text.splitlines()
-    kept = [
+def code_free_lines(lines: list[str]) -> list[str]:
+    """``lines``, one for one, with fenced code blocks and inline code spans blanked out."""
+    return [
         "" if fenced else _INLINE_CODE.sub("", line) for line, fenced in zip(lines, fenced_flags(lines), strict=True)
     ]
-    return "\n".join(kept)
+
+
+def strip_code(text: str) -> str:
+    """``text`` with fenced code blocks and inline code spans blanked out."""
+    return "\n".join(code_free_lines(text.splitlines()))

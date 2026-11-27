@@ -124,7 +124,10 @@ function EditForm({api, initial, history, reload}: {api:ApiClient;initial:Editab
   }
 
   async function save() {
-    if (!ready) return;
+    if (!ready) {
+      if (dirty && !busy) setMessage("Saving is blocked until the checks pass.");
+      return;
+    }
     setBusy(true); setMessage(""); setValidation(null); setWarnings([]);
     try {
       const result = await api.write<SaveResult>("/api/notes/" + encodeURIComponent(initial.id), "PUT", {
@@ -149,8 +152,9 @@ function EditForm({api, initial, history, reload}: {api:ApiClient;initial:Editab
   useLayoutEffect(() => { submit.current = save; });
   useEffect(() => {
     function shortcut(event: KeyboardEvent) {
-      if (event.key.toLowerCase() !== "s" || !(event.ctrlKey || event.metaKey) || event.altKey) return;
+      if (event.key.toLowerCase() !== "s" || !(event.ctrlKey || event.metaKey) || event.altKey || event.shiftKey) return;
       event.preventDefault();
+      if (event.repeat) return;
       void submit.current();
     }
     window.addEventListener("keydown", shortcut);

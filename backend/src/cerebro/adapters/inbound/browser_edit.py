@@ -89,7 +89,13 @@ def install_browser_edit(
         if isinstance(note, ValidationReport):
             # No note could be built, so nothing else was checked.
             return JSONResponse(
-                {"validation": validation_view(note), "budget": None, "link_lines": [], "base_current": None}
+                {
+                    "validation": validation_view(note),
+                    "budget": None,
+                    "broken_link_lines": [],
+                    "sensitivity_lines": [],
+                    "base_current": None,
+                }
             )
         outcome = check_owner_edit.execute(
             OwnerEditNoteRequest(note=note, expected_hash=payload.expected_hash), request.state.ctx
@@ -98,7 +104,8 @@ def install_browser_edit(
             {
                 "validation": validation_view(outcome.validation),
                 "budget": {"words": outcome.words, "soft": outcome.soft_limit, "hard": outcome.hard_limit},
-                "link_lines": list(outcome.link_lines),
+                "broken_link_lines": list(outcome.broken_link_lines),
+                "sensitivity_lines": list(outcome.sensitivity_lines),
                 "base_current": outcome.base_current,
             }
         )

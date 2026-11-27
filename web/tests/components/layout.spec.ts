@@ -12,7 +12,7 @@ async function owner(page: Page, ceiling = "restricted") {
   await page.route("**/api/graph?**", route => route.fulfill({json: {nodes: [node], edges: [], center: null}}));
   await page.route("**/api/notes/a**", route => route.fulfill({json: note}));
   await page.route("**/api/notes/a/validate", route => route.fulfill({json: {validation: {ok: true, violations: []},
-    budget: {words: 1, soft: 1500, hard: 3000}, link_lines: [], base_current: true}}));
+    budget: {words: 1, soft: 1500, hard: 3000}, broken_link_lines: [], sensitivity_lines: [], base_current: true}}));
   const linked = {...node, id: "c", title: "C"};
   await page.route("**/api/notes/a/neighbors**", route => route.fulfill({json: {nodes: [node, linked],
     edges: [{source: "a", target: "c", kind: "wikilink", section: null}], center: "a"}}));
@@ -134,6 +134,7 @@ for (const path of ["/", "/search", "/graph", "/editor/a", "/notes/a"]) {
     await expect(page.getByRole("main").getByRole("heading", {level: 1})).toBeVisible();
     if (path === "/") await expect(page.getByRole("link", {name: "A", exact: true}).first()).toBeVisible();
     if (path === "/search" || path === "/graph") await expect(page.getByRole("link", {name: "B", exact: true})).toBeVisible();
+    if (path === "/editor/a") await expect(page.getByRole("link", {name: "a", exact: true})).toBeVisible();
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
     const small = await page.evaluate(() => [...document.querySelectorAll<HTMLElement>(
       "button, select, input:not([type=checkbox]):not([type=radio]), label:has(> input[type=checkbox]), label:has(> input[type=radio]), .topbar a, .rail a, .overview-notes a, .search-results h3 a, .graph-list li a, .editor-head a, .note-links a, .reader-aside nav a")]

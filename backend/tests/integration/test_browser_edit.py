@@ -210,7 +210,7 @@ def test_checking_a_draft_reports_the_rules_and_writes_nothing(editor: tuple[Tes
     result = response.json()
     assert {(v["code"], v["line"]) for v in result["validation"]["violations"]} >= {("secret_detected", 3)}
     assert "broken_link" in {v["code"] for v in result["validation"]["violations"]}
-    assert result["link_lines"] == [2]
+    assert (result["broken_link_lines"], result["sensitivity_lines"]) == ([2], [])
     assert not result["base_current"]
     assert "PRIVATE KEY" not in response.text
     assert "not-written" not in response.text

@@ -5,7 +5,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from enum import StrEnum
 
-from cerebro.domain.markdown import strip_code
+from cerebro.domain.markdown import code_free_lines, strip_code
 from cerebro.domain.note import MAX_NOTE_ID_LENGTH, Note, NoteId
 from cerebro.domain.slug import is_slug
 
@@ -65,6 +65,16 @@ def extract_wikilinks(body: str) -> tuple[WikiLink, ...]:
         section = (match.group(2) or "").strip() or None
         found[WikiLink(target=target, section=section)] = None
     return tuple(found)
+
+
+def wikilink_lines(body: str) -> tuple[tuple[int, NoteId], ...]:
+    """``(line, target)`` of the links ``extract_wikilinks`` finds, with 1-based lines split on ``\\n`` only."""
+    return tuple(
+        (number, target)
+        for number, line in enumerate(code_free_lines(body.split("\n")), 1)
+        for match in _WIKILINK.finditer(line)
+        if (target := _note_id(match.group(1).strip())) is not None
+    )
 
 
 def links_from_references(

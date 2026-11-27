@@ -12,7 +12,7 @@ from cerebro.domain.access import AccessContext
 from cerebro.domain.budgets import body_limits, word_count
 from cerebro.domain.content_hash import content_hash
 from cerebro.domain.enums import Priority, Sensitivity
-from cerebro.domain.links import loose_link_targets
+from cerebro.domain.links import loose_link_targets, wikilink_lines
 from cerebro.domain.note import Note, NoteId
 from cerebro.domain.report import OWNER_EDIT_POLICY
 from cerebro.domain.vocabulary import Vocabulary
@@ -20,8 +20,8 @@ from cerebro.domain.vocabulary import Vocabulary
 
 class CheckOwnerEdit:
     """The dry run of ``OwnerEditNote``: the same rules and severities over the same snapshot, plus what the editor
-    shows beside them (the budget of the note's type, the body lines holding a bad link, whether the base is still
-    current). Nothing is written.
+    shows beside them (the budget of the note's type, the body lines of each kind of bad link, whether the base is
+    still current). Nothing is written, and no index is read or refreshed.
 
     Owner only, with the ceiling ``restricted``: a check tells missing link targets from more sensitive ones, so on a
     lower ceiling it would reveal what the ceiling hides.
@@ -57,20 +57,30 @@ class CheckOwnerEdit:
                 for n in scan.notes
                 if n.priority is Priority.P0 and n.is_current and n.id != candidate.id
             )
+        notes = {n.id: n for n in scan.notes} | {candidate.id: candidate}
         return CheckOwnerEditResult(
             validation=report,
             words=words,
             soft_limit=soft,
             hard_limit=hard,
-            link_lines=_bad_link_lines(candidate, {n.id: n for n in scan.notes} | {candidate.id: candidate}),
+            broken_link_lines=_broken_link_lines(candidate, notes),
+            sensitivity_lines=_sensitivity_lines(candidate, notes),
             base_current=content_hash(base) == request.expected_hash,
         )
 
 
-def _bad_link_lines(note: Note, notes: dict[NoteId, Note]) -> tuple[int, ...]:
-    """1-based body lines with a link to a note that is missing or more sensitive than ``note``."""
+def _broken_link_lines(note: Note, notes: dict[NoteId, Note]) -> tuple[int, ...]:
+    """1-based body lines with a link to no note: the links the broken-link rule reads (code is an example)."""
+    return tuple(sorted({line for line, ref in wikilink_lines(note.body) if ref != note.id and ref not in notes}))
+
+
+def _sensitivity_lines(note: Note, notes: dict[NoteId, Note]) -> tuple[int, ...]:
+    """1-based body lines naming a more sensitive note in any bracket form, code included, as that rule reads them."""
     return tuple(
         number
         for number, line in enumerate(note.body.split("\n"), 1)
-        if any(ref not in notes or notes[ref].sensitivity > note.sensitivity for ref in loose_link_targets(line))
+        if any(
+            ref != note.id and ref in notes and notes[ref].sensitivity > note.sensitivity
+            for ref in loose_link_targets(line)
+        )
     )

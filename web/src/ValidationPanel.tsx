@@ -1,3 +1,4 @@
+import { useRef, useState } from "react";
 import type { ValidationReport } from "./api";
 import type { CheckResult, useDraftCheck } from "./draftCheck";
 
@@ -48,7 +49,8 @@ function Checks({result, priority}: {result: CheckResult; priority: string}) {
   const schema = violations.filter(v => !grouped.has(v.code));
   const links = found(groups.links), sensitivity = found(groups.sensitivity);
   const budget = result.budget;
-  const badLines = result.link_lines.length > 0 && <p>{result.link_lines.length === 1 ? "Line" : "Lines"} {result.link_lines.join(", ")} of the body</p>;
+  const where = (numbers: number[]) => numbers.length > 0 &&
+    <p>{numbers.length === 1 ? "Line" : "Lines"} {numbers.join(", ")} of the body</p>;
   return <ul className="checks">
     <Item name="Schema" state={schema.some(blocks) ? "failed" : schema.length ? "warning" : "passed"}>
       {schema.length ? <ul>{schema.map((violation, index) => <li key={index}>{describe(violation)}</li>)}</ul> : <p>Fields are valid.</p>}
@@ -59,9 +61,9 @@ function Checks({result, priority}: {result: CheckResult; priority: string}) {
         <p>{budget.words.toLocaleString("en")} / {budget.soft ? `${budget.soft.toLocaleString("en")} soft · ` : ""}{budget.hard.toLocaleString("en")} hard</p>
       </> : <p>Fix the fields first.</p>}
     </Item>
-    <Item name="Links" state={state(links)}>{lines(links, "Every link has a target.")}{links.length > 0 && badLines}</Item>
+    <Item name="Links" state={state(links)}>{lines(links, "Every link has a target.")}{where(result.broken_link_lines)}</Item>
     <Item name="Sensitivity" state={state(sensitivity)}>
-      {lines(sensitivity, "No link to a more sensitive note.")}{sensitivity.length > 0 && badLines}</Item>
+      {lines(sensitivity, "No link to a more sensitive note.")}{where(result.sensitivity_lines)}</Item>
     <Item name="Secret scan" state={state(found(groups.secrets))}>{lines(found(groups.secrets), "Nothing found (best-effort).")}</Item>
     <Item name="Base version" state={result.base_current === null ? "unchecked" : result.base_current ? "passed" : "failed"}>
       <p>{result.base_current === null ? "Fix the fields first." : result.base_current
@@ -70,13 +72,25 @@ function Checks({result, priority}: {result: CheckResult; priority: string}) {
   </ul>;
 }
 
+function outcome(check: ReturnType<typeof useDraftCheck>) {
+  if (check.status === "checking") return null;
+  if (check.status === "unavailable") return "The draft could not be checked. Saving is blocked.";
+  if (check.status === "rejected") return "A field is outside its limits. Saving is blocked.";
+  return passes(check.result) ? "All checks pass." : "Saving is blocked while a check fails.";
+}
+
 export function ValidationPanel({check, priority}: {check: ReturnType<typeof useDraftCheck>; priority: string}) {
-  const summary = check.status === "checking" ? "Checking the draft…" : check.status === "unavailable"
-    ? "The draft could not be checked. Saving is blocked." : passes(check.result) ? "All checks pass." : "Saving is blocked while a check fails.";
+  const heading = useRef<HTMLHeadingElement>(null);
+  const current = outcome(check);
+  // Announced only when the outcome changes: a check after every pause in typing stays quiet.
+  const [announced, setAnnounced] = useState("");
+  if (current !== null && current !== announced) setAnnounced(current);
   return <aside className="editor-validation" aria-label="Validation">
-    <h2>Validation</h2>
-    <p role="status">{summary}</p>
-    {check.status === "unavailable" && <button type="button" onClick={check.retry}>Retry checks</button>}
+    <h2 ref={heading} tabIndex={-1}>Validation</h2>
+    <p role="status">{announced}</p>
+    {check.status === "checking" && <p>Checking the draft…</p>}
+    {check.status === "unavailable" && <button type="button" onClick={() => { check.retry(); heading.current?.focus(); }}>Retry checks</button>}
+    {check.status === "rejected" && <p>Check the length of Hub, Superseded by, Related notes and Review by.</p>}
     {check.status === "done" && <Checks result={check.result} priority={priority}/>}
     <p className="editor-author">Commits as <strong>owner</strong>. If an agent writes this note meanwhile, you compare both versions before saving.</p>
   </aside>;
