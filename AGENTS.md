@@ -3,8 +3,8 @@
 Instructions for coding agents (Claude Code, Codex, and others) working on **this repository**.
 Claude Code reads this file automatically when no `CLAUDE.md` exists; keep it that way so one file serves every agent.
 
-> This repo holds the **application** code. The notes live in a separate **content repository**. This repo is
-> private and must stay publishable: never add real notes, personal data or infrastructure details here.
+> This repo holds the **application** code. The notes live in a separate **content repository**. This repo is meant
+> to be public: never add real notes, personal data or infrastructure details here.
 
 ## 1. What Cérebro is
 
@@ -61,8 +61,7 @@ See [the roadmap](docs/roadmap.md) for pending checkpoints. Update this section 
 
 **Language**
 - Code, identifiers, comments, docs, commit messages and UI text: **English**.
-- The maintainer usually chats in Brazilian Portuguese: answer him in pt-BR in conversation, but keep every
-  artifact in English.
+- In conversation, answer in the language the person writes in, but keep every artifact in English.
 
 ## 5. How to work
 
