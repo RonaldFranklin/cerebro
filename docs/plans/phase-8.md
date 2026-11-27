@@ -18,7 +18,7 @@ independent review, and keeps backend and browser tests green.
 - No new dependency without owner review ([ADR-0013](../adr/0013-stack-and-dependency-policy.md)).
 - Fonts, approved by the owner on 2026-11-27: `@fontsource-variable/space-grotesk`, `inter` and `jetbrains-mono`
   5.3.0, importing only the `latin` subset.
-- Health additions (last backup, token table): their design is proposed to the owner before implementation. Token
+- New data for the screens is designed in [phase-8-data.md](phase-8-data.md) and approved before implementation. Token
   "last used" and 24-hour activity are counters in the state database and record no request content.
 
 ## Layout decisions (step 2)
@@ -41,4 +41,4 @@ independent review, and keeps backend and browser tests green.
 | Step | Pull request | State |
 |---|---|---|
 | 1 | #107 | Merged on 2026-11-27 after owner review |
-| 2 | #108 | Theme tokens, top bar, icon rail, touch targets and self-hosted fonts: implemented, tested and independently reviewed; awaiting owner review (new dependency) |
+| 2 | #108 | Merged on 2026-11-27 after owner review. The image build is checked at deployment |
