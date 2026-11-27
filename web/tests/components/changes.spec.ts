@@ -147,9 +147,10 @@ test("a day appears once, the diff heading sits under it and denied history name
 });
 
 test("day headings follow the date past midnight and use one language", async ({page}) => {
-  await page.clock.install({time: new Date(2026, 10, 27, 23, 59, 0)});
+  // The browser runs in UTC; building the times in UTC keeps the test independent of the machine's zone.
+  await page.clock.install({time: new Date(Date.UTC(2026, 10, 27, 23, 59))});
   await owner(page);
-  const timestamp = await page.evaluate(() => new Date(2026, 10, 27, 20, 5).toISOString());
+  const timestamp = new Date(Date.UTC(2026, 10, 27, 20, 5)).toISOString();
   await page.route("**/api/changes", route => route.fulfill({json:{changes:[{...row, timestamp}], next_cursor:null}}));
   await page.goto("/changes");
   await expect(page.getByRole("heading", {level:2})).toHaveText(["Today"]);
