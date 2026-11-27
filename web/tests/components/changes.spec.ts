@@ -95,3 +95,33 @@ test("retrying an expired continuation reloads the first page", async ({page}) =
   await expect(page.getByRole("button", {name:/Island hub/})).toBeVisible();
   expect(reads).toBe(2);
 });
+
+test("changes group by day, show where they happened and filter by author", async ({page}) => {
+  await page.clock.setFixedTime(new Date("2026-11-27T15:00:00Z"));
+  await owner(page);
+  await page.route("**/api/graph?history=true", route => route.fulfill({json:{
+    nodes:[{id:"island-hub", area:"projects"}], edges:[], center:null}}));
+  const changes = [
+    {...row, revision:"a".repeat(40), timestamp:"2026-11-27T12:00:00Z", actor:"owner", title:"Newest"},
+    {...row, revision:"b".repeat(40), timestamp:"2026-11-26T12:00:00Z", operation:"create", title:"Earlier"},
+    {...row, revision:"c".repeat(40), timestamp:"2026-11-20T12:00:00Z", note_id:"gone", title:"Oldest"},
+  ];
+  await page.route("**/api/changes", route => route.fulfill({json:{changes, next_cursor:null}}));
+  await page.goto("/changes");
+  await expect(page.getByRole("heading", {level:2})).toHaveText(["Today", "Yesterday", /20/]);
+  const newest = page.getByRole("button", {name:/Newest/});
+  for (const text of ["Updated", "island-hub", "Owner", "aaaaaaa", "projects"]) await expect(newest).toContainText(text);
+  await expect(page.getByRole("button", {name:/Earlier/})).toContainText("Created");
+  await expect(newest.locator("circle")).toHaveAttribute("fill", "#5ce1e6");
+  await expect(page.getByRole("button", {name:/Oldest/}).locator("circle")).toHaveCount(0);
+  const authors = page.getByRole("group", {name:"Filter by author"});
+  await expect(authors.getByRole("button")).toHaveText(["All", "Owner", "fixture-agent"]);
+  await authors.getByRole("button", {name:"Owner"}).click();
+  await expect(authors.getByRole("button", {name:"Owner"})).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByRole("button", {name:/Earlier|Oldest/})).toHaveCount(0);
+  await expect(page.getByRole("heading", {level:2})).toHaveText(["Today"]);
+  await authors.getByRole("button", {name:"All"}).click();
+  await expect(page.getByRole("button", {name:/Newest|Earlier|Oldest/})).toHaveCount(3);
+  await page.setViewportSize({width:360, height:780});
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+});

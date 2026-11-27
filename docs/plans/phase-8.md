@@ -47,6 +47,11 @@ Step 3b: note screen, implemented and tested. The commit history panel waits for
 the data design proposal (pull request 109). The former related-notes and details lists are replaced by links in both
 directions and a property grid.
 
+## Recent changes and Health decisions (step 3)
+
+Step 3c: both screens with the data that exists, implemented and tested. The superseded badge, last backup,
+entrances and the token table wait for the data design. The author filter covers the loaded changes.
+
 ## Left for later
 
 - Verify the Cloudflare Access assertion (JWT) in the application, so that `restricted` on the public listener does

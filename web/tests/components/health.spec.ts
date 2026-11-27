@@ -85,3 +85,32 @@ test("health names problem note files with their reason and never links them", a
   await expect(page.getByText(/^differs from the last commit/)).toBeVisible();
   await expect(page.getByRole("link",{name:"notes/guide.md"})).toHaveCount(0);
 });
+
+test("health summarizes the repository and warns about quarantined plaintext", async ({page}) => {
+  await owner(page);
+  await page.route("**/api/health", route => route.fulfill({json:{...clean,issues:[
+    issue("changes_quarantined","quarantine-one","warning"), issue("changes_quarantined","quarantine-two","warning"),
+  ]}}));
+  await page.goto("/health");
+  const summary = page.getByRole("region", {name:"Report summary"});
+  const quarantine = summary.locator("div[data-card=quarantine]");
+  await expect(quarantine).toContainText("2 folders");
+  await expect(quarantine).toContainText("Plaintext — review and remove by hand");
+  await expect(quarantine).toHaveAttribute("data-tone", "warning");
+  await expect(summary.locator("div[data-card=content]")).toContainText("Clean");
+  await expect(summary.locator("div[data-card=content]")).toContainText("4 notes checked");
+  await expect(page.getByText("Warnings found", {exact:true})).toBeVisible();
+  await expect(page.getByText(/^Checked /)).toBeVisible();
+});
+
+test("health does not claim index results when blocked files stopped the checks", async ({page}) => {
+  await owner(page);
+  await page.route("**/api/health", route => route.fulfill({json:{ok:false,notes_checked:0,search_index_checked:false,issues:[
+    issue("note_file_blocking","notes/draft.md","error"),
+  ]}}));
+  await page.goto("/health");
+  await expect(page.getByText("Not checked", {exact:true})).toHaveCount(3);
+  await expect(page.locator("div[data-card=content]")).toContainText("Needs attention");
+  await expect(page.locator("div[data-card=quarantine]")).toContainText("None");
+  await expect(page.getByText("All systems normal")).toHaveCount(0);
+});
