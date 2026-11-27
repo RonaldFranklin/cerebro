@@ -259,7 +259,8 @@ Paste the printed rules under `ingress:` before the catch-all, create the DNS ro
 cloudflared tunnel --config "$CF_CONFIG" ingress validate
 for env in hml prod; do
   select_env "$env"
-  cloudflared tunnel --config "$CF_CONFIG" ingress rule "$PUBLIC_ORIGIN/mcp" | grep -Eq "service: http://127\.0\.0\.1:$PUBLIC_PORT\$"
+  rule=$(cloudflared tunnel --config "$CF_CONFIG" ingress rule "$PUBLIC_ORIGIN/mcp")
+  grep -Eq "service: http://127\.0\.0\.1:$PUBLIC_PORT\$" <<< "$rule"
 done
 select_env hml
 ```
@@ -281,7 +282,8 @@ Cérebro serves MCP only at the exact path `/mcp`. If Access also bypasses longe
 PUBLIC_ORIGIN='https://<public-hostname>'  # the environment under test
 test "$(curl -sS -o /dev/null -w '%{http_code}' "$PUBLIC_ORIGIN/mcp")" = 401
 test "$(curl -sS -o /dev/null -w '%{http_code} %{redirect_url}' "http://${PUBLIC_ORIGIN#https://}/mcp")" = "301 $PUBLIC_ORIGIN/mcp"
-curl -sS -o /dev/null -D - "$PUBLIC_ORIGIN/mcp" | grep -qi '^strict-transport-security: max-age='
+headers=$(curl -sS -o /dev/null -D - "$PUBLIC_ORIGIN/mcp")
+grep -qi '^strict-transport-security: max-age=' <<< "$headers"
 for path in / /search /api/session /assets/ /mcp/ /mcp/x /mcpx; do
   read -r code location < <(curl -sS -o /dev/null -w '%{http_code} %{redirect_url}\n' "$PUBLIC_ORIGIN$path")
   if [[ $code = 302 && $location == https://*.cloudflareaccess.com/* ]]; then echo "$path: Access"

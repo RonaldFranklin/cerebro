@@ -1,7 +1,6 @@
 """Stateless MCP over HTTP. The ASGI server address identifies the accepting socket."""
 
 import asyncio
-import contextlib
 import json
 import re
 from collections.abc import AsyncIterator, Mapping
@@ -94,15 +93,13 @@ def http_app(
             return
         except Exception as error:
             log_failure("mcp authentication", error)
-            rpc_id: object = None
-            with contextlib.suppress(Exception):
-                rpc_id = decode_frame(await request.body()).get("id")
+            # The body stays unread: an unauthenticated request is never parsed, so the error carries no id.
             await JSONResponse(
-                {"jsonrpc": "2.0", "id": rpc_id, "error": {"code": -32603, "message": LOCAL_FAILURE}},
+                {"jsonrpc": "2.0", "id": None, "error": {"code": -32603, "message": LOCAL_FAILURE}},
                 status_code=503,
             )(scope, receive, send)
             return
-        rpc_id = None
+        rpc_id: object = None
         try:
             if scope["query_string"] or request.headers.get("origin") is not None:
                 raise ValueError("unexpected request source")
