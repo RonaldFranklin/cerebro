@@ -36,6 +36,15 @@ def body_budget_findings(note: Note) -> tuple[Finding, ...]:
     return _over(ViolationCode.BODY_OVER_SOFT_LIMIT, words, NOTE_SOFT_LIMIT_WORDS, "body")
 
 
+def body_limits(note: Note) -> tuple[int | None, int]:
+    """The ``(soft, hard)`` word limits of a note's type. Core notes share their hard limit."""
+    if note.type == CORE:
+        return None, CORE_BUDGET_WORDS
+    if note.is_hub:
+        return None, HUB_BUDGET_WORDS
+    return NOTE_SOFT_LIMIT_WORDS, NOTE_HARD_LIMIT_WORDS
+
+
 def core_budget_findings(core_word_counts: Mapping[NoteId, int]) -> tuple[Finding, ...]:
     """Check the combined size of the P0 notes served by ``GetOverview``.
 

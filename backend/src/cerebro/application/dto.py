@@ -402,6 +402,20 @@ class OwnerEditNoteRequest:
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
+class CheckOwnerEditResult:
+    """The dry run of an owner edit. ``words`` counts toward ``hard_limit`` (all current core notes together for a
+    core note); ``soft_limit`` is ``None`` where a type has only a hard one."""
+
+    validation: ValidationReport
+    words: int
+    soft_limit: int | None
+    hard_limit: int
+    broken_link_lines: tuple[int, ...]
+    sensitivity_lines: tuple[int, ...]
+    base_current: bool
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
 class OwnerEditNoteResult:
     """``revision`` is ``None`` when validation found errors: nothing was written and ``validation`` says why."""
 

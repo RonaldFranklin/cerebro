@@ -140,7 +140,8 @@ def browser_api(auth: BrowserAuth, binding: BrowserBinding, ceiling: AccessCeili
             request.state.session_info = await asyncio.to_thread(auth.session, binding, session_id, csrf=csrf)
             request.state.ctx = AccessContext.for_owner(ceiling)
             request.state.session_id = session_id
-            note_write = path.startswith("/api/notes/") and request.method == "PUT"
+            # Saving a note and checking a draft of it carry the note: both follow the write rules.
+            note_write = path.startswith("/api/notes/") and request.method in {"PUT", "POST"}
             history = path == "/api/changes" or path.startswith("/api/changes/") or bool(_NOTE_HISTORY.fullmatch(path))
             if note_write or history:
                 if ceiling.level is not Sensitivity.RESTRICTED:

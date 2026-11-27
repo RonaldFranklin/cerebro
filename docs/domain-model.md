@@ -355,6 +355,8 @@ every `[[note-id]]` counts, code included. The service never echoes a submitted 
 inaccessible note. The write guide response also lists the repository's `areas` and `types`, as loaded for
 validation; it holds schema names only and requires the `write` scope. A rejected or stale write produces no note, git
 commit or pending item. Owner edits use the owner's access context and the existing owner severity policy.
+The owner's editor checks a draft with that policy without writing it. The screen also blocks saving on a broken link;
+the save itself still only warns.
 
 The content hash is the SHA-256 hex digest of the UTF-8 JSON object
 `{"frontmatter": note_to_raw(note), "body": body}` with compact separators, canonical key order,

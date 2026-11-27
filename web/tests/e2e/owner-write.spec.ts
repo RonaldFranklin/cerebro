@@ -58,7 +58,7 @@ test("inspect an agent’s committed note and explicitly save an owner edit unde
   await page.getByRole("button",{name:"Preview",exact:true}).click();
   await expect(page.locator(".editor-preview")).toContainText("Verified in the disposable browser fixture.");
   const save = page.waitForResponse(res => res.request().method() === "PUT" && res.url().endsWith("/api/notes/server-ssh-access"));
-  await page.getByRole("button",{name:"Save changes",exact:true}).click();
+  await page.getByRole("button",{name:"Save & commit",exact:true}).click();
   const saved = await save;
   expect(saved.status()).toBe(200);
   expect((await saved.json()).commit).toBe(git("rev-parse","HEAD"));
@@ -84,12 +84,12 @@ test("a concurrent owner edit survives inspection of a conflicted draft", async 
   await other.goto(demo.private_origin + "/editor/server-ssh-access");
   const summary = "Another owner tab updated the runbook summary in this disposable fixture.";
   await other.getByLabel("Summary",{exact:true}).fill(summary);
-  await other.getByRole("button",{name:"Save changes",exact:true}).click();
+  await other.getByRole("button",{name:"Save & commit",exact:true}).click();
   await expect(other.getByText("Changes saved.",{exact:true})).toBeVisible();
   await other.close();
   const before = execFileSync("git",["-C",demo.content_repo,"rev-parse","HEAD"],{encoding:"utf8"}).trim();
   const conflict = page.waitForResponse(res => res.request().method() === "PUT");
-  await page.getByRole("button",{name:"Save changes",exact:true}).click();
+  await page.getByRole("button",{name:"Save & commit",exact:true}).click();
   expect((await conflict).status()).toBe(409);
   await expect(body).toContainText("Pending owner amendment.");
   await page.getByRole("button",{name:"Reload stored note",exact:true}).click();
@@ -98,7 +98,7 @@ test("a concurrent owner edit survives inspection of a conflicted draft", async 
   await page.getByRole("button",{name:"Keep my changes",exact:true}).click();
   await expect(page.getByLabel("Summary",{exact:true})).toHaveValue(summary);
   await expect(body).toContainText("Pending owner amendment.");
-  await page.getByRole("button",{name:"Save changes",exact:true}).click();
+  await page.getByRole("button",{name:"Save & commit",exact:true}).click();
   await expect(page.getByText("Changes saved.",{exact:true})).toBeVisible();
 });
 
@@ -130,7 +130,7 @@ test("a suspended editor drops its draft after another tab replaces the session"
   const editor = page.getByRole("textbox",{name:"Markdown body"});
   const draft = "Unsaved text from the former session.";
   await editor.fill(draft);
-  const save = page.getByRole("button",{name:"Save changes",exact:true});
+  const save = page.getByRole("button",{name:"Save & commit",exact:true});
   await expect(save).toBeEnabled();
   await save.focus();
   const bounds = await save.boundingBox();
@@ -170,7 +170,7 @@ test("a suspended editor drops its draft after another tab replaces the session"
   }
   await expect(editor).toContainText("Check the client");
   await expect(editor).not.toContainText(draft);
-  await expect(page.getByRole("button",{name:"Save changes",exact:true})).toBeDisabled();
+  await expect(page.getByRole("button",{name:"Save & commit",exact:true})).toBeDisabled();
   expect(writes).toEqual([]);
   expect(execFileSync("git",["-C",demo.content_repo,"rev-parse","HEAD"],{encoding:"utf8"})).toBe(before);
 });

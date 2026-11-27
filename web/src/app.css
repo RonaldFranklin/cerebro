@@ -126,4 +126,4 @@ h2 { font-size: 1.15rem; font-weight: 600; letter-spacing: -.01em; }
 .pending-view { display: grid; justify-items: start; gap: 1rem; }
 /* Standalone links are touch targets too; links inside prose keep the line height. Block padding keeps rich titles intact. */
 :is(.overview-notes li, .reader-aside li, .reader-members li, .reader-trail, .reader-section-return, .search-results h3, .search-sections,
-  .graph-list li > div, .health-subject, .change-detail header, .reader-replaced, .note-history, .editor-head > div, .pending-view) > a { display: inline-block; min-width: var(--target); line-height: 1.25rem; padding-block: .75rem; }
+  .graph-list li > div, .health-subject, .change-detail header, .reader-replaced, .note-history, .editor-head > div > p, .pending-view) > a { display: inline-block; min-width: var(--target); line-height: 1.25rem; padding-block: .75rem; }

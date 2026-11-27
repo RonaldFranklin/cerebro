@@ -3,12 +3,14 @@ import { defaultKeymap, history as editHistory, historyKeymap } from "@codemirro
 import { markdown } from "@codemirror/lang-markdown";
 import { EditorView, keymap } from "@codemirror/view";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 
 import { ApiError, type ApiClient, type ValidationReport, type WriteWarning } from "./api";
 import { Markdown, TechnicalText } from "./Markdown";
 import { notePath, type Note } from "./Reader";
 import { useVisibleGraph } from "./visibleGraph";
+import { useDraftCheck } from "./draftCheck";
+import { passes, ValidationPanel } from "./ValidationPanel";
 import "./editor.css";
 
 const labels = {
@@ -112,13 +114,20 @@ function EditForm({api, initial, history, reload}: {api:ApiClient;initial:Editab
 
   const incoming = latest ? draftFrom(latest) : null;
   const dirty = fields.some(field => base[field] !== draft[field]);
+  const check = useDraftCheck(api, initial.id, JSON.stringify({expected_hash:hash, note:payload(draft)}));
+  const changedElsewhere = check.status === "done" && check.result.base_current === false;
+  useEffect(() => { if (changedElsewhere) setConflict(true); }, [changedElsewhere]);
+  const ready = dirty && !busy && !conflict && check.status === "done" && passes(check.result);
   function update(field: Field, value: string) {
     setDraft(current => current[field] === value ? current : {...current,[field]:value});
     setValidation(null); setWarnings([]); setMessage("");
   }
 
   async function save() {
-    if (busy || conflict || !dirty) return;
+    if (!ready) {
+      if (dirty && !busy) setMessage("Saving is blocked until the checks pass.");
+      return;
+    }
     setBusy(true); setMessage(""); setValidation(null); setWarnings([]);
     try {
       const result = await api.write<SaveResult>("/api/notes/" + encodeURIComponent(initial.id), "PUT", {
@@ -138,6 +147,19 @@ function EditForm({api, initial, history, reload}: {api:ApiClient;initial:Editab
       }
     } finally {setBusy(false);}
   }
+
+  const submit = useRef(save);
+  useLayoutEffect(() => { submit.current = save; });
+  useEffect(() => {
+    function shortcut(event: KeyboardEvent) {
+      if (event.key.toLowerCase() !== "s" || !(event.ctrlKey || event.metaKey) || event.altKey || event.shiftKey) return;
+      event.preventDefault();
+      if (event.repeat) return;
+      void submit.current();
+    }
+    window.addEventListener("keydown", shortcut);
+    return () => window.removeEventListener("keydown", shortcut);
+  }, []);
 
   async function inspect() {
     setBusy(true); setMessage("");
@@ -176,8 +198,11 @@ function EditForm({api, initial, history, reload}: {api:ApiClient;initial:Editab
 
   return <article className="owner-editor">
     <header className="editor-head">
-      <div><a href={notePath(initial.id,history)} translate="no">{initial.id}</a><h1>Edit note</h1></div>
-      <button className="primary-btn" onClick={() => void save()} disabled={!dirty || busy || conflict}>Save changes</button>
+      <div><p>Editing <a href={notePath(initial.id,history)} translate="no">{initial.id}</a></p>
+        <h1><TechnicalText text={base.title} visibleIds={ids}/></h1></div>
+      {dirty && <span className="editor-unsaved">Unsaved changes</span>}
+      <a className="editor-cancel" href={notePath(initial.id,history)}>Cancel</a>
+      <button className="primary-btn" onClick={() => void save()} disabled={!ready} aria-keyshortcuts="Control+S Meta+S">Save &amp; commit</button>
     </header>
     {message && <p className="editor-feedback" role="status">{message}</p>}
     {warnings.map(w=><p className="editor-feedback" key={w.code}>{w.message}</p>)}
@@ -193,7 +218,7 @@ function EditForm({api, initial, history, reload}: {api:ApiClient;initial:Editab
           <button onClick={()=>resolve(true)}>Keep my changes</button> <button onClick={()=>resolve(false)}>Use stored note</button>
         </>}
     </section>}
-    <div inert={busy} className="editor-panels">
+    <div className="editor-columns"><div inert={busy} className="editor-panels">
       <section className="editor-writing">
         <div className="editor-section-heading"><h2>Note content</h2><div className="editor-switch">
           <button aria-pressed={!preview} onClick={()=>setPreview(false)}>Write</button>
@@ -209,6 +234,7 @@ function EditForm({api, initial, history, reload}: {api:ApiClient;initial:Editab
         {(["type","area","priority","status","sensitivity","lang","hub","related","superseded_by","review_by"] as const).map(control)}
       </div></aside>
     </div>
+    <ValidationPanel check={check} priority={draft.priority}/></div>
   </article>;
 }
 
