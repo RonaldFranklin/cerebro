@@ -1,47 +1,94 @@
-# Connect Claude Code and Codex from WSL
+# Connect an agent to Cérebro
 
-Run these steps on the owner's workstation after the server agent validates the environment. Obtain its private Tailscale Serve HTTPS origin (including a port if supplied) and the two corresponding bearer tokens from the owner. Each token belongs to one client and one environment. Use these credentials only in projects whose code, instructions, hooks and plugins the owner trusts to maintain global rules. The owner issues `read`, `write` and `core` to these trusted clients. Keep the tokens in the owner's password manager.
+An agent needs two things: the environment's public URL and a bearer token issued for that client. No tailnet or
+VPN is involved. Each token belongs to one client and one environment, and its ceiling alone decides which notes the
+client sees ([ADR-0028](adr/0028-token-decides-public-access.md)). The owner issues `read`, `write` and `core` only
+to trusted clients such as their own Claude Code and Codex. `core` lets a client change the global rules every agent
+receives. Use those credentials only in projects whose code, instructions, hooks and plugins the owner trusts. Give
+other clients `read`, plus `write` if they should record notes, never `core`. Keep tokens in the owner's password
+manager and never in a file inside a repository.
 
-## Reach the tailnet
+The commands below are for Bash on Linux or WSL. Replace `<public-hostname>` with the environment's hostname.
 
-**Recommended for Windows 11 22H2 or later with WSL 2:** sign in to Tailscale on Windows and let WSL use the Windows connection through mirrored networking. This keeps one tailnet device identity for the workstation. In PowerShell, run `wsl -l -v` and confirm the client distribution shows version 2. Merge these settings into the existing `[wsl2]` section of `%UserProfile%\.wslconfig`, creating the section if necessary. [Microsoft WSL networking](https://learn.microsoft.com/en-us/windows/wsl/networking#mirrored-mode-networking) · [Tailscale on Windows](https://tailscale.com/docs/install/windows)
-
-```ini
-[wsl2]
-networkingMode=mirrored
-dnsTunneling=true
-```
-
-Save work in **all** running WSL distributions before applying the change with `wsl --shutdown` in PowerShell. Reopen the client distribution.
-
-**Alternative:** when Windows cannot provide the route, run Tailscale in WSL 2 as its own tailnet node. Use this option with the Windows Tailscale client disconnected. Follow the Linux installation instructions for the distribution, start the `tailscaled` service, run `sudo tailscale up` and sign in to the intended tailnet. Confirm the WSL device has access to the server's HTTPS port. [Tailscale's WSL 2 instructions](https://tailscale.com/docs/install/windows/wsl2)
-
-In WSL Bash, replace the placeholder with the exact HTTPS origin. Check the address against the owner's handoff before configuring a client.
+## 1. Check the URL and store the token
 
 ```bash
-CEREBRO_ORIGIN='https://<tailnet-hostname-and-optional-port>'
-CEREBRO_MCP_URL="${CEREBRO_ORIGIN%/}/mcp"
-curl --proto '=https' --connect-timeout 5 --max-time 10 --silent --show-error \
-  --output /dev/null --write-out 'MCP HTTP %{http_code}\n' "$CEREBRO_MCP_URL"
+CEREBRO_MCP_URL='https://<public-hostname>/mcp'
+curl --proto '=https' -sS -o /dev/null -w 'MCP HTTP %{http_code}\n' "$CEREBRO_MCP_URL"
 ```
 
-Expect `401` without a token. Stop on DNS, certificate or connection errors, redirects, or another status. Confirm the origin, MagicDNS, tailnet access and environment with the owner before sending a token.
-
-## Register the user-level HTTP server
-
-Run once in that WSL shell. First check for an existing server named `cerebro` in each client's configuration. If one already exists, confirm its environment with the owner before changing it. Claude registers a user-owned header command that reads the private temporary file prepared at launch. Codex saves the variable name in its user configuration. Both clients use Streamable HTTP. [Claude Code MCP](https://code.claude.com/docs/en/mcp) · [Codex MCP](https://developers.openai.com/codex/mcp/)
+Always use the `https://` URL. Expect `401`. A `302` to `cloudflareaccess.com` means the Access bypass for `/mcp` is
+missing. Stop on certificate or DNS errors. Save each client's token in a private file outside every repository. The
+hidden prompt keeps it out of shell history:
 
 ```bash
-python3 - "$CEREBRO_MCP_URL" <<'PYTHON' | claude mcp add-json --scope user cerebro -
-import json, sys
-print(json.dumps({"type": "http", "url": sys.argv[1], "headersHelper": 'cat "$CEREBRO_HEADERS_FILE"'}))
-PYTHON
-codex mcp add cerebro --url "$CEREBRO_MCP_URL" --bearer-token-env-var CEREBRO_CODEX_TOKEN
+install -d -m 700 ~/.config/cerebro
+for client in claude-code codex; do
+  (umask 077; IFS= read -rsp "$client token: " t && printf '%s' "$t" > ~/.config/cerebro/$client.token); echo
+done
 ```
 
-## Add the global instructions
+**Residual risk:** any command running as your user, including project scripts, hooks and plugins an agent runs, can
+read these files, and the tokens work from anywhere on the internet. Use them only in trusted projects and ask the
+owner to revoke a token as soon as it may be exposed. A desktop keyring (for example `secret-tool lookup` in place of
+`cat`) keeps them off disk but not away from your own processes.
 
-Append this block once to **both** `~/.claude/CLAUDE.md` and `~/.codex/AGENTS.md`, preserving existing instructions. Create either file if necessary. These are per-user files in WSL; projects can supply additional instructions. If a Codex global `AGENTS.override.md` exists, Codex uses it in preference to the global `AGENTS.md`; include the same block in the active override. [Claude Code memory](https://code.claude.com/docs/en/memory) · [Codex instruction discovery](https://developers.openai.com/codex/guides/agents-md/)
+## 2. Claude Code
+
+Register a user-level HTTP server. Its `headersHelper` reads the token at each connection, so the token never
+appears in `~/.claude.json`. [Claude Code MCP](https://code.claude.com/docs/en/mcp)
+
+```bash
+claude mcp add-json --scope user cerebro - <<'JSON'
+{"type": "http", "url": "https://<public-hostname>/mcp",
+ "headersHelper": "printf '{\"Authorization\":\"Bearer %s\"}' \"$(cat ~/.config/cerebro/claude-code.token)\""}
+JSON
+claude mcp get cerebro
+```
+
+## 3. Codex
+
+Add the server to `~/.codex/config.toml` (check first that no `[mcp_servers.cerebro]` table exists) and a shell
+function that passes the token only to Codex. Codex filters credential-named variables from the commands it runs.
+[Codex MCP](https://developers.openai.com/codex/mcp/) · [Codex configuration](https://developers.openai.com/codex/config-reference/)
+
+```bash
+cat >> ~/.codex/config.toml <<'TOML'
+
+[mcp_servers.cerebro]
+url = "https://<public-hostname>/mcp"
+bearer_token_env_var = "CEREBRO_CODEX_TOKEN"
+TOML
+cat >> ~/.bashrc <<'BASH'
+codex() { CEREBRO_CODEX_TOKEN="$(cat ~/.config/cerebro/codex.token)" command codex -c shell_environment_policy.ignore_default_excludes=false "$@"; }
+BASH
+source ~/.bashrc
+```
+
+## 4. Other MCP clients
+
+Configure a Streamable HTTP server at `https://<public-hostname>/mcp` with the header
+`Authorization: Bearer <token>`. Field names vary by client; a common shape is below. Prefer the client's
+environment-variable expansion or secret store to a literal token, and keep the file outside repositories.
+
+```json
+{"mcpServers": {"cerebro": {"type": "http", "url": "https://<public-hostname>/mcp",
+  "headers": {"Authorization": "Bearer ${CEREBRO_TOKEN}"}}}}
+```
+
+Cérebro refuses requests with an `Origin` header or a query string, so browser-based clients cannot connect. Cloud
+chat connectors (ChatGPT, claude.ai) need OAuth, which is not available yet. To test a token without a client:
+
+```bash
+curl --proto '=https' -sS -H @<(printf 'Authorization: Bearer %s\n' "$(cat ~/.config/cerebro/claude-code.token)") \
+  -H 'Content-Type: application/json' -H 'Accept: application/json, text/event-stream' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' "$CEREBRO_MCP_URL"
+```
+
+## 5. Add the global instructions
+
+Append this block once to **both** `~/.claude/CLAUDE.md` and `~/.codex/AGENTS.md`, preserving existing instructions.
+If a Codex global `AGENTS.override.md` exists, add the block there too. [Claude Code memory](https://code.claude.com/docs/en/memory) · [Codex instruction discovery](https://developers.openai.com/codex/guides/agents-md/)
 
 ```markdown
 Use Cérebro for durable project context. Start a session with `cerebro_overview`.
@@ -50,36 +97,10 @@ Search before creating a note and prefer updating an existing one.
 When you have something worth recording, read `cerebro_write_guide` and follow it.
 ```
 
-## Launch and verify each client
+## 6. Verify
 
-Use the matching block each time you launch a client in WSL Bash. Paste that client's token at the hidden prompt. Claude's shell receives only a temporary file path. The file contains the bearer until Claude exits; a forced termination may leave it behind. Codex reads its own bearer at startup and filters credential-named variables from its shell commands. Code running as your Linux user can still access user-readable files. [Codex shell environment policy](https://developers.openai.com/codex/config-reference/#shell_environment_policyignore_default_excludes)
-
-```bash
-(
-  set +x
-  umask 077
-  unset cerebro_secret
-  IFS= read -rsp 'Claude Code Cérebro token: ' cerebro_secret || exit 1
-  printf '\n'
-  CEREBRO_HEADERS_FILE=$(mktemp "${XDG_RUNTIME_DIR:-/tmp}/cerebro-headers.XXXXXXXX") || exit 1
-  export CEREBRO_HEADERS_FILE
-  trap 'rm -f -- "$CEREBRO_HEADERS_FILE"' EXIT
-  printf '%s' "$cerebro_secret" | python3 -c 'import json, sys; json.dump({"Authorization": "Bearer " + sys.stdin.read()}, sys.stdout)' > "$CEREBRO_HEADERS_FILE" || exit 1
-  unset cerebro_secret
-  claude
-)
-```
-
-```bash
-(
-  set +x
-  IFS= read -rsp 'Codex Cérebro token: ' CEREBRO_CODEX_TOKEN || exit 1
-  printf '\n'
-  export CEREBRO_CODEX_TOKEN
-  exec codex -c shell_environment_policy.ignore_default_excludes=false
-)
-```
-
-Before running project commands, ask each client to execute `test -z "${CEREBRO_CODEX_TOKEN-}" && test -z "${cerebro_secret-}"` in its shell. Expect success; stop if either credential is inherited. This checks only the two named variables without printing a secret. A project command running as your user can still follow `CEREBRO_HEADERS_FILE` and read the Claude bearer during the session.
-
-Open `/mcp` in each client. Confirm that `cerebro` connects and offers six tools. Ask the agent to call `cerebro_overview` once and report whether it succeeded. An empty overview is valid for fresh content. To verify write discovery without modifying content, ask it to call `cerebro_write_guide`. If authentication fails, confirm that the launch token belongs to this client and environment. Ask the owner to revoke and reissue any exposed token. [Agent integration and fixture checks](agent-integration.md)
+Ask each agent to run `test -z "${CEREBRO_CODEX_TOKEN-}"` in its shell and expect success: no token is inherited
+by the commands it runs. Open `/mcp` in each client and confirm that `cerebro` connects and offers six tools. Ask the agent to call
+`cerebro_overview` (an empty overview is valid for fresh content) and `cerebro_write_guide`. On `401`, confirm the
+token belongs to this client and environment. If a token may be exposed, ask the owner to revoke it at once: until
+then it works from anywhere on the internet. [Agent integration and fixture checks](agent-integration.md)

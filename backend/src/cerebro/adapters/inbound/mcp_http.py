@@ -80,8 +80,26 @@ def http_app(
 
     async def handle(scope: Scope, receive: Receive, send: Send) -> None:
         request = Request(scope, receive)
+        # Authenticate before parsing the body: an anonymous caller only ever receives 401.
+        try:
+            ctx = await asyncio.to_thread(agent, request)
+        except AuthenticationFailed:
+            await Response("Access denied.", status_code=401, headers={"WWW-Authenticate": "Bearer"})(
+                scope, receive, send
+            )
+            return
+        except PermissionDenied:
+            await Response("Access denied.", status_code=403)(scope, receive, send)
+            return
+        except Exception as error:
+            log_failure("mcp authentication", error)
+            # The body stays unread: an unauthenticated request is never parsed, so the error carries no id.
+            await JSONResponse(
+                {"jsonrpc": "2.0", "id": None, "error": {"code": -32603, "message": LOCAL_FAILURE}},
+                status_code=503,
+            )(scope, receive, send)
+            return
         rpc_id: object = None
-        required_scope = None
         try:
             if scope["query_string"] or request.headers.get("origin") is not None:
                 raise ValueError("unexpected request source")
@@ -90,30 +108,14 @@ def http_app(
                 message = decode_frame(body)
                 rpc_id = message.get("id")
                 required_scope = validate_params(message)
+                if required_scope is not None and not ctx.can(required_scope):
+                    await Response("Access denied.", status_code=403)(scope, receive, send)
+                    return
         except InvalidToolArguments as error:
             response: Response = JSONResponse(invalid_arguments(rpc_id, error), status_code=400)
         except ValueError, RecursionError:
             response = Response("Invalid request.", status_code=400)
         else:
-            try:
-                ctx = await asyncio.to_thread(agent, request)
-                if required_scope is not None and not ctx.can(required_scope):
-                    raise PermissionDenied("call tool")
-            except AuthenticationFailed:
-                await Response("Access denied.", status_code=401, headers={"WWW-Authenticate": "Bearer"})(
-                    scope, receive, send
-                )
-                return
-            except PermissionDenied:
-                await Response("Access denied.", status_code=403)(scope, receive, send)
-                return
-            except Exception as error:
-                log_failure("mcp authentication", error)
-                await JSONResponse(
-                    {"jsonrpc": "2.0", "id": rpc_id, "error": {"code": -32603, "message": LOCAL_FAILURE}},
-                    status_code=503,
-                )(scope, receive, send)
-                return
             if request.method != "POST":
                 response = Response(status_code=405, headers={"Allow": "POST"})
             elif "last-event-id" in request.headers or "mcp-session-id" in request.headers:

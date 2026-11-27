@@ -56,7 +56,8 @@ See [the roadmap](docs/roadmap.md) for pending checkpoints. Update this section 
 - Never commit secrets, tokens, keys, `.env` files or real personal data. Use `.env.example` with placeholders.
 - No hostnames, IPs, domains or tailnet names of any real deployment in this repo. Everything is configuration.
 - The effective sensitivity ceiling of a request is `min(listener_ceiling, token_ceiling)`. Never derive the
-  listener from request headers.
+  listener from request headers. The public listener's ceiling is configuration (default `internal`,
+  [ADR-0028](docs/adr/0028-token-decides-public-access.md)); the owner's browser there stays at most `internal`.
 
 **Language**
 - Code, identifiers, comments, docs, commit messages and UI text: **English**.

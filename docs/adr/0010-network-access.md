@@ -1,6 +1,6 @@
 # ADR-0010: Network access — Tailscale first, Cloudflare Tunnel later
 
-- **Status:** accepted
+- **Status:** accepted, amended by [ADR-0028](0028-token-decides-public-access.md) (agents use the public URL with a bearer token)
 - **Date:** 2026-11-24
 
 ## Context
@@ -16,6 +16,8 @@ Tailscale and Cloudflare Tunnels for other services.
 - **Later (Phase 8):** a dedicated Cloudflare Tunnel for Cérebro (not shared with other projects) reaches only
   the public listener, protected by Cloudflare Access (login + MFA for the UI, service tokens for agents).
   Ceiling `internal`.
+  *Amended by ADR-0028:* agents use the public listener now. Access protects only the web UI; `/mcp` bypasses
+  Access and is protected by the Cérebro bearer token. The public ceiling is configurable.
 - Tokens never travel over plain HTTP outside the host.
 - All hostnames/domains are configuration.
 

@@ -73,10 +73,13 @@ def serving(
             process.wait(timeout=10)
 
 
-def post(port: int, secret: str, payload: bytes, *, path: str = "/mcp") -> tuple[int, bytes]:
+def post(
+    port: int, secret: str, payload: bytes, *, path: str = "/mcp", headers: dict[str, str] | None = None
+) -> tuple[int, bytes]:
     conn = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
     try:
         headers = {
+            **(headers or {}),
             "Accept": "application/json, text/event-stream",
             "Content-Type": "application/json",
             "Authorization": "Bearer " + secret,
@@ -154,7 +157,12 @@ def test_real_listener_credentials_limits_and_logs(tmp_path: Path) -> None:
         assert post(private, "invalid", read)[0] == 401
         assert post(private, privileged, read, path="/mcp?access_token=fixture-marker")[0] == 400
         assert post(private, "invalid", b"x" * 65537)[0] == 413
-        invalid_status, invalid_body = post(private, "invalid", call("cerebro_search", {"query": "é" * 513}))
+        malformed = call("cerebro_search", {"query": "é" * 513})
+        # Anonymous callers learn nothing about argument validation, framing or request shape.
+        for anonymous in (malformed, b"{not json", call("cerebro_write", {})):
+            assert post(private, "invalid", anonymous)[0] == 401
+            assert post(public, "invalid", anonymous, path="/mcp?x=1")[0] == 401
+        invalid_status, invalid_body = post(private, privileged, malformed)
         assert invalid_status == 400
         assert json.loads(invalid_body) == {
             "jsonrpc": "2.0",
@@ -184,6 +192,57 @@ def test_real_listener_credentials_limits_and_logs(tmp_path: Path) -> None:
     logs = config.with_suffix(".log").read_bytes()
     for value in (privileged, internal, writer, RESTRICTED_MARKER, "fixture-marker"):
         assert value.encode() not in logs
+
+
+@pytest.mark.parametrize(
+    ("ceiling", "visible"), [(None, False), ("public", False), ("internal", False), ("restricted", True)]
+)
+def test_public_listener_ceiling_is_explicit_and_tokens_still_lower_it(
+    tmp_path: Path, ceiling: str | None, visible: bool
+) -> None:
+    sample = make_sample_repo(tmp_path)
+    container = build_container(sample.settings)
+    config = tmp_path / "instance.toml"
+    config.write_text(SAMPLE.replace("keys/fernet.key", "secrets/cerebro.key"))
+    owner = AccessContext.for_owner(AccessCeiling(Sensitivity.RESTRICTED))
+    secrets = {
+        level: container.use_cases.issue_agent_token.execute(
+            IssueAgentTokenRequest(agent="fixture", scopes=frozenset({Scope.READ}), ceiling=AccessCeiling(level)),
+            owner,
+        ).secret
+        for level in (Sensitivity.INTERNAL, Sensitivity.RESTRICTED)
+    }
+    private, public = free_ports(2)
+    read = call("cerebro_read", {"id": VAULT_ID.value})
+    extra = () if ceiling is None else ("--public-ceiling", ceiling)
+    with serving(config, private, public, extra=extra):
+        restricted = post(public, secrets[Sensitivity.RESTRICTED], read, headers={"X-Forwarded-Port": str(private)})
+        assert restricted[0] == 200
+        assert (RESTRICTED_MARKER.encode() in restricted[1]) == visible
+        status, body = post(public, secrets[Sensitivity.INTERNAL], read)
+        assert status == 200
+        assert RESTRICTED_MARKER.encode() not in body
+        assert b"Not found." in body
+
+
+def test_connection_flood_gets_503_and_service_recovers(tmp_path: Path) -> None:
+    from cerebro.bootstrap.mcp import MAX_CONCURRENCY
+
+    make_sample_repo(tmp_path)
+    config = tmp_path / "instance.toml"
+    config.write_text(SAMPLE.replace("keys/fernet.key", "secrets/cerebro.key"))
+    private, public = free_ports(2)
+    overview = call("cerebro_overview", {})
+    with serving(config, private, public):
+        assert post(public, "invalid", overview)[0] == 401
+        with contextlib.ExitStack() as stack:
+            for _ in range(MAX_CONCURRENCY):
+                stack.enter_context(socket.create_connection(("127.0.0.1", public), timeout=5))
+            time.sleep(0.2)
+            assert post(private, "invalid", overview)[0] == 503
+        time.sleep(0.2)
+        assert post(private, "invalid", overview)[0] == 401
+        assert post(public, "invalid", overview)[0] == 401
 
 
 def test_stdio_sdk_contract_and_offline(tmp_path: Path) -> None:
@@ -244,7 +303,15 @@ def test_container_server_selects_only_ipv4_wildcard(monkeypatch: pytest.MonkeyP
         _arguments(stdio=False)
 
 
-@pytest.mark.parametrize("args", [("--host", "0.0.0.0"), ("--public-port", "7654", "--private-port", "7654")])
+@pytest.mark.parametrize(
+    "args",
+    [
+        ("--host", "0.0.0.0"),
+        ("--public-port", "7654", "--private-port", "7654"),
+        ("--public-ceiling", "secret"),
+        ("--public-ceiling", "RESTRICTED"),
+    ],
+)
 def test_invalid_socket_configuration_rejected_before_wiring(args: tuple[str, ...]) -> None:
     result = subprocess.run([SERVER, *args], capture_output=True, timeout=5)
     assert result.returncode == 2

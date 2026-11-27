@@ -33,12 +33,18 @@ if (
 command = service.get("command", [])
 if (
     service.get("entrypoint") is not None
-    or len(command) != 6
+    or len(command) != 13
     or command[:3] != ["cerebro-mcp", "--container", "--private-origin"]
+    or command[4:6] != ["--enable-public", "--public-port"]
+    or command[7] != "--public-origin"
+    or command[9] != "--public-ceiling"
+    or command[11:] != ["--web-dist", "/opt/cerebro/web"]
     or not command[3].startswith("https://")
-    or command[4:] != ["--web-dist", "/opt/cerebro/web"]
+    or not command[8].startswith("https://")
+    or command[3] == command[8]
+    or command[10] not in ("public", "internal", "restricted")
 ):
-    sys.exit("Start the private-only server with its configured origin and web directory.")
+    sys.exit("Start both listeners with their origins, the public ceiling and the web directory.")
 network = networks["default"]
 if (
     set(service.get("networks", {})) != {"default"}
@@ -52,17 +58,14 @@ identity = service.get("user", "").split(":")
 if len(identity) != 2 or not all(value.isascii() and value.isdecimal() and int(value) > 0 for value in identity):
     sys.exit("Set a non-root numeric service UID and GID.")
 ports = service.get("ports", [])
-if len(ports) != 1:
-    sys.exit("Expected exactly one published private port.")
-port = ports[0]
 private = service.get("environment", {}).get("CEREBRO_PRIVATE_PORT", "")
-if (
-    port.get("host_ip") != "127.0.0.1"
-    or port.get("protocol", "tcp") != "tcp"
-    or str(port.get("target")) != private
-    or str(port.get("published")) != private
-):
-    sys.exit("Publish the private port only as 127.0.0.1:PORT:PORT/tcp.")
+public = command[6]
+published = [
+    tuple(str(port.get(key, "tcp" if key == "protocol" else "")) for key in ("host_ip", "protocol", "target", "published"))
+    for port in ports
+]
+if private == public or sorted(published) != sorted(("127.0.0.1", "tcp", p, p) for p in (private, public)):
+    sys.exit("Publish exactly the private and public ports, each only as 127.0.0.1:PORT:PORT/tcp.")
 
 if sys.argv[1:] == ["--project"]:
     if not all(path.is_dir() for path in mounts.values()):
@@ -74,7 +77,7 @@ elif len(sys.argv) == 4 and sys.argv[3] in ("created", "running"):
     name = network["name"]
     labels = container["Config"]["Labels"]
     runtime = container["NetworkSettings"]
-    bindings = {f"{private}/tcp": [{"HostIp": "127.0.0.1", "HostPort": private}]}
+    bindings = {f"{p}/tcp": [{"HostIp": "127.0.0.1", "HostPort": p}] for p in (private, public)}
     # Docker Engine may include these defaults on a bridge with no configured driver options.
     defaults = {"com.docker.network.enable_ipv4": "true", "com.docker.network.enable_ipv6": "false"}
     options = bridge.get("Options") or {}

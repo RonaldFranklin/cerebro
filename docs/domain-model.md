@@ -194,7 +194,9 @@ Order: `public < internal < restricted`.
 effective_ceiling = min(listener_ceiling, token_ceiling)
 ```
 
-- **Listener ceiling:** private listener (Tailscale) = `restricted`; public listener (Cloudflare) = `internal`.
+- **Listener ceiling:** private listener (Tailscale) = `restricted`; public listener (Cloudflare) = configured,
+  default `internal` ([ADR-0028](adr/0028-token-decides-public-access.md)). The deployment sets `restricted` so the
+  token ceiling decides for agents. The owner's browser on the public listener is capped at `internal`.
 - **Token ceiling:** set when the owner issues the agent token.
 - Notes above the effective ceiling are **invisible**: not in search, not in hubs, not in neighbors, not in
   the graph. Reading one by id returns "not found" (no existence leak).

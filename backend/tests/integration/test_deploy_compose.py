@@ -21,10 +21,14 @@ def checked(model: object) -> subprocess.CompletedProcess[str]:
     )
 
 
-@pytest.mark.parametrize(("environment", "port"), [("hml", "18765"), ("prod", "28765")])
-def test_deployment_model(tmp_path: Path, environment: str, port: str) -> None:
+@pytest.mark.parametrize(
+    ("environment", "port", "public", "ceiling"),
+    [("hml", "18765", "18766", None), ("prod", "28765", "28766", "restricted")],
+)
+def test_deployment_model(tmp_path: Path, environment: str, port: str, public: str, ceiling: str | None) -> None:
     data = tmp_path / environment
     origin = f"https://{environment}.example.invalid"
+    public_origin = f"https://{environment}-public.example.invalid"
     sha = "a" * 40
     result = subprocess.run(
         [
@@ -43,6 +47,9 @@ def test_deployment_model(tmp_path: Path, environment: str, port: str) -> None:
             "ENVIRONMENT": environment,
             "PRIVATE_PORT": port,
             "PRIVATE_ORIGIN": origin,
+            "PUBLIC_PORT": public,
+            "PUBLIC_ORIGIN": public_origin,
+            **({} if ceiling is None else {"PUBLIC_CEILING": ceiling}),
             "DATA_DIR": str(data),
             "APP_SHA": sha,
             "CEREBRO_GIT_NAME": "Fixture",
@@ -77,9 +84,18 @@ def test_deployment_model(tmp_path: Path, environment: str, port: str) -> None:
         "--container",
         "--private-origin",
         origin,
+        "--enable-public",
+        "--public-port",
+        public,
+        "--public-origin",
+        public_origin,
+        "--public-ceiling",
+        ceiling or "internal",
         "--web-dist",
         "/opt/cerebro/web",
     ]
+    published = {(p["host_ip"], str(p["target"]), str(p["published"])) for p in service["ports"]}
+    assert published == {("127.0.0.1", port, port), ("127.0.0.1", public, public)}
     mounts = {v["target"]: v for v in service["volumes"]}
     assert set(mounts) == {"/data/content", "/data/index", "/data/state", "/data/secrets"}
     for target, volume in mounts.items():
@@ -87,17 +103,45 @@ def test_deployment_model(tmp_path: Path, environment: str, port: str) -> None:
         assert volume.get("read_only", False) == (target == "/data/secrets")
 
 
+COMMAND = [
+    "cerebro-mcp",
+    "--container",
+    "--private-origin",
+    "https://example.invalid",
+    "--enable-public",
+    "--public-port",
+    "18766",
+    "--public-origin",
+    "https://public.example.invalid",
+    "--public-ceiling",
+    "restricted",
+    "--web-dist",
+    "/opt/cerebro/web",
+]
+PRIVATE = {"target": 18765, "published": "18765", "host_ip": "127.0.0.1"}
+PUBLIC = {"target": 18766, "published": "18766", "host_ip": "127.0.0.1"}
+
+
 @pytest.mark.parametrize(
     "overrides",
     [
-        {"ports": [{"target": 18765, "published": "18765"}]},
-        {"ports": [{"target": 18765, "published": "18765", "host_ip": "0.0.0.0"}]},
-        {"ports": [{"target": 18765, "published": "28765", "host_ip": "127.0.0.1"}]},
+        {"ports": [{"target": 18765, "published": "18765"}, PUBLIC]},
+        {"ports": [{"target": 18765, "published": "18765", "host_ip": "0.0.0.0"}, PUBLIC]},
+        {"ports": [{"target": 18765, "published": "28765", "host_ip": "127.0.0.1"}, PUBLIC]},
+        {"ports": [PRIVATE]},
+        {"ports": [PRIVATE, {**PUBLIC, "host_ip": "0.0.0.0"}]},
+        {"ports": [PRIVATE, PUBLIC, {**PUBLIC, "target": 18767, "published": "18767"}]},
+        {"command": [*COMMAND[:6], "18765", *COMMAND[7:]], "ports": [PRIVATE, PRIVATE]},
+        {"command": [*COMMAND[:10], "secret", *COMMAND[11:]]},
+        {"command": [*COMMAND[:8], "http://public.example.invalid", *COMMAND[9:]]},
+        {"command": [*COMMAND[:8], COMMAND[3], *COMMAND[9:]]},
+        {"command": [*COMMAND[:4], *COMMAND[11:]], "ports": [PRIVATE]},
         {"network_mode": "host", "ports": []},
         {"network_mode": "host"},
         {"networks": {"another": None}},
         {"command": ["cerebro-mcp", "--container", "--enable-public"]},
         {"entrypoint": ["sh", "-c", "cerebro-mcp --enable-public"]},
+        {"command": [*COMMAND, "--host", "0.0.0.0"]},
         {"environment": {"CEREBRO_PRIVATE_PORT": "18765", "CEREBRO_GIT_BRANCH": "prod"}},
         {"user": "0:10001"},
         {"user": "10001:0"},
@@ -106,16 +150,9 @@ def test_deployment_model(tmp_path: Path, environment: str, port: str) -> None:
 def test_preflight_refuses_unsafe_service(tmp_path: Path, overrides: dict[str, object]) -> None:
     network = {"name": "cerebro-hml_default"}
     service: dict[str, object] = {
-        "command": [
-            "cerebro-mcp",
-            "--container",
-            "--private-origin",
-            "https://example.invalid",
-            "--web-dist",
-            "/opt/cerebro/web",
-        ],
+        "command": COMMAND,
         "environment": {"CEREBRO_PRIVATE_PORT": "18765", "CEREBRO_GIT_BRANCH": "hml"},
-        "ports": [{"target": 18765, "published": "18765", "host_ip": "127.0.0.1"}],
+        "ports": [PUBLIC, PRIVATE],
         "networks": {"default": None},
         "user": "10001:10001",
     }
@@ -179,7 +216,7 @@ case "$*" in
 esac
 """)
     stub.chmod(0o700)
-    port = "18765"
+    port, public = "18765", "18766"
     network = "cerebro-hml_default"
     calls = tmp_path / "calls"
     instance = {
@@ -188,11 +225,14 @@ esac
         "Config": {"Labels": {"com.docker.compose.project": "cerebro-hml", "com.docker.compose.service": "backend"}},
         "HostConfig": {
             "NetworkMode": network,
-            "PortBindings": {f"{port}/tcp": [{"HostIp": "127.0.0.1", "HostPort": port}]},
+            "PortBindings": {f"{p}/tcp": [{"HostIp": "127.0.0.1", "HostPort": p}] for p in (port, public)},
         },
         "NetworkSettings": {
             "Networks": {network: {}, "other": {}} if failure == "attached" else {network: {}},
-            "Ports": {f"{port}/tcp": [{"HostIp": "0.0.0.0" if failure == "port" else "127.0.0.1", "HostPort": port}]},
+            "Ports": {
+                f"{port}/tcp": [{"HostIp": "127.0.0.1", "HostPort": port}],
+                f"{public}/tcp": [{"HostIp": "0.0.0.0" if failure == "port" else "127.0.0.1", "HostPort": public}],
+            },
         },
     }
     bridge: dict[str, object] = {
@@ -216,6 +256,8 @@ esac
         "ENVIRONMENT": "hml",
         "PRIVATE_PORT": port,
         "PRIVATE_ORIGIN": "https://hml.example.invalid",
+        "PUBLIC_PORT": public,
+        "PUBLIC_ORIGIN": "https://hml-public.example.invalid",
         "APP_SHA": "a" * 40,
         "DATA_DIR": str(tmp_path / "hml"),
         "CEREBRO_GIT_NAME": "Fixture",

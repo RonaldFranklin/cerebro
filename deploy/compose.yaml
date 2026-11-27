@@ -12,7 +12,20 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
-    command: ["cerebro-mcp", "--container", "--private-origin", "${PRIVATE_ORIGIN:?set PRIVATE_ORIGIN}", "--web-dist", "/opt/cerebro/web"]
+    command:
+      - cerebro-mcp
+      - --container
+      - --private-origin
+      - "${PRIVATE_ORIGIN:?set PRIVATE_ORIGIN}"
+      - --enable-public
+      - --public-port
+      - "${PUBLIC_PORT:?set PUBLIC_PORT}"
+      - --public-origin
+      - "${PUBLIC_ORIGIN:?set PUBLIC_ORIGIN}"
+      - --public-ceiling
+      - "${PUBLIC_CEILING:-internal}"
+      - --web-dist
+      - /opt/cerebro/web
     environment:
       CEREBRO_PRIVATE_PORT: "${PRIVATE_PORT:?set PRIVATE_PORT}"
       CEREBRO_CONTENT_DIR: /data/content/repo
@@ -24,6 +37,7 @@ services:
       CEREBRO_GIT_EMAIL: "${CEREBRO_GIT_EMAIL:?set the Git commit email}"
     ports:
       - "127.0.0.1:${PRIVATE_PORT}:${PRIVATE_PORT}"
+      - "127.0.0.1:${PUBLIC_PORT}:${PUBLIC_PORT}"
     volumes:
       - type: bind
         source: ${DATA_DIR:?set DATA_DIR to the environment directory}/content

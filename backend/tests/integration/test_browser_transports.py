@@ -28,7 +28,9 @@ def request(
         conn.close()
 
 
-def test_two_https_origins_share_service_but_isolate_sessions(tmp_path: Path) -> None:
+# The public MCP ceiling never widens the owner's browser on the public listener beyond internal.
+@pytest.mark.parametrize("public_ceiling", [(), ("--public-ceiling", "restricted")])
+def test_two_https_origins_share_service_but_isolate_sessions(tmp_path: Path, public_ceiling: tuple[str, ...]) -> None:
     fixture = make_sample_repo(tmp_path)
     owner_credentials(fixture.settings).provision(b"synthetic-owner-password")
     config = tmp_path / "instance.toml"
@@ -40,7 +42,10 @@ def test_two_https_origins_share_service_but_isolate_sessions(tmp_path: Path) ->
     private_port, public_port = free_ports(2)
     with tls_relay(private_port, server) as private, tls_relay(public_port, server) as public:
         origins = {p: f"https://localhost:{p}" for p in (private, public)}
-        options = ("--private-origin", origins[private], "--public-origin", origins[public], "--web-dist", str(dist))
+        options = (
+            *("--private-origin", origins[private], "--public-origin", origins[public]),
+            *("--web-dist", str(dist), *public_ceiling),
+        )
         with serving(config, private_port, public_port, extra=options):
             cookies: dict[int, str] = {}
             tokens: dict[int, str] = {}
@@ -71,6 +76,7 @@ def test_two_https_origins_share_service_but_isolate_sessions(tmp_path: Path) ->
                 status, _, graph = request(client, port, "GET", "/api/graph", forwarded)
                 assert status == 200
                 assert (VAULT_ID.value in {node["id"] for node in json.loads(graph)["nodes"]}) == (port == private)
+                assert request(client, port, "GET", "/api/health", forwarded)[0] == (200 if port == private else 403)
             replay = cookies[private].replace("cerebro_private=", "cerebro_public=")
             assert request(client, public, "GET", "/api/session", {"Cookie": replay})[0] == 401
             assert request(client, private, "GET", "/", {"Host": "other.invalid"})[0] == 400
