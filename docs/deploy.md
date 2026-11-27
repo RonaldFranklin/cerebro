@@ -1,6 +1,6 @@
 # Deploy Cérebro with a private tailnet and a public agent entrance
 
-This is the full two-environment runbook: a test environment (hml) and a production one (prod), published through Tailscale and Cloudflare. To try Cérebro on one machine, use the [README quickstart](../README.md#local-quickstart) instead.
+This is the full two-environment runbook: a test environment (hml) and a production one (prod), published through Tailscale and Cloudflare. To try Cérebro on one machine, use the [README quickstart](../README.md#quickstart-with-docker) instead.
 
 Run as the designated **non-root Linux operator** with access to local Docker, GitHub, Tailscale and the host's `cloudflared`. Use Bash in a private terminal. The owner supplies the placeholders and approves the host, tailnet access policy and backup location. Run hml first. Record release SHAs and image IDs locally. Keep passwords, tokens and key material out of transcripts, Git and Compose environment files.
 
