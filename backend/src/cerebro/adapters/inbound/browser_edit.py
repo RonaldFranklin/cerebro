@@ -9,11 +9,11 @@ from starlette.responses import JSONResponse
 
 from cerebro.adapters.inbound.browser_write_views import validation_view, warnings_view
 from cerebro.adapters.inbound.input_limits import MAX_FIELD_BYTES, MAX_INPUT_BYTES
-from cerebro.application.dto import OwnerEditNoteRequest, OwnerEditNoteResult
+from cerebro.application.dto import CheckOwnerEditResult, OwnerEditNoteRequest, OwnerEditNoteResult
 from cerebro.application.use_case import ContextUseCase
 from cerebro.domain.errors import ContentConflict
 from cerebro.domain.frontmatter import parse_note
-from cerebro.domain.note import MAX_NOTE_ID_LENGTH
+from cerebro.domain.note import MAX_NOTE_ID_LENGTH, Note
 from cerebro.domain.report import Severity, ValidationReport, Violation, ViolationCode
 
 
@@ -55,31 +55,64 @@ class Edit(_Closed):
     note: EditableNote
 
 
+def _parse(note_id: str, payload: Edit) -> Note | ValidationReport:
+    raw = payload.note.model_dump(exclude={"body"})
+    oversized = tuple(
+        Violation(
+            code=ViolationCode.INVALID_FIELD,
+            field=name,
+            message="Field exceeds its UTF-8 byte limit.",
+            severity=Severity.ERROR,
+        )
+        for name, maximum in _BYTE_LIMITS.items()
+        if len(raw[name].encode("utf-8")) > maximum
+    )
+    if oversized:
+        return ValidationReport(oversized)
+    # The use cases keep the stored creation date and assign their clock's date on update.
+    raw.update(id=note_id, created=date.min, updated=date.min)
+    return parse_note(raw, payload.note.body)
+
+
 def install_browser_edit(
-    app: FastAPI, owner_edit_note: ContextUseCase[OwnerEditNoteRequest, OwnerEditNoteResult]
+    app: FastAPI,
+    owner_edit_note: ContextUseCase[OwnerEditNoteRequest, OwnerEditNoteResult],
+    check_owner_edit: ContextUseCase[OwnerEditNoteRequest, CheckOwnerEditResult],
 ) -> None:
     @app.exception_handler(ContentConflict)
     async def conflict(request: Request, error: ContentConflict) -> JSONResponse:
         return JSONResponse({"error": "Conflict. Reload before retrying."}, 409)
 
+    @app.post("/api/notes/{note_id}/validate")
+    def check(request: Request, note_id: str, payload: Edit) -> JSONResponse:
+        note = _parse(note_id, payload)
+        if isinstance(note, ValidationReport):
+            # No note could be built, so nothing else was checked.
+            return JSONResponse(
+                {
+                    "validation": validation_view(note),
+                    "budget": None,
+                    "broken_link_lines": [],
+                    "sensitivity_lines": [],
+                    "base_current": None,
+                }
+            )
+        outcome = check_owner_edit.execute(
+            OwnerEditNoteRequest(note=note, expected_hash=payload.expected_hash), request.state.ctx
+        )
+        return JSONResponse(
+            {
+                "validation": validation_view(outcome.validation),
+                "budget": {"words": outcome.words, "soft": outcome.soft_limit, "hard": outcome.hard_limit},
+                "broken_link_lines": list(outcome.broken_link_lines),
+                "sensitivity_lines": list(outcome.sensitivity_lines),
+                "base_current": outcome.base_current,
+            }
+        )
+
     @app.put("/api/notes/{note_id}")
     def edit(request: Request, note_id: str, payload: Edit) -> JSONResponse:
-        raw = payload.note.model_dump(exclude={"body"})
-        oversized = tuple(
-            Violation(
-                code=ViolationCode.INVALID_FIELD,
-                field=name,
-                message="Field exceeds its UTF-8 byte limit.",
-                severity=Severity.ERROR,
-            )
-            for name, maximum in _BYTE_LIMITS.items()
-            if len(raw[name].encode("utf-8")) > maximum
-        )
-        if oversized:
-            return JSONResponse({"validation": validation_view(ValidationReport(oversized))}, 422)
-        # OwnerEditNote keeps the stored creation date and assigns its clock's date on update.
-        raw.update(id=note_id, created=date.min, updated=date.min)
-        note = parse_note(raw, payload.note.body)
+        note = _parse(note_id, payload)
         if isinstance(note, ValidationReport):
             return JSONResponse({"validation": validation_view(note)}, 422)
         outcome = owner_edit_note.execute(

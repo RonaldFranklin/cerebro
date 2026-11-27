@@ -126,12 +126,19 @@ class ListenerView(TypedDict):
     browser_ceiling: str
 
 
+class LastBackupView(TypedDict):
+    state: str
+    completed_at: str | None
+    content_revision: str | None
+
+
 class BrowserHealthResponse(HealthResponse):
     """The browser also reports when and what was checked, and the configured entrances."""
 
     checked_at: str
     content: ContentView
     listeners: list[ListenerView]
+    last_backup: LastBackupView
 
 
 def browser_health_view(report: HealthReportResult, listeners: Sequence[ListenerCeilings]) -> BrowserHealthResponse:
@@ -141,6 +148,11 @@ def browser_health_view(report: HealthReportResult, listeners: Sequence[Listener
         **health_view(report),
         "checked_at": report.checked_at.isoformat(),
         "content": {"revision": report.revision, "state": "attention" if attention else "clean"},
+        "last_backup": {
+            "state": report.last_backup.state,
+            "completed_at": completed.isoformat() if (completed := report.last_backup.completed_at) else None,
+            "content_revision": report.last_backup.content_revision,
+        },
         "listeners": [
             {"name": item.name, "mcp_ceiling": item.mcp.level.value, "browser_ceiling": item.browser.level.value}
             for item in listeners

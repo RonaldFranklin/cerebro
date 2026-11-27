@@ -11,7 +11,8 @@ const entrances = [
   {name:"private",mcp_ceiling:"restricted",browser_ceiling:"restricted"},
   {name:"public",mcp_ceiling:"internal",browser_ceiling:"internal"},
 ];
-const summary = {checked_at:"2026-11-27T08:31:00+00:00",content:{revision:"0123456789abcdef".repeat(2) + "01234567",state:"clean"},listeners:entrances};
+const summary = {checked_at:"2026-11-27T08:31:00+00:00",content:{revision:"0123456789abcdef".repeat(2) + "01234567",state:"clean"},listeners:entrances,
+  last_backup:{state:"recorded",completed_at:"2026-11-27T03:00:00+00:00",content_revision:"f".repeat(40)}};
 const clean = {...summary,ok:true,notes_checked:4,search_index_checked:true,issues:[]};
 function issue(code: string, subject: string, severity: string, message = `${code} fixture message`) {
   return {code,subject,severity,field:null,message};
@@ -153,4 +154,27 @@ test.describe("server facts", () => {
     await expect(section.locator("li").first().locator("[data-tone=warning]")).toHaveCount(2);
     await expect(open.locator("[data-tone=warning]")).toHaveCount(0);
   });
+});
+
+test.describe("backup record", () => {
+  test.use({timezoneId: "UTC"});
+
+  for (const [name, record, value, detail, warns] of [
+    ["recent", clean.last_backup, "2026-11-27", "Content fffffff + state", false],
+    ["old", {...clean.last_backup, completed_at:"2026-11-25T08:30:00+00:00"}, "2026-11-25", "Older than 48 hours", true],
+    ["missing", {state:"never",completed_at:null,content_revision:null}, "Never recorded", "left no record", true],
+    ["damaged", {state:"unreadable",completed_at:null,content_revision:null}, "Unreadable", "damaged", true],
+  ] as const) {
+    test(`a ${name} backup is shown with the right warning`, async ({page}) => {
+      await owner(page);
+      await page.route("**/api/health", route => route.fulfill({json:{...clean,last_backup:record}}));
+      await page.goto("/health");
+      const card = page.locator("div[data-card=backup]");
+      await expect(card).toContainText(value);
+      await expect(card).toContainText(detail);
+      await expect(card).toHaveAttribute("data-tone", warns ? "warning" : "ok");
+      // The record never changes the findings' overall status.
+      await expect(page.getByText("All systems normal")).toBeVisible();
+    });
+  }
 });

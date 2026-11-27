@@ -33,6 +33,27 @@ def sync(path: Path) -> None:
         os.close(fd)
 
 
+def record(state: Path, revision: str) -> None:
+    """Leave the time and revision of a successful backup where the service's Health report reads them.
+
+    Written beside the old record and renamed over it, so a link or a half-written file is never followed or read.
+    """
+    text = json.dumps(
+        {"completed_at": datetime.now(timezone.utc).isoformat(), "content_revision": revision}, sort_keys=True
+    )
+    pending = state / f".last-backup-{secrets.token_hex(8)}"
+    fd = os.open(pending, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+    try:
+        with os.fdopen(fd, "w", encoding="ascii") as stream:
+            stream.write(text + "\n")
+            stream.flush()
+            os.fsync(stream.fileno())
+        pending.replace(state / "last-backup.json")
+        sync(state)
+    finally:
+        pending.unlink(missing_ok=True)
+
+
 def backup(content: Path, state: Path, destination: Path, repository: str, branch: str) -> Path:
     if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9-]*/cerebro-content", repository):
         raise ValueError("expected OWNER/cerebro-content")
@@ -119,6 +140,11 @@ def backup(content: Path, state: Path, destination: Path, repository: str, branc
         completed = destination / (stamp + "-" + secrets.token_hex(4))
         snapshot.rename(completed)
         sync(destination)
+        try:
+            record(state, revision)
+        except OSError as error:
+            # The snapshot and the push succeeded. Health keeps the older record, whose age gives the warning.
+            print(f"Backup complete, but could not record it for Health: {error}", file=sys.stderr)
         return completed
 
 

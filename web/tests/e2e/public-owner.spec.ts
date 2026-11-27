@@ -29,7 +29,7 @@ test("the owner edits a note through the opted-in public listener", async ({page
   const summary = "Edited by the owner through the public listener of this disposable fixture.";
   await page.getByLabel("Summary",{exact:true}).fill(summary);
   const saved = page.waitForResponse(res => res.request().method() === "PUT");
-  await page.getByRole("button",{name:"Save changes",exact:true}).click();
+  await page.getByRole("button",{name:"Save & commit",exact:true}).click();
   expect((await saved).status()).toBe(200);
   await expect(page.getByText("Changes saved.",{exact:true})).toBeVisible();
   const message = execFileSync("git",["-C",demo.content_repo,"log","-1","--format=%B"],{encoding:"utf8"});

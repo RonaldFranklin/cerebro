@@ -106,6 +106,7 @@ backend/
 | `WriteAttemptStore` | Atomically reserve a rolling-hour slot for an authenticated token; a refusal leaves state unchanged | SQLite; in-memory fake |
 | `ChangeHistory` | Return recent first-parent revisions, attribution and note versions for owner history | Git/filesystem; in-memory fake |
 | `Credentials`, `LoginAttempts`, `SessionStore` | Owner browser login: password verifier, shared attempt throttle, listener-bound sessions ([ADR-0019](adr/0019-owner-browser-api.md)) | crypto, SQLite, in-memory sessions; fakes |
+| `BackupStatus` | What the host backup job reported last ([ADR-0030](adr/0030-backup-status-record.md)) | state-directory file; fake |
 | `Clock`, `IdGenerator` | `now()`; note ids, token ids and token secrets, for deterministic tests | system / fixed fakes |
 
 Recent changes scans at most 32 first-parent revisions and shows up to 20 attributable note changes per page. The next cursor identifies the first unexamined revision. The application
@@ -230,6 +231,7 @@ owner browser, agents ─ Cloudflare Tunnel ────▶│ cloudflared ─�
 | Search/graph index | `index_dir/index.sqlite` (defaults to the state directory) | no | no — rebuildable |
 | Tokens and login and write limits | state dir, `state.sqlite` | no | yes (file backup) |
 | Owner password verifier | `state_dir/owner.verifier` | no | back up separately from SQLite with private permissions |
+| Last backup record | `state_dir/last-backup.json`, written by `deploy/backup.py` | no | no |
 | Fernet key | secrets dir | no | owner keeps an offline copy of the key |
 
 Filesystem repository, operating notes (Phase 2):
@@ -317,7 +319,9 @@ an error naming its path and version, and is never deleted, upgraded or repaired
 - **Recent changes:** a restricted owner session sees who changed each note, when, and a bounded
   diff. The use cases require a `restricted` owner, and a change is listed only if the current note and both sides of
   the edit can be read. Links in historical content receive the same visibility protection as links in the reader.
-- **Editor (owner):** CodeMirror 6 with `[[link]]` autocomplete; saves go through `OwnerEditNote`.
+- **Editor (owner):** CodeMirror 6 with `[[link]]` autocomplete; saves go through `OwnerEditNote`. After each pause in
+  typing the draft is checked by `CheckOwnerEdit` (the same rules, nothing written; restricted owner only), and the
+  screen blocks saving while a check fails.
 - English only; no i18n library ([ADR-0009](adr/0009-english-only.md)).
 
 ## 7. Dependency policy and stack
