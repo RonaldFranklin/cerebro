@@ -55,10 +55,14 @@ class OwnerHistory:
         self._notes = notes
         self._history = history
 
-    def list(self, ctx: AccessContext, cursor: HistoryCursor | None = None) -> ChangePage:
+    def list(
+        self, ctx: AccessContext, cursor: HistoryCursor | None = None, *, note_id: NoteId | None = None
+    ) -> ChangePage:
+        """Recent changes, or those of one note: the same bounded window, authorization and redaction. A note the
+        caller cannot see, or that does not exist, simply has no changes."""
         require_owner(ctx, "inspect change history")
         with self._window(cursor) as (head, revisions):
-            return self._list(ctx, head, revisions)
+            return self._list(ctx, head, revisions, note_id)
 
     @contextmanager
     def _window(self, cursor: HistoryCursor | None) -> Iterator[tuple[str | None, tuple[str, ...]]]:
@@ -79,7 +83,9 @@ class OwnerHistory:
                 raise ChangeUnavailable()
             yield cursor.head, revisions
 
-    def _list(self, ctx: AccessContext, head: str | None, revisions: tuple[str, ...]) -> ChangePage:
+    def _list(
+        self, ctx: AccessContext, head: str | None, revisions: tuple[str, ...], note_id: NoteId | None
+    ) -> ChangePage:
         rows: list[ChangeSummary] = []
         page_cursor = HistoryCursor(head, revisions[0]) if head and revisions else None
         for index, revision in enumerate(revisions):
@@ -87,12 +93,19 @@ class OwnerHistory:
                 assert head is not None
                 return ChangePage(page_cursor, tuple(rows), HistoryCursor(head, revision))
             try:
+                if note_id is not None and not self._concerns(revision, note_id):
+                    continue
                 versions = self._authorized(revision, ctx)
                 if versions:
                     rows.append(self._summary(versions, ctx))
             except ChangeUnavailable:
                 continue
         return ChangePage(page_cursor, tuple(rows), None)
+
+    def _concerns(self, revision: str, note_id: NoteId) -> bool:
+        """Decided from the commit alone, so no version of another note is read."""
+        info = self._history.change(revision)
+        return info is not None and info.note_id == note_id
 
     def detail(self, request: HistoryRequest, ctx: AccessContext) -> ChangeDetail:
         require_owner(ctx, "inspect change history")

@@ -63,8 +63,8 @@ entrances and the token table wait for the data design. The author filter covers
 3. Backend channel, then the pulse on the node or edge and the **Live activity** feed under the graph's note panel,
    with names shown on active notes. Under `prefers-reduced-motion` the highlight is static.
 
-The proposed decision for the counters and the live channel is
-[ADR-0031](../adr/0031-usage-counters-and-live-activity.md); parts C and 4 wait for the owner to accept it.
+The counters and the live channel follow [ADR-0031](../adr/0031-usage-counters-and-live-activity.md), accepted by the
+owner on 2026-11-27.
 
 ## Left for later
 
@@ -80,6 +80,6 @@ The proposed decision for the counters and the live channel is
 | 3a | #110 | Graph and sign-in: merged on 2026-11-27 |
 | 3b | #111 | Note screen: merged on 2026-11-27 |
 | 3c | #112, #113 | Recent changes and Health with existing data: merged on 2026-11-27 |
-| 3d | #109, #115, #116 | Data design approved. Parts A and G: merged on 2026-11-27. Parts F, B, C: not started |
-| 3e | | Edit screen with live validation (part D): not started |
+| 3d | #109, #115, #116, #117, #119 | Data design approved. Parts A, G, F and B: merged on 2026-11-27. Part C: not started |
+| 3e | #121 | Edit screen with live validation (part D): merged on 2026-11-27 |
 | 4 | | Live synapses: not started |

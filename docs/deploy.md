@@ -347,7 +347,7 @@ test "$(gh api "repos/$GITHUB_OWNER/cerebro-content/git/ref/heads/$ENVIRONMENT" 
 find "$snapshot" -mindepth 1 -maxdepth 1 -printf '%f\n' | sort
 ```
 
-4. Expect exactly `content-revision`, `owner.verifier` and `state.sqlite`. Never copy quarantine or `index.sqlite` into backups. Install the bounded daily backup and weekly Git maintenance jobs from the [backup procedure](../deploy/backup.md). Supply the checkout ending in `/content/repo`. Verify the backup job under its scheduled account. If it uses a dedicated mount, apply the mountpoint guard to every scheduled backup.
+4. Expect exactly `content-revision`, `owner.verifier` and `state.sqlite`. The same run records `last-backup.json` in the state directory, which Health shows; a new or restored environment reads "Never recorded" until its first backup, and scheduled jobs must run the script of the deployed release ([ADR-0030](adr/0030-backup-status-record.md)). Never copy quarantine or `index.sqlite` into backups. Install the bounded daily backup and weekly Git maintenance jobs from the [backup procedure](../deploy/backup.md). Supply the checkout ending in `/content/repo`. Verify the backup job under its scheduled account. If it uses a dedicated mount, apply the mountpoint guard to every scheduled backup.
 
 **Hml restore drill.** Reserve a maintenance window and an unused temporary loopback port. Use the hml snapshot containing the fixture. Restore into a fresh private tree using the commands under “Verify a restore” in the backup procedure:
 

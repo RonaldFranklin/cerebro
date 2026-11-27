@@ -1,6 +1,6 @@
 # ADR-0031: Token usage counters and the owner's live activity channel
 
-- **Status:** proposed
+- **Status:** accepted
 - **Date:** 2026-11-27
 
 ## Context

@@ -355,6 +355,8 @@ every `[[note-id]]` counts, code included. The service never echoes a submitted 
 inaccessible note. The write guide response also lists the repository's `areas` and `types`, as loaded for
 validation; it holds schema names only and requires the `write` scope. A rejected or stale write produces no note, git
 commit or pending item. Owner edits use the owner's access context and the existing owner severity policy.
+The owner's editor checks a draft with that policy without writing it. The screen also blocks saving on a broken link;
+the save itself still only warns.
 
 The content hash is the SHA-256 hex digest of the UTF-8 JSON object
 `{"frontmatter": note_to_raw(note), "body": body}` with compact separators, canonical key order,
@@ -364,7 +366,8 @@ A committed change is durable even if a derived index needs rebuilding.
 
 The owner's Recent changes view reads git history. It shows the authenticated writer, time, note
 and bounded diff. A change whose new version is `superseded`, and whose previous version was not, is reported as
-`superseded`. Exposing a change requires visibility of the current note and all note versions represented
+`superseded`. One note's history is the same view limited to that note: same window,
+authorization and redaction. Exposing a change requires visibility of the current note and all note versions represented
 in the diff, including the parent version for updates. Historical data receives the same link redaction as
 current content. Only commits with a valid `Written-by` trailer are listed: an agent name, or `owner` for an
 owner edit, which always updates an existing note ([ADR-0023](adr/0023-no-legacy-compatibility.md)). Any other

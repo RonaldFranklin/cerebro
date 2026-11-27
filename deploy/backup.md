@@ -32,6 +32,11 @@ Each completed snapshot holds exactly `state.sqlite` (SQLite's online backup, in
 provision the owner's password before the first backup. Keep backups private and keep the Fernet key in the
 owner's separate offline custody. The verifier is sensitive; retain the owner's password in the password manager.
 
+After a successful snapshot and push, the command also replaces `last-backup.json` in the state directory with the
+time and content revision. Health shows it and warns when it is older than 48 hours or absent
+([ADR-0030](../docs/adr/0030-backup-status-record.md)). It is not part of the snapshot, and it does not replace the
+restore check. Run the script from the deployed release so that the record is written.
+
 The push sends the recorded commit and its ancestors to the chosen environment branch. Missing credentials,
 public repositories, excluded files in commit history, and divergent branches fail the job. A failed job leaves
 earlier completed snapshots available. The command refuses to start if a hidden `.pending` directory

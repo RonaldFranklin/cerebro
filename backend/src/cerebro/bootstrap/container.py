@@ -31,6 +31,7 @@ from pathlib import Path
 
 from cerebro.adapters.outbound.crypto import FernetCipher, load_keys
 from cerebro.adapters.outbound.filesystem import FilesystemNoteRepository, WriterBusyError, load_vocabulary
+from cerebro.adapters.outbound.filesystem.backup_status import BackupStatusFile
 from cerebro.adapters.outbound.filesystem.history import GitChangeHistory
 from cerebro.adapters.outbound.filesystem.lock import file_lock
 from cerebro.adapters.outbound.filesystem.quarantine import quarantine_changes
@@ -49,6 +50,7 @@ from cerebro.application.browser import BrowserAuth
 from cerebro.application.dto import (
     AgentTokenSummary,
     AuthenticateTokenRequest,
+    CheckOwnerEditResult,
     GetGraphRequest,
     GetNeighborsRequest,
     GetOverviewRequest,
@@ -85,6 +87,7 @@ from cerebro.application.ports import (
 from cerebro.application.use_case import AnonymousUseCase, ContextUseCase
 from cerebro.application.use_cases import (
     AuthenticateToken,
+    CheckOwnerEdit,
     GetGraph,
     GetNeighbors,
     GetOverview,
@@ -188,6 +191,7 @@ class UseCases:
     agent_write: ContextUseCase[AgentWriteRequest, AgentWriteResult]
     history: OwnerHistory
     owner_edit_note: ContextUseCase[OwnerEditNoteRequest, OwnerEditNoteResult]
+    check_owner_edit: ContextUseCase[OwnerEditNoteRequest, CheckOwnerEditResult]
     rebuild_index: ContextUseCase[RebuildIndexRequest, RebuildIndexResult]
     health_report: ContextUseCase[HealthReportRequest, HealthReportResult]
     issue_agent_token: ContextUseCase[IssueAgentTokenRequest, IssuedToken]
@@ -265,6 +269,8 @@ class Container:
             owner_edit_note=Serialized(
                 Refreshed(OwnerEditNote(notes, search, graph, clock, vocabulary), fresh_locked), lock
             ),
+            # Reads the repository alone: no index to refresh, and a check must not write.
+            check_owner_edit=CheckOwnerEdit(notes, clock, vocabulary),
             rebuild_index=Serialized(Refreshed(self._rebuild, self._quarantine), lock),
             health_report=HealthReport(
                 notes,
@@ -273,6 +279,7 @@ class Container:
                 clock,
                 vocabulary,
                 quarantines=lambda: sorted(p.name for p in state_dir.glob("quarantine-*") if p.is_dir()),
+                backup=BackupStatusFile(state_dir / "last-backup.json"),
             ),
             issue_agent_token=IssueAgentToken(self.tokens, clock, ids),
             list_agent_tokens=ListAgentTokens(self.tokens),

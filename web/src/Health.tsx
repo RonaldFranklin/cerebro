@@ -15,6 +15,7 @@ interface HealthReport {
   checked_at: string;
   content: {revision: string | null; state: "clean" | "attention"};
   listeners: {name: "private" | "public"; mcp_ceiling: string; browser_ceiling: string}[];
+  last_backup: {state: "recorded" | "never" | "unreadable"; completed_at: string | null; content_revision: string | null};
 }
 
 const descriptions: Record<string,string> = {
@@ -36,6 +37,22 @@ const descriptions: Record<string,string> = {
 const nonNoteFindings = new Set(["index_stale","core_over_budget","note_file_excluded","note_file_blocking"]);
 
 interface Card {id: string; name: string; value: string; detail: string; tone?: "ok" | "warning" | "error"}
+
+const STALE_BACKUP = 48 * 3_600_000;
+// This locale writes the local calendar date as YYYY-MM-DD.
+const backupDay = new Intl.DateTimeFormat("en-CA", {year: "numeric", month: "2-digit", day: "2-digit"});
+
+/** The host job's own record. Its age is measured against the server's check time, not this browser's clock. */
+function backupCard({last_backup: backup, checked_at}: HealthReport): Card {
+  const base = {id: "backup", name: "Last backup"};
+  if (backup.state !== "recorded" || !backup.completed_at) return {...base, tone: "warning",
+    value: backup.state === "unreadable" ? "Unreadable" : "Never recorded",
+    detail: backup.state === "unreadable" ? "The backup record is damaged" : "The backup job has left no record"};
+  const moment = new Date(backup.completed_at);
+  const stale = new Date(checked_at).getTime() - moment.getTime() > STALE_BACKUP;
+  return {...base, tone: stale ? "warning" : "ok", value: backupDay.format(moment),
+    detail: `${stale ? "Older than 48 hours · " : ""}Content ${backup.content_revision?.slice(0, 7)} + state`};
+}
 
 function cards(report: HealthReport): Card[] {
   const codes = new Set(report.issues.map(issue => issue.code));
@@ -59,6 +76,7 @@ function cards(report: HealthReport): Card[] {
     {id: "quarantine", name: "Quarantine", tone: quarantined ? "warning" : "ok",
       value: quarantined ? `${quarantined} ${quarantined === 1 ? "folder" : "folders"}` : "None",
       detail: quarantined ? "Plaintext — review and remove by hand" : "No uncommitted changes were set aside"},
+    backupCard(report),
   ];
 }
 
