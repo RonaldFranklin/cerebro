@@ -42,6 +42,7 @@ from cerebro.adapters.outbound.sqlite import (
     SqliteTokenStore,
 )
 from cerebro.adapters.outbound.sqlite.login_attempts import SqliteLoginAttempts
+from cerebro.adapters.outbound.sqlite.usage import SqliteUsageCounters
 from cerebro.adapters.outbound.sqlite.write_attempts import SqliteWriteAttemptStore
 from cerebro.adapters.outbound.system import SystemIdGenerator, UtcClock
 from cerebro.adapters.outbound.system.sessions import MemorySessions
@@ -72,6 +73,8 @@ from cerebro.application.dto import (
     RevokedToken,
     SearchNotesRequest,
     SearchResults,
+    TokenActivityRequest,
+    TokenActivityRow,
 )
 from cerebro.application.index_state import index_is_stale
 from cerebro.application.ports import (
@@ -84,6 +87,7 @@ from cerebro.application.ports import (
     TokenStore,
     VersionControl,
 )
+from cerebro.application.ports.usage import UsageCounters
 from cerebro.application.use_case import AnonymousUseCase, ContextUseCase
 from cerebro.application.use_cases import (
     AuthenticateToken,
@@ -98,8 +102,10 @@ from cerebro.application.use_cases import (
     OwnerEditNote,
     ReadNote,
     RebuildIndex,
+    RecordTokenUse,
     RevokeAgentToken,
     SearchNotes,
+    TokenActivity,
 )
 from cerebro.application.use_cases.agent_write import AgentWrite
 from cerebro.application.use_cases.history import OwnerHistory
@@ -198,6 +204,8 @@ class UseCases:
     list_agent_tokens: ContextUseCase[ListAgentTokensRequest, tuple[AgentTokenSummary, ...]]
     revoke_agent_token: ContextUseCase[RevokeAgentTokenRequest, RevokedToken]
     authenticate_token: AnonymousUseCase[AuthenticateTokenRequest, AccessContext]
+    record_token_use: RecordTokenUse
+    token_activity: ContextUseCase[TokenActivityRequest, tuple[TokenActivityRow, ...]]
 
 
 class Container:
@@ -234,6 +242,8 @@ class Container:
         self.search: SearchIndex = SqliteSearchIndex(index_dir / INDEX_FILE)
         self.graph: GraphIndex = SqliteGraphIndex(index_dir / INDEX_FILE)
         self.tokens: TokenStore = SqliteTokenStore(state_dir / STATE_FILE)
+        # Disposable counters: opening them never fails the service (ADR-0031).
+        self.usage: UsageCounters = SqliteUsageCounters(state_dir / "usage.sqlite")
 
         self._rebuild = RebuildIndex(self.notes, self.search, self.graph)
 
@@ -285,6 +295,8 @@ class Container:
             list_agent_tokens=ListAgentTokens(self.tokens),
             revoke_agent_token=RevokeAgentToken(self.tokens, clock),
             authenticate_token=AuthenticateToken(self.tokens, clock),
+            record_token_use=RecordTokenUse(self.usage, clock),
+            token_activity=TokenActivity(self.tokens, self.usage, clock),
         )
 
     @cached_property

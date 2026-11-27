@@ -42,6 +42,7 @@ def api() -> Iterator[TestClient]:
             get_neighbors=stub,
             health_report=stub,
             listeners=(),
+            token_activity=stub,
         ),
     )
     with TestClient(app, base_url=ORIGIN) as client:

@@ -12,8 +12,10 @@ from cerebro.application.use_cases.list_agent_tokens import ListAgentTokens
 from cerebro.application.use_cases.owner_edit_note import OwnerEditNote
 from cerebro.application.use_cases.read_note import ReadNote
 from cerebro.application.use_cases.rebuild_index import RebuildIndex
+from cerebro.application.use_cases.record_token_use import RecordTokenUse
 from cerebro.application.use_cases.revoke_agent_token import RevokeAgentToken
 from cerebro.application.use_cases.search_notes import SearchNotes
+from cerebro.application.use_cases.token_activity import TokenActivity
 
 __all__ = [
     "AuthenticateToken",
@@ -28,6 +30,8 @@ __all__ = [
     "OwnerEditNote",
     "ReadNote",
     "RebuildIndex",
+    "RecordTokenUse",
     "RevokeAgentToken",
     "SearchNotes",
+    "TokenActivity",
 ]

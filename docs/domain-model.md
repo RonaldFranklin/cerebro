@@ -212,7 +212,7 @@ effective_ceiling = min(listener_ceiling, token_ceiling)
 - **Fail closed:** `effective_ceiling(listener, token)` has no defaults; wrongly typed ceilings raise, and
   `is_visible` / `AccessCeiling.allows` / `AccessContext.can` deny any value of an unexpected type.
 - **Owner actions that need `restricted`:** editing a note, checking a draft, reading change history (all of it or one
-  note's) and the health report require the owner **and** the ceiling `restricted`. The use cases refuse anything lower, whatever the
+  note's), the health report and token activity require the owner **and** the ceiling `restricted`. The use cases refuse anything lower, whatever the
   inbound adapter already checked ([ADR-0029](adr/0029-owner-browser-full-access-on-public-listener.md)). A
   lower-ceiling owner session only reads notes, filtered by its ceiling like any caller.
 - **Principals and scopes:** `AccessContext(principal, ceiling, scopes)` is built once per request, with
@@ -381,8 +381,9 @@ commit is not attributed.
 
 - One token per agent (e.g. `claude-code@workstation`, `codex@workstation`).
 - Attributes: id, agent name, newly issued scopes (`read`, `write`, `core`; at least one, and `core` only with `write`), ceiling, created, optional expiry,
-  optional revocation time, token hash. (`last_used` is operational data kept by the token store, not part of the
-  domain entity.)
+  optional revocation time, token hash. (Last use and hourly request counts are disposable operational data kept apart
+  from the token store, not part of the domain entity: [ADR-0031](adr/0031-usage-counters-and-live-activity.md). Only a
+  `restricted` owner reads them.)
 - A token is valid when it is not revoked and `now < expires_at`; `now` is always passed explicitly, never read
   from the system clock. A token created more than five minutes ahead of the verifier clock also fails
   authentication. An invalid token never yields an `AccessContext`.

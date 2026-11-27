@@ -106,6 +106,7 @@ backend/
 | `WriteAttemptStore` | Atomically reserve a rolling-hour slot for an authenticated token; a refusal leaves state unchanged | SQLite; in-memory fake |
 | `ChangeHistory` | Return recent first-parent revisions, attribution and note versions for owner history | Git/filesystem; in-memory fake |
 | `Credentials`, `LoginAttempts`, `SessionStore` | Owner browser login: password verifier, shared attempt throttle, listener-bound sessions ([ADR-0019](adr/0019-owner-browser-api.md)) | crypto, SQLite, in-memory sessions; fakes |
+| `UsageCounters` | Count authenticated agent requests per token and hour, and the last use; best effort, never raises ([ADR-0031](adr/0031-usage-counters-and-live-activity.md)) | `usage.sqlite` (disposable); fake |
 | `BackupStatus` | What the host backup job reported last ([ADR-0030](adr/0030-backup-status-record.md)) | state-directory file; fake |
 | `Clock`, `IdGenerator` | `now()`; note ids, token ids and token secrets, for deterministic tests | system / fixed fakes |
 
@@ -231,6 +232,7 @@ owner browser, agents ─ Cloudflare Tunnel ────▶│ cloudflared ─�
 | Search/graph index | `index_dir/index.sqlite` (defaults to the state directory) | no | no — rebuildable |
 | Tokens and login and write limits | state dir, `state.sqlite` | no | yes (file backup) |
 | Owner password verifier | `state_dir/owner.verifier` | no | back up separately from SQLite with private permissions |
+| Token usage counters | `state_dir/usage.sqlite`: token id, hour, count and last use | no | no — disposable |
 | Last backup record | `state_dir/last-backup.json`, written by `deploy/backup.py` | no | no |
 | Fernet key | secrets dir | no | owner keeps an offline copy of the key |
 

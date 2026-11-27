@@ -12,6 +12,7 @@ from cerebro.application.dto import (
     NoteView,
     Overview,
     SearchResults,
+    TokenActivityRow,
 )
 from cerebro.domain.access import AccessCeiling
 
@@ -132,6 +133,16 @@ class LastBackupView(TypedDict):
     content_revision: str | None
 
 
+class TokenView(TypedDict):
+    client: str
+    ceiling: str
+    scopes: list[str]
+    state: str
+    usage_known: bool
+    last_used: str | None
+    activity: list[int]
+
+
 class BrowserHealthResponse(HealthResponse):
     """The browser also reports when and what was checked, and the configured entrances."""
 
@@ -139,9 +150,24 @@ class BrowserHealthResponse(HealthResponse):
     content: ContentView
     listeners: list[ListenerView]
     last_backup: LastBackupView
+    tokens: list[TokenView]
 
 
-def browser_health_view(report: HealthReportResult, listeners: Sequence[ListenerCeilings]) -> BrowserHealthResponse:
+def _token_view(row: TokenActivityRow) -> TokenView:
+    return {
+        "client": row.agent,
+        "ceiling": row.ceiling.level.value,
+        "scopes": sorted(scope.value for scope in row.scopes),
+        "state": row.state,
+        "usage_known": row.usage_known,
+        "last_used": row.last_used.isoformat() if row.last_used else None,
+        "activity": list(row.hourly),
+    }
+
+
+def browser_health_view(
+    report: HealthReportResult, listeners: Sequence[ListenerCeilings], tokens: Sequence[TokenActivityRow]
+) -> BrowserHealthResponse:
     file_problems = {HealthCode.NOTE_FILE_EXCLUDED, HealthCode.NOTE_FILE_BLOCKING}
     attention = any(issue.code in file_problems for issue in report.issues)
     return {
@@ -153,6 +179,7 @@ def browser_health_view(report: HealthReportResult, listeners: Sequence[Listener
             "completed_at": completed.isoformat() if (completed := report.last_backup.completed_at) else None,
             "content_revision": report.last_backup.content_revision,
         },
+        "tokens": [_token_view(row) for row in tokens],
         "listeners": [
             {"name": item.name, "mcp_ceiling": item.mcp.level.value, "browser_ceiling": item.browser.level.value}
             for item in listeners
