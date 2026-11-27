@@ -96,7 +96,8 @@ function App() {
             path === "/graph" ? <Suspense fallback={<p role="status">Loading graph…</p>}><GraphScreen api={state.api}/></Suspense> :
             path === "/search" ? <SearchScreen key={searchRequest} api={state.api}/> :
             path.startsWith("/notes/") ? <ReaderScreen api={state.api} id={path.slice("/notes/".length)}
-              history={url.searchParams.get("history") === "true"} section={url.searchParams.get("section")}/> : <section className="pending-view"><h1>{title}</h1>
+              history={url.searchParams.get("history") === "true"} section={url.searchParams.get("section")}
+              ownerHistory={state.session.ceiling === "restricted"}/> : <section className="pending-view"><h1>{title}</h1>
             <p>This page could not be found.</p>
             <a href="/">Back to overview</a></section>}
         </Shell></div>

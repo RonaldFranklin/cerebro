@@ -195,3 +195,50 @@ def test_private_api_follows_an_opaque_cursor_after_an_empty_window(tmp_path: Pa
         assert client.get(f"/api/changes/{revision}", params={"cursor": first["next_cursor"]}).status_code == 200
         subprocess.run(["git", "-C", str(sample.root), "reset", "--hard", revision], check=True, capture_output=True)
         assert client.get("/api/changes", params={"cursor": first["next_cursor"]}).status_code == 404
+
+
+@pytest.mark.parametrize("listener", ["private", "public"])
+@pytest.mark.parametrize("ceiling", [Sensitivity.RESTRICTED, Sensitivity.INTERNAL])
+def test_a_note_history_requires_a_restricted_owner_and_lists_that_note_only(
+    tmp_path: Path, listener: str, ceiling: Sensitivity
+) -> None:
+    sample = make_sample_repo(tmp_path)
+    container = build_container(sample.settings)
+    revisions = {}
+    for note_id in (VAULT_ID, DOCKER_ID):
+        note = container.notes.get(note_id)
+        assert note
+        revisions[note_id] = container.notes.apply(
+            [NoteChange(note=replace(note, body="Changed."), expected_hash=content_hash(note))],
+            OwnerCommit.for_update(note_id),
+        )
+    owner_credentials(sample.settings).provision(b"history-fixture")
+    origin = f"https://{listener}.example.invalid"
+    app = browser_api(container.browser_auth, BrowserBinding(listener, origin), AccessCeiling(ceiling))
+    install_browser_history(app, container.use_cases.history)
+    path = f"/api/notes/{VAULT_ID.value}/changes"
+    with TestClient(app, base_url=origin) as client:
+        assert client.get(path).status_code == 401
+        login = client.post(
+            "/api/login", headers={"Origin": origin, "X-Cerebro-Request": "1"}, json={"password": "history-fixture"}
+        )
+        assert login.status_code == 200
+        response = client.get(path)
+        if ceiling is not Sensitivity.RESTRICTED:
+            assert response.status_code == 403
+            assert revisions[VAULT_ID] not in response.text
+            return
+        assert response.status_code == 200
+        assert response.headers["cache-control"] == "no-store"
+        body = response.json()
+        assert [row["revision"] for row in body["changes"]] == [revisions[VAULT_ID]]
+        assert body["next_cursor"] is None
+        # The page cursor opens the diff of a listed change, like the global history's.
+        detail = client.get(f"/api/changes/{revisions[VAULT_ID]}", params={"cursor": body["page_cursor"]})
+        assert detail.status_code == 200
+        assert client.get("/api/notes/absent-note/changes").json()["changes"] == []
+        assert client.get("/api/notes/Not_A_Slug/changes").status_code == 422
+        assert client.get(path, params={"cursor": "forged"}).status_code == 404
+        assert client.get(path + "?cursor=a&cursor=b").status_code == 422
+        assert client.get(path, params={"history": "true"}).status_code == 422
+        assert client.post(path).status_code == 403

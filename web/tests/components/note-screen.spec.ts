@@ -20,6 +20,7 @@ async function owner(page: Page, neighbors = 200) {
   await page.route("**/api/session", route => route.fulfill({json: {ceiling: "restricted", csrf_token: "f", absolute_remaining_seconds: 28800}}));
   await page.route("**/api/graph?*", route => route.fulfill({json: {nodes, edges, center: null}}));
   await page.route("**/api/notes/plan**", route => route.fulfill({json: note}));
+  await page.route("**/api/notes/plan/changes**", route => route.fulfill({json: {changes: [], next_cursor: null}}));
   let reads = 0;
   await page.route("**/api/notes/plan/neighbors**", route => ++reads === 1 && neighbors !== 200
     ? route.fulfill({status: neighbors, json: {}}) : route.fulfill({json: {nodes, edges, center: "plan"}}));
@@ -89,6 +90,7 @@ const withHistory = {nodes: [nodes[0], archived, older], center: "plan", edges: 
 async function historyAware(page: Page, current: typeof note) {
   await owner(page);
   await page.route("**/api/notes/plan**", route => route.fulfill({json: current}));
+  await page.route("**/api/notes/plan/changes**", route => route.fulfill({json: {changes: [], next_cursor: null}}));
   await page.route("**/api/notes/plan/neighbors**", route => {
     if (new URL(route.request().url()).searchParams.get("history") === "true") {
       const [center, ...others] = withHistory.nodes;

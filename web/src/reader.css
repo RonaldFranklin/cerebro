@@ -36,6 +36,12 @@
 .note-links li > a { flex: 1; min-width: 0; }
 .note-links li span { color: var(--muted); font-size: .75rem; }
 .note-links p, .reader-aside > p { color: var(--muted); font-size: .9rem; }
+.note-history ol { margin: 0; padding: 0; list-style: none; }
+.note-history li { display: grid; gap: .2rem; margin-bottom: .8rem; padding-left: .9rem; border-left: 2px solid var(--line-strong); }
+.note-history strong { font-weight: 600; }
+.note-history-meta { color: var(--muted); font: .76rem var(--font-mono); }
+.note-history button { margin-bottom: .6rem; color: var(--text); background: var(--surface); border: 1px solid var(--line-strong); border-radius: .6rem; padding: .4rem .8rem; }
+.note-history > a { display: block; width: fit-content; }
 .reader-section-return { margin: 0 0 1.2rem; font-size: .88rem; }
 .reader-members { border-top: 1px solid var(--line); margin-top: 1.8rem; padding-top: 1.5rem; }
 .reader-members li { border-bottom: 1px solid var(--line); padding: .85rem 0; }
