@@ -31,6 +31,27 @@ independent review, and keeps backend and browser tests green.
   editor.
 - The built UI, and therefore the image, ships each font's OFL text under `licenses/`, copied from its package.
 
+## Graph and sign-in decisions (step 3)
+
+Step 3a (#110): graph and sign-in, implemented and tested.
+
+- Filters keep every former dimension and start at "all", including status.
+- A click selects a note; the neighborhood view opens from the panel or the note list, which stays below the graph
+  as the keyboard and no-WebGL path.
+- Unnamed areas take a palette in sorted order, so a new area can change the color of another unnamed one.
+- Labels of notes with live activity and the activity feed belong to step 4.
+
+## Note screen decisions (step 3)
+
+Step 3b: note screen, implemented and tested. The commit history panel waits for part F of
+the data design proposal (pull request 109). The former related-notes and details lists are replaced by links in both
+directions and a property grid.
+
+## Recent changes and Health decisions (step 3)
+
+Step 3c: both screens with the data that exists, implemented and tested. The superseded badge, last backup,
+entrances and the token table wait for the data design. The author filter covers the loaded changes.
+
 ## Left for later
 
 - Verify the Cloudflare Access assertion (JWT) in the application, so that `restricted` on the public listener does

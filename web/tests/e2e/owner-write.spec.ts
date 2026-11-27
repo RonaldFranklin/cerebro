@@ -10,7 +10,7 @@ test("inspect an agent’s committed note and explicitly save an owner edit unde
   const git = (...args:string[]) => execFileSync("git", ["-C", demo.content_repo, ...args], {encoding:"utf8"}).trim();
   const before = git("rev-parse", "HEAD");
   await page.goto(demo.private_origin + "/search");
-  const password = page.getByLabel("Password",{exact:true});
+  const password = page.getByLabel("Owner password",{exact:true});
   await password.fill(demo.password);
   await password.press("Enter");
   const query = page.getByRole("searchbox", {name:"Search notes"});
@@ -73,8 +73,8 @@ test("inspect an agent’s committed note and explicitly save an owner edit unde
 
 test("a concurrent owner edit survives inspection of a conflicted draft", async ({page, context, demo}) => {
   await page.goto(demo.private_origin + "/editor/server-ssh-access");
-  await page.getByLabel("Password",{exact:true}).fill(demo.password);
-  await page.getByLabel("Password",{exact:true}).press("Enter");
+  await page.getByLabel("Owner password",{exact:true}).fill(demo.password);
+  await page.getByLabel("Owner password",{exact:true}).press("Enter");
   const body = page.getByRole("textbox",{name:"Markdown body"});
   await body.focus();
   await page.keyboard.press("Control+End");
@@ -109,8 +109,8 @@ test("the lower-ceiling listener denies the owner editor and health views", asyn
     if (path === "/api/health" || path === "/api/notes/server-ssh-access") privateRequests.push(path);
   });
   await page.goto(demo.public_origin + "/editor/server-ssh-access");
-  await page.getByLabel("Password",{exact:true}).fill(demo.password);
-  await page.getByLabel("Password",{exact:true}).press("Enter");
+  await page.getByLabel("Owner password",{exact:true}).fill(demo.password);
+  await page.getByLabel("Owner password",{exact:true}).press("Enter");
   await expect(page.getByText("This view requires a restricted owner session.")).toBeVisible();
   await page.goto(demo.public_origin + "/health");
   await expect(page.getByText("This view requires a restricted owner session.")).toBeVisible();
@@ -124,7 +124,7 @@ test("a suspended editor drops its draft after another tab replaces the session"
   });
   const before = execFileSync("git",["-C",demo.content_repo,"rev-parse","HEAD"],{encoding:"utf8"});
   await page.goto(demo.private_origin + "/editor/server-ssh-access");
-  const password = page.getByLabel("Password",{exact:true});
+  const password = page.getByLabel("Owner password",{exact:true});
   await password.fill(demo.password);
   await password.press("Enter");
   const editor = page.getByRole("textbox",{name:"Markdown body"});

@@ -11,6 +11,9 @@ async function owner(page: Page, ceiling = "restricted") {
   await page.route("**/api/overview", route => route.fulfill({json: overview}));
   await page.route("**/api/graph?**", route => route.fulfill({json: {nodes: [node], edges: [], center: null}}));
   await page.route("**/api/notes/a**", route => route.fulfill({json: note}));
+  const linked = {...node, id: "c", title: "C"};
+  await page.route("**/api/notes/a/neighbors**", route => route.fulfill({json: {nodes: [node, linked],
+    edges: [{source: "a", target: "c", kind: "wikilink", section: null}], center: "a"}}));
 }
 
 test("the icon rail names every destination and shows a tooltip on focus", async ({page}) => {
@@ -51,7 +54,7 @@ test("the top bar shows the session ceiling and signs out", async ({page}) => {
   const bar = page.getByRole("banner");
   await expect(bar.getByText("restricted · owner")).toBeVisible();
   await bar.getByRole("button", {name: "Sign out"}).click();
-  await expect(page.getByLabel("Password")).toBeVisible();
+  await expect(page.getByLabel("Owner password")).toBeVisible();
 });
 
 test("slash focuses the top search, which runs on the search page and again from it", async ({page}) => {
@@ -120,7 +123,7 @@ test("text and control colors keep their contrast on every surface", async ({pag
   expect(contrast("on-accent", "accent")).toBeGreaterThanOrEqual(4.5);
 });
 
-for (const path of ["/", "/search", "/graph", "/editor/a"]) {
+for (const path of ["/", "/search", "/graph", "/editor/a", "/notes/a"]) {
   test(`controls on ${path} are bounded 44px targets that fit a narrow screen`, async ({page}) => {
     await owner(page);
     await page.route("**/api/search?**", route => route.fulfill({json: {results: [node]}}));
@@ -131,7 +134,7 @@ for (const path of ["/", "/search", "/graph", "/editor/a"]) {
     if (path === "/search" || path === "/graph") await expect(page.getByRole("link", {name: "B", exact: true})).toBeVisible();
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
     const small = await page.evaluate(() => [...document.querySelectorAll<HTMLElement>(
-      "button, select, input:not([type=checkbox]):not([type=radio]), label:has(> input[type=checkbox]), label:has(> input[type=radio]), .topbar a, .rail a, .overview-notes a, .search-results h3 a, .graph-list li a, .editor-head a")]
+      "button, select, input:not([type=checkbox]):not([type=radio]), label:has(> input[type=checkbox]), label:has(> input[type=radio]), .topbar a, .rail a, .overview-notes a, .search-results h3 a, .graph-list li a, .editor-head a, .note-links a, .reader-aside nav a")]
       .filter(node => node.offsetParent !== null)
       .map(node => ({node: node.outerHTML.slice(0, 120), box: node.getBoundingClientRect()}))
       .filter(({box}) => box.height < 43.5 || box.width < 43.5)

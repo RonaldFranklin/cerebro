@@ -3,7 +3,7 @@ import { test } from "./fixture";
 
 async function signIn(page: Page, origin: string, password: string) {
   await page.goto(origin + "/health");
-  const input = page.getByLabel("Password", {exact:true});
+  const input = page.getByLabel("Owner password", {exact:true});
   await input.fill(password);
   await input.press("Enter");
 }

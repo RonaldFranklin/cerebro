@@ -1,34 +1,55 @@
-.graph-view { max-width: 76rem; margin: 0 auto; }
-.graph-heading, .graph-map-heading, .graph-list li, .graph-settings, .graph-legend, .graph-legend > span { display: flex; align-items: center; }
-.graph-heading, .graph-map-heading { justify-content: space-between; gap: .7rem; }
-.graph-action, .graph-view button:not(.graph-action) { border: 1px solid var(--line-strong); color: var(--accent); border-radius: .4rem; background: var(--surface); padding: .4rem .7rem; }
-.graph-controls { padding-block: 1.25rem; }
-.graph-filter-row { display: grid; grid-template-columns: repeat(5,minmax(0,1fr)); gap: .7rem; }
-.graph-filter-row label { font-size: .84rem; font-weight: 570; }
-.graph-view select { background: var(--surface); color: var(--text); border: 1px solid var(--line-strong); border-radius: .4rem; padding: .5rem .55rem; }
-.graph-filter-row select { display: block; width: 100%; margin-top: .35rem; font-weight: 400; }
-.graph-settings { flex-wrap: wrap; gap: 1.2rem; margin-top: .9rem; }
-.graph-settings label, .graph-settings fieldset { display: inline-flex; gap: .4rem; align-items: center; color: var(--muted); font-size: .85rem; }
-.graph-settings fieldset { gap: .7rem; border: 0; margin: 0; padding: 0; }
-.graph-settings legend { float: left; margin-right: .3rem; }
-.graph-map, .graph-list { border: 1px solid var(--line); border-radius: .65rem; background: var(--surface); }
-.graph-map { overflow: hidden; }
-.graph-map-heading { padding: 1rem 1.2rem; border-bottom: 1px solid var(--line); }
+.graph-view { max-width: 100rem; margin: 0 auto; }
+.graph-controls, .graph-map-heading, .graph-list li, .graph-legend, .graph-legend > span, .graph-controls fieldset, .graph-controls label,
+.note-panel-class, .note-panel-actions, .note-badges { display: flex; align-items: center; }
+.graph-controls { flex-wrap: wrap; gap: .6rem; margin-bottom: 1rem; }
+.graph-view select { min-width: 0; max-width: 100%; color: var(--text); background: var(--surface); border: 1px solid var(--line-strong); border-radius: .6rem; padding: .4rem .6rem; }
+.graph-controls label { gap: .4rem; color: var(--muted); font-size: .85rem; }
+.graph-controls fieldset { gap: .7rem; border: 0; margin: 0; padding: 0; color: var(--muted); font-size: .85rem; }
+.graph-controls legend { float: left; margin-right: .3rem; }
+.graph-view button { color: var(--accent); background: var(--surface); border: 1px solid var(--line-strong); border-radius: .6rem; padding: .4rem .75rem; }
+.graph-select[aria-current] { border-color: var(--accent); }
+/* The heading is only for assistive technology until focus returns to it. */
+.graph-view > h1:focus-visible { position: fixed; top: calc(var(--topbar) + .5rem); left: 5.5rem; z-index: 4; width: auto; height: auto; clip-path: none; padding: .4rem .9rem; font-size: 1.1rem; background: var(--raised); border-radius: .5rem; }
+.graph-layout { display: grid; grid-template-columns: minmax(0, 1fr) minmax(17rem, 22rem); grid-template-areas: "map panel" "list panel"; gap: 1rem; align-items: start; }
+.graph-map { grid-area: map; min-width: 0; }
+.graph-map-heading { justify-content: space-between; gap: .7rem; margin-bottom: .6rem; }
 .graph-map-heading h2 { overflow-wrap: anywhere; }
-.graph-legend { flex-wrap: wrap; gap: .5rem 1rem; border-top: 1px solid var(--line); color: var(--muted); font-size: .78rem; padding: .8rem 1.2rem; }
+.graph-map .graph-canvas { height: clamp(24rem, calc(100svh - 17rem), 54rem); border: 0; }
+.graph-legend { flex-wrap: wrap; gap: .5rem 1rem; color: var(--muted); font-size: .8rem; padding-top: .8rem; }
 .graph-legend > span { gap: .4rem; }
 .graph-size-key { margin-left: auto; }
 .graph-empty { color: var(--muted); padding: 4rem 1.2rem; text-align: center; }
-.graph-list { padding: 1.1rem 1.2rem; margin-top: 1rem; }
+.note-panel { grid-area: panel; position: sticky; top: calc(var(--topbar) + 1rem); max-height: calc(100svh - var(--topbar) - 2rem); overflow: auto; min-width: 0; padding: 1.25rem; background: var(--surface); border: 1px solid var(--line); border-radius: .9rem; overflow-wrap: anywhere; }
+.note-panel p { margin-top: .8rem; line-height: 1.6; }
+.note-panel .note-panel-class { gap: .45rem; margin-top: 0; color: var(--accent); font-size: .75rem; letter-spacing: .08em; text-transform: uppercase; }
+.note-panel h2 { margin-top: .75rem; font-size: 1.35rem; }
+.note-panel .note-panel-id { margin-top: .4rem; color: var(--muted); font: .8rem var(--font-mono); }
+.note-panel .note-panel-empty { margin: 0; color: var(--muted); }
+.note-badges { flex-wrap: wrap; gap: .4rem; margin: 1rem 0 0; padding: 0; list-style: none; font-size: .8rem; }
+.note-badges li { padding: .2rem .6rem; background: var(--raised); border-radius: .4rem; }
+.note-badges [data-status="current"], .note-badges [data-status="verified"] { color: var(--success); }
+.note-panel-actions { flex-wrap: wrap; gap: .6rem; margin-top: 1.1rem; }
+.note-panel-actions > * { flex: 1 1 7rem; display: inline-flex; align-items: center; justify-content: center; min-height: var(--target); text-decoration: none; }
+.note-panel .secondary-btn { color: var(--text); background: transparent; border: 1px solid var(--line-strong); border-radius: .6rem; padding: .5rem .8rem; }
+.graph-list { grid-area: list; min-width: 0; padding: 1.1rem 1.2rem; border: 1px solid var(--line); border-radius: .9rem; background: var(--surface); }
 .graph-list ul { padding: 0; margin: .75rem 0 0; list-style: none; }
 .graph-list li { gap: .6rem; border-top: 1px solid var(--line); padding: .7rem 0; }
 .graph-list li svg { flex-shrink: 0; }
-.graph-list li > div { min-width: 0; overflow-wrap: anywhere; }
+.graph-list li > div { flex: 1; min-width: 0; overflow-wrap: anywhere; }
 .graph-list li a { color: var(--text); text-decoration-color: var(--line-strong); text-underline-offset: .2rem; }
 .graph-list li > div > span { display: block; margin-top: .2rem; color: var(--muted); font-size: .76rem; }
-.graph-list .graph-action { margin-left: auto; font-size: .82rem; }
-@media(max-width: 52rem) { .graph-filter-row { grid-template-columns: repeat(3,minmax(0,1fr)); } }
-@media(max-width: 35rem) { .graph-filter-row { grid-template-columns: repeat(2,minmax(0,1fr)); } .graph-size-key { margin-left: 0; } }
+.graph-list li button { font-size: .82rem; }
 .graph-connections { margin-top: .8rem; font-size: .9rem; }
 .graph-connections summary { width: fit-content; cursor: pointer; color: var(--accent); }
 .graph-connections li { display: block; color: var(--muted); overflow-wrap: anywhere; }
+@media(max-width: 64rem) {
+  .graph-layout { grid-template-columns: minmax(0, 1fr); grid-template-areas: "map" "panel" "list"; }
+  .note-panel { position: static; max-height: none; }
+}
+@media(max-width: 35rem) {
+  .graph-controls > label:not(.graph-check) { flex: 1 1 40%; }
+  .graph-controls select { width: 100%; }
+  .graph-size-key { margin-left: 0; }
+  .graph-list li { flex-wrap: wrap; }
+  .graph-list li > div { flex-basis: calc(100% - 2rem); }
+}
