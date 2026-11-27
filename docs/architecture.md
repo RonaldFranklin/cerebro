@@ -313,6 +313,7 @@ an error naming its path and version, and is never deleted, upgraded or repaired
   panel, which opens its local graph (N hops).
 - **Reader:** notes rendered as real HTML with `lang` set so browser translation works. Code blocks, inline
   code, paths, commands, note ids and links carry `translate="no"`.
+- **Note history:** the note screen lists one note's changes to a restricted owner session, under the same rules.
 - **Recent changes:** a restricted owner session sees who changed each note, when, and a bounded
   diff. History reads require visibility of the current note and both sides of an edit. Links in historical
   content receive the same visibility protection as links in the reader.
