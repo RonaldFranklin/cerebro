@@ -1,7 +1,7 @@
 # Phase 8: new data for the redesigned screens
 
-**Status: proposal, awaiting the owner.** Nothing here is implemented. The screens ship with the data that exists
-today; each part below starts only after the owner approves it. Parts marked **ADR** get one before the code.
+**Status: approved by the owner on 2026-11-27**, with the decisions recorded below. Each part starts in the approved
+order. Parts marked **ADR** get one, accepted by the owner, before the code.
 
 ## Overview
 
@@ -9,9 +9,8 @@ today; each part below starts only after the owner approves it. Parts marked **A
 |---|---|---|---|
 | A. Health summary | Health | Content revision, note count, check time, listener ceilings | Security (listener configuration in a response) |
 | B. Last backup | Health | A status file written by the backup job | Security (new file read), deploy docs |
-| C. Token table | Health | Token list, last use, 24-hour activity | **ADR**, security |
+| C. Token table | Health | Token list, last use, 24-hour activity | **ADR** (live channel, step 4), security |
 | D. Live validation | Edit | A dry-run check of a draft | Security (secret scanner over a new route) |
-| E. Commit message | Edit | An owner message in the commit | **ADR** (commit format), security |
 | F. Note history | Note | Changes of one note | Security |
 | G. Superseded changes | Recent changes | A `superseded` operation | Small |
 
@@ -46,24 +45,36 @@ which Cérebro cannot observe. The "all systems normal" label means no error and
 
 ## C. Token table, last use and activity
 
-Columns: client (agent name), ceiling, scopes, last used, activity over 24 hours. Active tokens first; revoked and
-expired ones in a collapsed group. Token ids, secrets and hashes are never sent.
+Columns: client (agent name), ceiling, scopes, last used, activity over 24 hours. Active tokens first; revoked ones
+in a collapsed group. An "expired" group appears only when an expired token exists: the owner's tokens do not expire
+(one per agent, valid until revoked). Token issuing and validation do not change. Token ids, secrets and hashes are
+never sent.
 
 What is counted: one count per **successfully authenticated MCP request**, whatever its method. Stored: token id, UTC
 hour, count; and the time of the last use. No method, tool name, note id, argument, address or body. Rows older than
 25 hours are deleted on write. Refused credentials are not counted. A failure to count never fails or delays
 authentication beyond the database busy timeout; it is dropped.
 
-**Decision needed: where the counters live.** `state.sqlite` accepts only its exact schema version and is never
-upgraded (ADR-0023), so adding tables to it today would stop the production service at startup.
+**Decided (C1):** the counters live in `usage.sqlite` in the state directory. The token database, `state.sqlite`, is
+unchanged: it accepts only its exact schema version and is never upgraded (ADR-0023). The new file is not backed up,
+losing it loses only counters, and a rollback is unaffected.
 
-| Option | Effect |
-|---|---|
-| **C1 (recommended): `usage.sqlite` in the state directory** | No change to the token database. Not backed up; losing it loses only counters. A rollback is unaffected. |
-| C2: tables in `state.sqlite` | Needs a first in-place upgrade (schema 5 to 6) and an ADR amending ADR-0023. An older release then refuses the file, so a rollback needs a restored backup. |
+### Shared design with the live channel (step 4)
 
-You asked for counters in the state database. C1 keeps them in the state directory but in a separate file; choose C2
-if they must be in `state.sqlite` itself.
+The counters and the live synapses observe the same traffic, so one event is designed for both before either is
+built. The ADR for the live channel (SSE) is proposed with this part and accepted before implementation. It starts
+from these limits:
+
+| | Usage counter (part C) | Live event (step 4) |
+|---|---|---|
+| Raised when | an MCP request authenticates | an agent has read or written a note successfully |
+| Content | token id, time | note id, verb (`read` or `write`), client name, time |
+| Kept | hourly counts and last use, in `usage.sqlite` | in memory only, never written to disk |
+| Seen by | the owner, through Health | the owner's browser session, filtered by its ceiling: a note above it produces nothing |
+
+Neither carries note content, arguments, addresses or credentials, and neither may fail or slow an agent request.
+The ADR also fixes the connection bound, what happens when the session ends, and the behaviour under
+`prefers-reduced-motion`.
 
 ## D. Live validation
 
@@ -81,34 +92,9 @@ limits, and writes nothing. It returns:
 
 The browser calls it after a pause in typing, cancels the previous call and never logs the draft.
 
-**Decision needed: broken links.** Owner edits only warn about them; agent writes refuse them. Your request is "the
-same checks as agent writes" with saving blocked while any fails.
-
-| Option | Effect |
-|---|---|
-| **D1 (recommended):** the screen blocks on any failed check, including broken links; the save API keeps the owner policy | The screen is strict; no domain rule changes. Fixing an unrelated old broken link is required before saving that note in the browser. |
-| D2: owner edits adopt the agent policy in the domain | Enforced everywhere. Changes the domain model and needs an ADR. |
-
-## E. Commit message
-
-History recognizes a commit only when its message is exactly `Update note: <id>`, a blank line and
-`Written-by: owner`. Free text in the subject would hide the change from Recent changes.
-
-Proposal: keep the subject and add the owner's message as one optional line in its own paragraph:
-
-```text
-Update note: <id>
-
-Message: <owner text>
-
-Written-by: owner
-```
-
-The domain accepts one line of at most 100 characters without control or separator characters, so it cannot add a
-trailer. It is refused when the secret scanner matches or when it holds a wikilink. The history parser accepts exactly
-this optional line, for the owner only. Git history is readable by whoever holds the content repository, including
-the backup remote: **the message is stored in plaintext even for a restricted note**, and the field says so. Recent
-changes shows it only to a session that may see every version in the diff. Needs an ADR amending ADR-0020.
+**Decided (D1):** the screen blocks saving while any check fails, broken links included. The save API keeps the owner
+policy, so no domain rule changes. A note with an old broken link must have it fixed before it can be saved in the
+browser. The mockup's commit message field is not built.
 
 ## F. Note history
 
@@ -123,9 +109,12 @@ It is derived from the two versions the history already authorizes; nothing new 
 
 ## Not planned
 
+- **E. Commit message** (a field in the editor whose text goes into the commit). Dropped by the owner on 2026-11-27:
+  it would need an ADR for the commit format and would keep plaintext in Git history even for restricted notes, which
+  is not worth it for a single owner. Commits keep their fixed subject and `Written-by` trailer.
 - A list of authors from the token table: the Recent changes filter offers the authors present in the loaded changes.
 - Sparklines of anything other than request counts.
 
-## Suggested order
+## Order
 
-A and G, then F, B, C, D and E.
+A and G, then F, B, C and D. Step 4 follows the design shared with C.
