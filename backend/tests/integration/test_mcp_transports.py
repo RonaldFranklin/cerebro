@@ -30,17 +30,40 @@ SERVER = str(Path(sys.executable).with_name("cerebro-mcp"))
 BRIDGE = str(Path(sys.executable).with_name("cerebro-mcp-stdio"))
 
 
+def reserve_ports(stack: contextlib.ExitStack, count: int) -> list[int]:
+    """Distinct free ports, held until ``stack`` closes: anything that picks a port meanwhile gets another one."""
+    sockets = [stack.enter_context(socket.socket()) for _ in range(count)]
+    for sock in sockets:
+        sock.bind(("127.0.0.1", 0))
+    return [int(sock.getsockname()[1]) for sock in sockets]
+
+
 def free_ports(count: int) -> list[int]:
-    """Distinct free ports: every socket stays bound until all of them have a port."""
     with contextlib.ExitStack() as stack:
-        sockets = [stack.enter_context(socket.socket()) for _ in range(count)]
-        for sock in sockets:
-            sock.bind(("127.0.0.1", 0))
-        return [int(sock.getsockname()[1]) for sock in sockets]
+        return reserve_ports(stack, count)
 
 
 def free_port() -> int:
     return free_ports(1)[0]
+
+
+def _await_service(process: subprocess.Popen[bytes], port: int) -> None:
+    """Return once the service answers HTTP. An accepted connection is not enough: the listening sockets are open
+    while the service is still starting, so a first request could outlast its timeout on a busy machine."""
+    deadline = time.monotonic() + 60
+    while time.monotonic() < deadline:
+        if process.poll() is not None:
+            pytest.fail("MCP server exited before startup")
+        connection = http.client.HTTPConnection("127.0.0.1", port, timeout=1)
+        try:
+            connection.request("GET", "/mcp")
+            connection.getresponse().read()
+            return
+        except OSError, http.client.HTTPException:
+            time.sleep(0.05)
+        finally:
+            connection.close()
+    pytest.fail("MCP server did not start")
 
 
 @contextmanager
@@ -57,16 +80,7 @@ def serving(
         subprocess.Popen(args, stdout=log, stderr=subprocess.STDOUT) as process,
     ):
         try:
-            for _ in range(200):
-                if process.poll() is not None:
-                    pytest.fail("MCP server exited before startup")
-                try:
-                    with socket.create_connection(("127.0.0.1", private), timeout=0.2):
-                        break
-                except OSError:
-                    time.sleep(0.05)
-            else:
-                pytest.fail("MCP server did not start")
+            _await_service(process, private)
             yield process
         finally:
             process.terminate()
