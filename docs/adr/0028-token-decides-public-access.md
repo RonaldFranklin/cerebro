@@ -33,8 +33,13 @@ public listener fixed at `internal`, an agent that needs restricted notes could 
   write quota. Revocation takes effect on the next request.
 - Restricted notes stay encrypted at rest. The server decrypts them for an authorized token, exactly as on the
   private listener.
-- MCP on the public listener has no Cloudflare identity layer. Its bearer check, request limits, query and Origin
-  rejection and no-logging rules are the only protection.
+- MCP on the public listener has no Cloudflare identity layer. Cérebro authenticates the bearer token before it
+  parses the request body, so anonymous callers only receive 401. What remains is the 64 KiB body limit, the
+  per-token write quota, query and Origin rejection, the no-logging rules and a server-wide concurrency bound
+  (`MAX_CONCURRENCY`, beyond which requests get 503 on both listeners). There is no per-client request rate limit in
+  Cérebro; the deployment adds a Cloudflare rate-limiting rule on `/mcp`.
+- Client token files are readable by any command running as that user, and now work from the internet. Use them
+  only in trusted projects and revoke a token as soon as it may be exposed.
 - Cloud chat connectors that cannot send a static header still need OAuth on `/mcp` (roadmap).
 
 ## Alternatives considered

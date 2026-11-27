@@ -245,20 +245,32 @@ test "$(curl -sS -o /dev/null -w '%{http_code}' "$PRIVATE_ORIGIN/")" = 200
 
 ## E2. Publish the public entrance through Cloudflare
 
-The dedicated Cérebro tunnel publishes **only the public listener**. Never point a tunnel at the private port. Add one ingress rule per environment to the tunnel's configuration (locally managed `config.yml` shown; set the same values in the dashboard for a remotely managed tunnel). Leave `httpHostHeader` unset: the web UI accepts only requests whose `Host` matches `PUBLIC_ORIGIN`. [Tunnel configuration](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/configure-tunnels/local-management/configuration-file/)
+The dedicated Cérebro tunnel publishes **only the public listener**. Never point a tunnel at the private port. Add one ingress rule per environment to the tunnel's configuration, ending with the catch-all `- service: http_status:404`. Generate the rules from the installation variables so ports cannot drift. Leave `httpHostHeader` unset: the web UI accepts only requests whose `Host` matches `PUBLIC_ORIGIN`. [Tunnel configuration](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/configure-tunnels/local-management/configuration-file/)
 
-```yaml
-tunnel: <cerebro-tunnel-id>
-credentials-file: /etc/cloudflared/<cerebro-tunnel-id>.json
-ingress:
-  - hostname: <hml-public-hostname>
-    service: http://127.0.0.1:18766   # HML_PUBLIC_PORT
-  - hostname: <prod-public-hostname>
-    service: http://127.0.0.1:28766   # PROD_PUBLIC_PORT
-  - service: http_status:404
+```bash
+CF_CONFIG=/etc/cloudflared/config.yml  # the dedicated tunnel's locally managed configuration
+printf '  - hostname: %s\n    service: http://127.0.0.1:%s\n' \
+  "${HML_PUBLIC_ORIGIN#https://}" "$HML_PUBLIC_PORT" "${PROD_PUBLIC_ORIGIN#https://}" "$PROD_PUBLIC_PORT"
 ```
 
-Create the DNS route with `cloudflared tunnel route dns <cerebro-tunnel-id> <public-hostname>` and restart the service. In Cloudflare Zero Trust create **two** self-hosted Access applications per public hostname. [Access applications](https://developers.cloudflare.com/cloudflare-one/applications/configure-apps/self-hosted-public-app/) · [Application paths](https://developers.cloudflare.com/cloudflare-one/policies/access/app-paths/) · [Bypass](https://developers.cloudflare.com/cloudflare-one/policies/access/#bypass)
+Paste the printed rules under `ingress:` before the catch-all, create the DNS route with `cloudflared tunnel route dns <cerebro-tunnel-id> <public-hostname>` and restart the service. Then check the file and the rule each public URL selects:
+
+```bash
+cloudflared tunnel --config "$CF_CONFIG" ingress validate
+for env in hml prod; do
+  select_env "$env"
+  cloudflared tunnel --config "$CF_CONFIG" ingress rule "$PUBLIC_ORIGIN/mcp" | grep -Eq "service: http://127\.0\.0\.1:$PUBLIC_PORT\$"
+done
+select_env hml
+```
+
+For a remotely managed tunnel set the same hostname and `http://127.0.0.1:$PUBLIC_PORT` service in the dashboard and compare them with the variables.
+
+In SSL/TLS > Edge Certificates turn on **Always Use HTTPS** and **HSTS** (max-age of at least 6 months, No-Sniff on; `includeSubDomains` only if every subdomain serves HTTPS). Clients must use `https://` URLs: a redirect cannot protect a token already sent over HTTP. [Always Use HTTPS](https://developers.cloudflare.com/ssl/edge-certificates/additional-options/always-use-https/) · [HSTS](https://developers.cloudflare.com/ssl/edge-certificates/additional-options/http-strict-transport-security/)
+
+Add a rate-limiting rule (Security rules > Create rule > Rate limiting rules; the Free plan allows one rule, counted per IP over 10 seconds, matching on path only). Expression `http.request.uri.path eq "/mcp"`, plus `and http.host eq "<public-hostname>"` on plans that offer host matching. Block for the longest available period when one IP exceeds 50 requests in 10 seconds. Cérebro itself only bounds concurrency (excess requests get 503 on both listeners). [Rate limiting rules](https://developers.cloudflare.com/waf/rate-limiting-rules/)
+
+In Cloudflare Zero Trust create **two** self-hosted Access applications per public hostname. [Access applications](https://developers.cloudflare.com/cloudflare-one/applications/configure-apps/self-hosted-public-app/) · [Application paths](https://developers.cloudflare.com/cloudflare-one/policies/access/app-paths/) · [Bypass](https://developers.cloudflare.com/cloudflare-one/policies/access/#bypass)
 
 1. **Web UI.** Domain: exactly the public hostname, path empty. One **Allow** policy for the owner's identity with MFA. This protects every path except the one below.
 2. **MCP.** Domain: exactly the same hostname, path exactly `mcp`. No wildcard in the hostname or path, no other paths and no query string. One **Bypass** policy including Everyone. The Cérebro bearer token protects this path. Bypass requests are not logged by Access.
@@ -268,6 +280,8 @@ Cérebro serves MCP only at the exact path `/mcp`. If Access also bypasses longe
 ```bash
 PUBLIC_ORIGIN='https://<public-hostname>'  # the environment under test
 test "$(curl -sS -o /dev/null -w '%{http_code}' "$PUBLIC_ORIGIN/mcp")" = 401
+test "$(curl -sS -o /dev/null -w '%{http_code} %{redirect_url}' "http://${PUBLIC_ORIGIN#https://}/mcp")" = "301 $PUBLIC_ORIGIN/mcp"
+curl -sS -o /dev/null -D - "$PUBLIC_ORIGIN/mcp" | grep -qi '^strict-transport-security: max-age='
 for path in / /search /api/session /assets/ /mcp/ /mcp/x /mcpx; do
   read -r code location < <(curl -sS -o /dev/null -w '%{http_code} %{redirect_url}\n' "$PUBLIC_ORIGIN$path")
   if [[ $code = 302 && $location == https://*.cloudflareaccess.com/* ]]; then echo "$path: Access"
@@ -276,7 +290,7 @@ for path in / /search /api/session /assets/ /mcp/ /mcp/x /mcpx; do
 done
 ```
 
-Expect `401` for unauthenticated MCP and an Access redirect for every UI, API and asset path. Then open `PUBLIC_ORIGIN` in the owner's browser. Pass Access, then sign in with the owner password. The public session reports ceiling `internal`, whatever `PUBLIC_CEILING` is, and offers no Recent changes, editing or Health; use the private origin for those.
+Expect `401` for unauthenticated MCP, an HTTPS redirect with HSTS, and an Access redirect for every UI, API and asset path. Then open `PUBLIC_ORIGIN` in the owner's browser. Pass Access, then sign in with the owner password. The public session reports ceiling `internal`, whatever `PUBLIC_CEILING` is, and offers no Recent changes, editing or Health; use the private origin for those.
 
 **Stop** on any `200` without Access, a tunnel route to the private port, a wildcard bypass or a hostname shared with other services. **Accepted risk:** a leaked token works from the internet until it is revoked, up to its ceiling and scopes.
 

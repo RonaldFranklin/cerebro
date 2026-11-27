@@ -157,7 +157,12 @@ def test_real_listener_credentials_limits_and_logs(tmp_path: Path) -> None:
         assert post(private, "invalid", read)[0] == 401
         assert post(private, privileged, read, path="/mcp?access_token=fixture-marker")[0] == 400
         assert post(private, "invalid", b"x" * 65537)[0] == 413
-        invalid_status, invalid_body = post(private, "invalid", call("cerebro_search", {"query": "é" * 513}))
+        malformed = call("cerebro_search", {"query": "é" * 513})
+        # Anonymous callers learn nothing about argument validation, framing or request shape.
+        for anonymous in (malformed, b"{not json", call("cerebro_write", {})):
+            assert post(private, "invalid", anonymous)[0] == 401
+            assert post(public, "invalid", anonymous, path="/mcp?x=1")[0] == 401
+        invalid_status, invalid_body = post(private, privileged, malformed)
         assert invalid_status == 400
         assert json.loads(invalid_body) == {
             "jsonrpc": "2.0",
@@ -218,6 +223,26 @@ def test_public_listener_ceiling_is_explicit_and_tokens_still_lower_it(
         assert status == 200
         assert RESTRICTED_MARKER.encode() not in body
         assert b"Not found." in body
+
+
+def test_connection_flood_gets_503_and_service_recovers(tmp_path: Path) -> None:
+    from cerebro.bootstrap.mcp import MAX_CONCURRENCY
+
+    make_sample_repo(tmp_path)
+    config = tmp_path / "instance.toml"
+    config.write_text(SAMPLE.replace("keys/fernet.key", "secrets/cerebro.key"))
+    private, public = free_ports(2)
+    overview = call("cerebro_overview", {})
+    with serving(config, private, public):
+        assert post(public, "invalid", overview)[0] == 401
+        with contextlib.ExitStack() as stack:
+            for _ in range(MAX_CONCURRENCY):
+                stack.enter_context(socket.create_connection(("127.0.0.1", public), timeout=5))
+            time.sleep(0.2)
+            assert post(private, "invalid", overview)[0] == 503
+        time.sleep(0.2)
+        assert post(private, "invalid", overview)[0] == 401
+        assert post(public, "invalid", overview)[0] == 401
 
 
 def test_stdio_sdk_contract_and_offline(tmp_path: Path) -> None:

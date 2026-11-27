@@ -17,9 +17,9 @@ CEREBRO_MCP_URL='https://<public-hostname>/mcp'
 curl --proto '=https' -sS -o /dev/null -w 'MCP HTTP %{http_code}\n' "$CEREBRO_MCP_URL"
 ```
 
-Expect `401`. A `302` to `cloudflareaccess.com` means the Access bypass for `/mcp` is missing. Stop on certificate
-or DNS errors. Save each client's token in a private file outside every repository. The hidden prompt keeps it out of
-shell history:
+Always use the `https://` URL. Expect `401`. A `302` to `cloudflareaccess.com` means the Access bypass for `/mcp` is
+missing. Stop on certificate or DNS errors. Save each client's token in a private file outside every repository. The
+hidden prompt keeps it out of shell history:
 
 ```bash
 install -d -m 700 ~/.config/cerebro
@@ -27,6 +27,11 @@ for client in claude-code codex; do
   (umask 077; IFS= read -rsp "$client token: " t && printf '%s' "$t" > ~/.config/cerebro/$client.token); echo
 done
 ```
+
+**Residual risk:** any command running as your user, including project scripts, hooks and plugins an agent runs, can
+read these files, and the tokens work from anywhere on the internet. Use them only in trusted projects and ask the
+owner to revoke a token as soon as it may be exposed. A desktop keyring (for example `secret-tool lookup` in place of
+`cat`) keeps them off disk but not away from your own processes.
 
 ## 2. Claude Code
 
@@ -94,7 +99,8 @@ When you have something worth recording, read `cerebro_write_guide` and follow i
 
 ## 6. Verify
 
-Open `/mcp` in each client and confirm that `cerebro` connects and offers six tools. Ask the agent to call
+Ask each agent to run `test -z "${CEREBRO_CODEX_TOKEN-}"` in its shell and expect success: no token is inherited
+by the commands it runs. Open `/mcp` in each client and confirm that `cerebro` connects and offers six tools. Ask the agent to call
 `cerebro_overview` (an empty overview is valid for fresh content) and `cerebro_write_guide`. On `401`, confirm the
 token belongs to this client and environment. If a token may be exposed, ask the owner to revoke it at once: until
 then it works from anywhere on the internet. [Agent integration and fixture checks](agent-integration.md)

@@ -32,6 +32,9 @@ from cerebro.domain.access import AccessCeiling, effective_ceiling
 from cerebro.domain.enums import Sensitivity
 
 _DOCKER_MARKER = Path("/.dockerenv")
+MAX_CONCURRENCY = 128
+"""Open connections plus running requests across both listeners; beyond it new requests get 503. A single owner's
+clients use a handful, and the bound stays above cloudflared's default pool of 100 idle origin connections."""
 _PUBLIC_BROWSER_CEILING = AccessCeiling(Sensitivity.INTERNAL)
 """The owner's browser on the public listener never exceeds this, whatever the public MCP ceiling (ADR-0028)."""
 
@@ -188,7 +191,14 @@ def serve() -> int:
                 http_app(tools, cases.authenticate_token, listeners), browsers, browser_assets(options.web_dist)
             )
             config = uvicorn.Config(
-                app, proxy_headers=False, access_log=False, log_config=None, ws="none", http="h11", lifespan="on"
+                app,
+                proxy_headers=False,
+                access_log=False,
+                log_config=None,
+                ws="none",
+                http="h11",
+                lifespan="on",
+                limit_concurrency=MAX_CONCURRENCY,
             )
             server = uvicorn.Server(config)
             server.run(sockets=sockets)
