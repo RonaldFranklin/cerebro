@@ -221,8 +221,8 @@ matching key in `secrets/`, empty `index/` and start. The [server backup procedu
 the notes to a private GitHub repository.
 
 To **update**, back up, note the current `APP_SHA`, then `git pull`, set the new `APP_SHA` in `prod.env`, run
-`dc build` and `deploy/start.sh`. To go back, check out the old commit, restore the old `APP_SHA` and start; its
-image is still on your machine. A newer release may use a state format an older one refuses, in which case restore
+`dc build` and `deploy/start.sh`. To go back, run `git switch --detach <old-commit>`, restore the old `APP_SHA` and start (its image is
+still on your machine); run `git switch main` before the next update. A newer release may use a state format an older one refuses, in which case restore
 the backup too.
 
 To **remove** the instance, run `dc down`; your data stays in `$CEREBRO_HOME` until you delete it.
