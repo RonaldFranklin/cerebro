@@ -63,6 +63,9 @@ entrances and the token table wait for the data design. The author filter covers
 3. Backend channel, then the pulse on the node or edge and the **Live activity** feed under the graph's note panel,
    with names shown on active notes. Under `prefers-reduced-motion` the highlight is static.
 
+The counters and the live channel follow [ADR-0031](../adr/0031-usage-counters-and-live-activity.md), accepted by the
+owner on 2026-11-27.
+
 ## Left for later
 
 - Verify the Cloudflare Access assertion (JWT) in the application, so that `restricted` on the public listener does
