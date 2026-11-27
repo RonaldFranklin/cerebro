@@ -140,7 +140,9 @@ class AgentWrite:
                 created.note, created=date.min, updated=date.min
             ):
                 raise WriteRejected(_CONFLICT)
-            return AgentWriteResult(created.note.id, created.revision)
+            return AgentWriteResult(
+                created.note.id, created.revision, replayed=True, sensitivity=created.note.sensitivity
+            )
         if base and base.type != candidate.type and {base.type, candidate.type} & {CORE, HUB}:
             raise WriteRejected(
                 WriteFinding("invalid_field", "type", "Keep the note in its original core, hub or regular category.")
@@ -163,6 +165,7 @@ class AgentWrite:
             revision,
             warnings,
             sensitivity_raise_warnings(base.sensitivity if base else None, candidate.sensitivity),
+            sensitivity=candidate.sensitivity,
         )
 
     def _possible_duplicate(self, note: Note, ctx: AccessContext) -> tuple[WriteFinding, ...]:

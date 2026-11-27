@@ -4,6 +4,7 @@ from dataclasses import dataclass
 
 from cerebro.application.dto import ApplyWarning
 from cerebro.application.errors import ApplicationError
+from cerebro.domain.enums import Sensitivity
 from cerebro.domain.note import NoteId
 from cerebro.domain.report import Severity, ValidationReport, ViolationCode
 
@@ -39,6 +40,10 @@ class AgentWriteResult:
     revision: str
     findings: tuple[WriteFinding, ...] = ()
     warnings: tuple[ApplyWarning, ...] = ()
+    replayed: bool = False
+    """True when a repeated create answered with the earlier commit: nothing was written now."""
+    sensitivity: Sensitivity | None = None
+    """The written note's. Neither this nor ``replayed`` is part of the agent's response."""
 
 
 # Cross-note rules can describe other notes or the size of the private corpus.

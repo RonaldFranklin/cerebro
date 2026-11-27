@@ -9,6 +9,7 @@ from cerebro.application.use_cases.get_vocabulary import GetVocabulary
 from cerebro.application.use_cases.health_report import HealthReport
 from cerebro.application.use_cases.issue_agent_token import IssueAgentToken
 from cerebro.application.use_cases.list_agent_tokens import ListAgentTokens
+from cerebro.application.use_cases.live_activity import FollowActivity, RecordActivity, VisibleActivity
 from cerebro.application.use_cases.owner_edit_note import OwnerEditNote
 from cerebro.application.use_cases.read_note import ReadNote
 from cerebro.application.use_cases.rebuild_index import RebuildIndex
@@ -18,6 +19,7 @@ from cerebro.application.use_cases.search_notes import SearchNotes
 __all__ = [
     "AuthenticateToken",
     "CheckOwnerEdit",
+    "FollowActivity",
     "GetGraph",
     "GetNeighbors",
     "GetOverview",
@@ -28,6 +30,8 @@ __all__ = [
     "OwnerEditNote",
     "ReadNote",
     "RebuildIndex",
+    "RecordActivity",
     "RevokeAgentToken",
     "SearchNotes",
+    "VisibleActivity",
 ]
