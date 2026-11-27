@@ -3,15 +3,13 @@
 from datetime import datetime
 from typing import Literal
 
-from cerebro.application.access import require_owner
+from cerebro.application.access import require_restricted_owner
 from cerebro.application.dto import USAGE_HOURS, TokenActivityRequest, TokenActivityRow
-from cerebro.application.errors import PermissionDenied
 from cerebro.application.ports.system import Clock
 from cerebro.application.ports.tokens import TokenStore
 from cerebro.application.ports.usage import UsageCounters
 from cerebro.domain.access import AccessContext
 from cerebro.domain.agent_token import AgentToken
-from cerebro.domain.enums import Sensitivity
 
 
 class TokenActivity:
@@ -23,9 +21,7 @@ class TokenActivity:
         self._clock = clock
 
     def execute(self, request: TokenActivityRequest, ctx: AccessContext) -> tuple[TokenActivityRow, ...]:
-        require_owner(ctx, "read token activity")
-        if ctx.ceiling.level is not Sensitivity.RESTRICTED:
-            raise PermissionDenied("read token activity below the restricted ceiling")
+        require_restricted_owner(ctx, "read token activity")
         now = self._clock.now()
         usage = self._counters.summary(now)
         rows = []
