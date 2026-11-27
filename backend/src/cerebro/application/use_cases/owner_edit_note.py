@@ -2,9 +2,8 @@
 
 from dataclasses import replace
 
-from cerebro.application.access import require_owner, visible_note
+from cerebro.application.access import require_restricted_owner, visible_note
 from cerebro.application.dto import OwnerEditNoteRequest, OwnerEditNoteResult, sensitivity_raise_warnings
-from cerebro.application.errors import PermissionDenied
 from cerebro.application.index_state import index_commit
 from cerebro.application.note_validation import validate_candidate, write_snapshot
 from cerebro.application.ports.graph import GraphIndex
@@ -26,7 +25,7 @@ class OwnerEditNote:
     * ``id`` is immutable (it is the key), ``created`` is kept and ``updated`` is today.
     * Validated with ``OWNER_EDIT_POLICY``: the shared note rules, with broken links as warnings, and the
       **secret scan over frontmatter and body** (errors). Errors are returned in the result and nothing is written.
-    * The new sensitivity may not exceed the ceiling of the context.
+    * The owner needs the ceiling ``restricted``.
     * One commit with the trailer ``Written-by: owner`` (ADR-0023).
     """
 
@@ -45,14 +44,12 @@ class OwnerEditNote:
         self._vocabulary = vocabulary
 
     def execute(self, request: OwnerEditNoteRequest, ctx: AccessContext) -> OwnerEditNoteResult:
-        require_owner(ctx, "edit notes")
+        require_restricted_owner(ctx, "edit notes")
         note = request.note
         today = self._clock.now().date()
         base = visible_note(self._notes, note.id, ctx, include_history=True)
         ensure_unchanged(request.expected_hash, base)
         candidate = replace(note, created=base.created, updated=today)
-        if not ctx.ceiling.allows(candidate.sensitivity):
-            raise PermissionDenied("write above the access ceiling")
         report = validate_candidate(
             candidate,
             ctx=ctx,

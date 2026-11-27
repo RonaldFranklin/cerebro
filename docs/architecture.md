@@ -317,8 +317,8 @@ an error naming its path and version, and is never deleted, upgraded or repaired
   code, paths, commands, note ids and links carry `translate="no"`.
 - **Note history:** the note screen lists one note's changes to a restricted owner session, under the same rules.
 - **Recent changes:** a restricted owner session sees who changed each note, when, and a bounded
-  diff. History reads require visibility of the current note and both sides of an edit. Links in historical
-  content receive the same visibility protection as links in the reader.
+  diff. The use cases require a `restricted` owner, and a change is listed only if the current note and both sides of
+  the edit can be read. Links in historical content receive the same visibility protection as links in the reader.
 - **Editor (owner):** CodeMirror 6 with `[[link]]` autocomplete; saves go through `OwnerEditNote`. After each pause in
   typing the draft is checked by `CheckOwnerEdit` (the same rules, nothing written; restricted owner only), and the
   screen blocks saving while a check fails.

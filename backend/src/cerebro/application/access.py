@@ -54,6 +54,15 @@ def require_owner(ctx: AccessContext, action: str) -> None:
         raise PermissionDenied(action)
 
 
+def require_restricted_owner(ctx: AccessContext, action: str) -> None:
+    """Raise ``PermissionDenied`` unless the caller is the owner with the ceiling ``restricted``. Owner actions that
+    could reveal or change what a lower ceiling hides require it here, whatever the inbound adapter already checked
+    (ADR-0029)."""
+    require_owner(ctx, action)
+    if ctx.ceiling.level is not Sensitivity.RESTRICTED:
+        raise PermissionDenied(f"{action} below the restricted ceiling")
+
+
 def redacted_body(notes: NoteRepository, ctx: AccessContext, body: str, *, include_history: bool = False) -> str:
     """``body`` with every wikilink to a note the caller cannot see (or that does not exist) replaced by the marker.
 

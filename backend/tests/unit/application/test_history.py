@@ -11,6 +11,8 @@ from tests.fakes.history import FakeHistory
 from tests.unit.application.world import ctx, standard_world
 from tests.unit.domain.builders import make_note
 
+OWNER = ctx(Sensitivity.RESTRICTED, owner=True)
+
 
 def test_history_authorizes_current_and_both_versions_and_redacts_links() -> None:
     world = standard_world()
@@ -18,7 +20,7 @@ def test_history_authorizes_current_and_both_versions_and_redacts_links() -> Non
     after = replace(base, body="After [[gone-note|alias]].")
     port = FakeHistory(base, after)
     api = OwnerHistory(world.notes, port)
-    owner = ctx(owner=True)
+    owner = OWNER
     with pytest.raises(PermissionDenied):
         api.detail(HistoryRequest(port.revision), ctx())
     result = api.detail(HistoryRequest(port.revision), owner)
@@ -26,25 +28,27 @@ def test_history_authorizes_current_and_both_versions_and_redacts_links() -> Non
     assert "Before" in result.diff
     assert "After" in result.diff
     assert "gone-note" not in result.diff
-    port.before = replace(base, sensitivity=Sensitivity.RESTRICTED)
-    assert not api.list(owner).changes
-    with pytest.raises(ChangeUnavailable):
-        api.detail(HistoryRequest(port.revision), owner)
 
 
-@pytest.mark.parametrize("hidden", ["current", "before", "after"])
-def test_visibility_of_each_version_is_required_for_detail_and_listing(hidden: str) -> None:
+@pytest.mark.parametrize("level", [Sensitivity.PUBLIC, Sensitivity.INTERNAL])
+def test_an_owner_below_restricted_reads_no_history(level: Sensitivity) -> None:
     world = standard_world()
-    current = world.notes.get(NoteId("vault-layout" if hidden == "current" else "server-ssh-access"))
-    assert current
-    before = replace(current, sensitivity=Sensitivity.RESTRICTED if hidden == "before" else Sensitivity.INTERNAL)
-    after = replace(current, sensitivity=Sensitivity.RESTRICTED if hidden == "after" else Sensitivity.INTERNAL)
-    port = FakeHistory(before, after)
+    note = world.notes.get(NoteId("server-ssh-access"))
+    assert note
+    port = FakeHistory(note, replace(note, body="After."))
+
+    def refuse(cursor: str | None = None, *, verify_head: tuple[str, str] | None = None) -> tuple[str, ...]:
+        raise AssertionError("history was read for a refused caller")
+
+    port.recent = refuse  # type: ignore[method-assign]
     history = OwnerHistory(world.notes, port)
-    owner = ctx(owner=True)
-    assert history.list(owner).changes == ()
-    with pytest.raises(ChangeUnavailable):
-        history.detail(HistoryRequest(port.revision), owner)
+    lower = ctx(level, owner=True)
+    with pytest.raises(PermissionDenied):
+        history.list(lower)
+    with pytest.raises(PermissionDenied):
+        history.list(lower, note_id=note.id)
+    with pytest.raises(PermissionDenied):
+        history.detail(HistoryRequest(port.revision), lower)
 
 
 @pytest.mark.parametrize("broken", ["revision", "parent"])
@@ -55,9 +59,9 @@ def test_an_unreadable_version_is_left_out_of_the_list_and_unavailable_in_detail
     port = FakeHistory(note, replace(note, body="After."))
     port.unreadable.add(getattr(port, broken))
     history = OwnerHistory(world.notes, port)
-    assert history.list(ctx(owner=True)).changes == ()
+    assert history.list(OWNER).changes == ()
     with pytest.raises(ChangeUnavailable):
-        history.detail(HistoryRequest(port.revision), ctx(owner=True))
+        history.detail(HistoryRequest(port.revision), OWNER)
 
 
 @pytest.mark.parametrize(
@@ -80,7 +84,7 @@ def test_a_change_that_supersedes_a_note_is_reported_as_superseded(
     new = replace(base, status=after, superseded_by=replaced if after is Status.SUPERSEDED else None, body="Next.")
     port = FakeHistory(old, new)
     history = OwnerHistory(world.notes, port)
-    owner = ctx(owner=True)
+    owner = OWNER
     assert [row.operation for row in history.list(owner).changes] == [operation]
     assert history.detail(HistoryRequest(port.revision), owner).change.operation == operation
 
@@ -90,7 +94,7 @@ def test_a_note_created_already_superseded_is_reported_as_created() -> None:
     base = make_note(id=NoteId("server-ssh-access"), sensitivity=Sensitivity.INTERNAL)
     created = replace(base, status=Status.SUPERSEDED, superseded_by=NoteId("gone-note"))
     history = OwnerHistory(world.notes, FakeHistory(None, created))
-    assert [row.operation for row in history.list(ctx(owner=True)).changes] == ["create"]
+    assert [row.operation for row in history.list(OWNER).changes] == ["create"]
 
 
 def test_the_history_of_one_note_lists_only_its_authorized_changes() -> None:
@@ -99,15 +103,13 @@ def test_the_history_of_one_note_lists_only_its_authorized_changes() -> None:
     assert note
     port = FakeHistory(note, replace(note, body="After."))
     history = OwnerHistory(world.notes, port)
-    owner = ctx(owner=True)
+    owner = OWNER
     assert [row.revision for row in history.list(owner, note_id=note.id).changes] == [port.revision]
     other = history.list(owner, note_id=NoteId("docker-conventions"))
     assert other.changes == ()
     assert other.page_cursor is not None
     with pytest.raises(PermissionDenied):
         history.list(ctx(), note_id=note.id)
-    port.before = replace(note, sensitivity=Sensitivity.RESTRICTED)
-    assert history.list(owner, note_id=note.id).changes == ()
 
 
 def test_the_history_of_another_note_is_never_read() -> None:
@@ -122,14 +124,14 @@ def test_the_history_of_another_note_is_never_read() -> None:
         raise AssertionError("versions of an unrelated note were read")
 
     port.note_at = refuse  # type: ignore[method-assign]
-    assert OwnerHistory(world.notes, port).list(ctx(owner=True), note_id=NoteId("docker-conventions")).changes == ()
+    assert OwnerHistory(world.notes, port).list(OWNER, note_id=NoteId("docker-conventions")).changes == ()
 
 
 def _detail(before_body: str, after_body: str) -> ChangeDetail:
     world = standard_world()
     base = make_note(id=NoteId("server-ssh-access"), sensitivity=Sensitivity.INTERNAL, body=before_body)
     port = FakeHistory(base, replace(base, body=after_body))
-    return OwnerHistory(world.notes, port).detail(HistoryRequest(port.revision), ctx(owner=True))
+    return OwnerHistory(world.notes, port).detail(HistoryRequest(port.revision), OWNER)
 
 
 LONG_BODY = "".join(f"Line {number} of a long synthetic note.\n" for number in range(6000))
