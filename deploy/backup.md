@@ -43,19 +43,19 @@ directories, quarantine scratch data, and the derived `index.sqlite` out of any 
 ## Schedule
 
 Replace the placeholders with absolute paths and install one line per environment using the backup account's
-`crontab -e`. Ensure this account's cron PATH includes its verified `git` and `gh` executables. The example starts
-at 18:10 server local time, limits runtime to 30 minutes, and does not catch up missed executions after boot.
+`crontab -e`. Pick times at which the host is normally running. Ensure this account's cron PATH includes its verified `git` and `gh` executables. The example starts
+at 03:00 server local time, limits runtime to 30 minutes, and does not catch up missed executions after boot.
 
 ```cron
 PATH=/usr/local/bin:/usr/bin:/bin
-10 18 * * * timeout --kill-after=1m 30m python3 "<absolute-application-checkout>/deploy/backup.py" --content "<absolute-content-checkout>" --state "<absolute-state-directory>" --destination "<absolute-private-backup-directory>" --repository "<github-owner>/cerebro-content" --branch hml
+0 3 * * * timeout --kill-after=1m 30m python3 "<absolute-application-checkout>/deploy/backup.py" --content "<absolute-content-checkout>" --state "<absolute-state-directory>" --destination "<absolute-private-backup-directory>" --repository "<github-owner>/cerebro-content" --branch hml
 ```
 
 The service disables automatic Git garbage collection during note writes. Schedule ordinary Git maintenance
-separately under the content owner, away from the shutdown interval. Keep Git's normal grace period.
+separately under the content owner, away from backups and planned downtime. Keep Git's normal grace period.
 
 ```cron
-30 17 * * 6 timeout --kill-after=1m 30m git -C "<absolute-content-checkout>" -c gc.autoDetach=false gc --auto
+0 4 * * 0 timeout --kill-after=1m 30m git -C "<absolute-content-checkout>" -c gc.autoDetach=false gc --auto
 ```
 
 ## Verify a restore
