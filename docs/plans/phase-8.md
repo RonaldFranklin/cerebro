@@ -63,3 +63,7 @@ entrances and the token table wait for the data design. The author filter covers
 |---|---|---|
 | 1 | #107 | Merged on 2026-11-27 after owner review |
 | 2 | #108 | Merged on 2026-11-27 after owner review. The image build is checked at deployment |
+| 3a | #110 | Graph and sign-in: merged on 2026-11-27 |
+| 3b | #111 | Note screen: merged on 2026-11-27 |
+| 3c | #112, #113 | Recent changes and Health with existing data: merged on 2026-11-27 |
+| 3d | | Edit screen layout and the parts in [phase-8-data.md](phase-8-data.md): awaiting the owner |
