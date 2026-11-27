@@ -2,9 +2,9 @@
 
 from collections.abc import Callable, Iterable, Mapping
 
-from cerebro.application.access import require_owner
+from cerebro.application.access import require_restricted_owner
 from cerebro.application.dto import HealthCode, HealthIssue, HealthReportRequest, HealthReportResult
-from cerebro.application.errors import NoteReadError, PermissionDenied
+from cerebro.application.errors import NoteReadError
 from cerebro.application.index_state import index_is_stale
 from cerebro.application.ports.graph import GraphIndex
 from cerebro.application.ports.notes import FileProblem, NoteRepository
@@ -60,9 +60,7 @@ class HealthReport:
         self._vocabulary = vocabulary
 
     def execute(self, request: HealthReportRequest, ctx: AccessContext) -> HealthReportResult:
-        require_owner(ctx, "read the health report")
-        if ctx.ceiling.level is not Sensitivity.RESTRICTED:
-            raise PermissionDenied("read the health report below the restricted ceiling")
+        require_restricted_owner(ctx, "read the health report")
         checked_at = self._clock.now()
         issues = [
             HealthIssue(

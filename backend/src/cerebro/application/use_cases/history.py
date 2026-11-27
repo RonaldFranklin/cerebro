@@ -1,4 +1,5 @@
-"""Owner history projects each revision against its own contents and today's access rights."""
+"""Owner history, for a ``restricted`` owner only. Each revision is projected against its own contents and the notes
+that can be read today."""
 
 import difflib
 import json
@@ -8,7 +9,7 @@ from contextlib import AbstractContextManager, contextmanager, nullcontext
 from dataclasses import dataclass
 from functools import lru_cache
 
-from cerebro.application.access import require_owner
+from cerebro.application.access import require_restricted_owner
 from cerebro.application.errors import NoteReadError
 from cerebro.application.history import (
     MAX_CHANGES,
@@ -60,7 +61,7 @@ class OwnerHistory:
     ) -> ChangePage:
         """Recent changes, or those of one note: the same bounded window, authorization and redaction. A note the
         caller cannot see, or that does not exist, simply has no changes."""
-        require_owner(ctx, "inspect change history")
+        require_restricted_owner(ctx, "inspect change history")
         with self._window(cursor) as (head, revisions):
             return self._list(ctx, head, revisions, note_id)
 
@@ -108,7 +109,7 @@ class OwnerHistory:
         return info is not None and info.note_id == note_id
 
     def detail(self, request: HistoryRequest, ctx: AccessContext) -> ChangeDetail:
-        require_owner(ctx, "inspect change history")
+        require_restricted_owner(ctx, "inspect change history")
         with self._window(request.cursor) as (_, revisions):
             if not is_revision(request.revision) or request.revision not in revisions[:RECENT_WINDOW]:
                 raise ChangeUnavailable()
