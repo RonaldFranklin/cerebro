@@ -406,6 +406,25 @@ class TestHealthReport:
         assert report.ok
         assert (report.notes_checked, report.search_index_checked) == (3, True)
 
+    def test_the_report_says_when_it_was_made_and_of_which_revision(self) -> None:
+        kit = HealthKit()
+        report = kit.run()
+        assert report.checked_at == kit.clock.now()
+        assert report.revision == kit.world.notes.head()
+
+    def test_a_report_of_files_that_cannot_be_scanned_still_names_the_revision(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        kit = HealthKit()
+
+        def unreadable() -> None:
+            raise NoteReadError(problems=[("notes", "cannot be listed")])
+
+        monkeypatch.setattr(kit.world.notes, "scan", unreadable)
+        report = kit.run()
+        assert (report.notes_checked, report.revision) == (0, kit.world.notes.head())
+        assert report.checked_at == kit.clock.now()
+
     def test_problem_files_are_listed_and_the_other_notes_still_checked(self) -> None:
         kit = HealthKit()
         kit.world.notes.problems.append(FileProblem("notes/broken.md", "invalid frontmatter", stable=True))

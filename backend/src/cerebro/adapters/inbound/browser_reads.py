@@ -9,12 +9,13 @@ from starlette.responses import JSONResponse
 
 from cerebro.adapters.inbound.input_limits import MAX_FIELD_BYTES, MAX_QUERY_BYTES, bounded_text
 from cerebro.adapters.inbound.read_views import (
+    BrowserHealthResponse,
     GraphResponse,
-    HealthResponse,
+    ListenerCeilings,
     NoteResponse,
     OverviewResponse,
     SearchResponse,
-    health_view,
+    browser_health_view,
     overview_view,
     read_view,
     search_view,
@@ -48,6 +49,7 @@ class BrowserReads:
     get_neighbors: ContextUseCase[GetNeighborsRequest, GraphView]
     get_graph: ContextUseCase[GetGraphRequest, GraphView]
     health_report: ContextUseCase[HealthReportRequest, HealthReportResult]
+    listeners: tuple[ListenerCeilings, ...] = ()
 
 
 class Parameters(BaseModel):
@@ -197,8 +199,10 @@ def install_browser_reads(app: FastAPI, cases: BrowserReads) -> None:
         query = GetNeighborsRequest(note_id=NoteId(note_id), include_history=params.history == "true", hops=params.hops)
         return _graph_view(_neighborhood(cases.get_neighbors.execute(query, request.state.ctx), params))
 
-    @router.get("/health", response_model=HealthResponse)
-    def health(request: Request, params: Annotated[Parameters, Query()]) -> HealthResponse:
-        return health_view(cases.health_report.execute(HealthReportRequest(), request.state.ctx))
+    @router.get("/health", response_model=BrowserHealthResponse)
+    def health(request: Request, params: Annotated[Parameters, Query()]) -> BrowserHealthResponse:
+        # The use case authorizes the owner first: a refused caller learns nothing about the entrances either.
+        report = cases.health_report.execute(HealthReportRequest(), request.state.ctx)
+        return browser_health_view(report, cases.listeners)
 
     app.include_router(router)

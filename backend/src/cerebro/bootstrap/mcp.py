@@ -24,6 +24,7 @@ from cerebro.adapters.inbound.input_limits import MAX_INPUT_BYTES
 from cerebro.adapters.inbound.mcp_http import http_app
 from cerebro.adapters.inbound.mcp_stdio import bridge
 from cerebro.adapters.inbound.mcp_tools import MCPTools
+from cerebro.adapters.inbound.read_views import ListenerCeilings
 from cerebro.application.browser import BrowserBinding
 from cerebro.bootstrap.container import build_container
 from cerebro.bootstrap.diagnostics import owner_message
@@ -188,6 +189,11 @@ def serve() -> int:
                 get_vocabulary=cases.get_vocabulary,
             )
             auth = container.browser_auth
+            browser_ceilings = {options.private_port: _OWNER_CEILING}
+            if options.enable_public:
+                browser_ceilings[options.public_port] = _public_browser_ceiling(
+                    options.public_ceiling, options.public_browser_ceiling
+                )
             reads = BrowserReads(
                 get_overview=cases.get_overview,
                 search_notes=cases.search_notes,
@@ -195,6 +201,14 @@ def serve() -> int:
                 get_neighbors=cases.get_neighbors,
                 get_graph=cases.get_graph,
                 health_report=cases.health_report,
+                listeners=tuple(
+                    ListenerCeilings(
+                        name="private" if port == options.private_port else "public",
+                        mcp=ceiling,
+                        browser=browser_ceilings[port],
+                    )
+                    for port, ceiling in listeners.items()
+                ),
             )
             browsers = {}
             for port in listeners:
@@ -202,12 +216,7 @@ def serve() -> int:
                 binding = BrowserBinding(
                     "private" if private else "public", options.private_origin if private else options.public_origin
                 )
-                ceiling = (
-                    _OWNER_CEILING
-                    if private
-                    else _public_browser_ceiling(options.public_ceiling, options.public_browser_ceiling)
-                )
-                api = browser_api(auth, binding, ceiling)
+                api = browser_api(auth, binding, browser_ceilings[port])
                 install_browser_history(api, cases.history)
                 install_browser_reads(api, reads)
                 install_browser_edit(api, cases.owner_edit_note)

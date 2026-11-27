@@ -3,6 +3,7 @@
 from collections.abc import Iterator
 from contextlib import ExitStack
 from dataclasses import dataclass
+from datetime import datetime, timedelta
 
 import pytest
 from starlette.testclient import TestClient
@@ -179,7 +180,12 @@ def test_graph_filters_remove_invisible_edge_endpoints(service: Service, restric
 def test_health_requires_restricted_listener(service: Service) -> None:
     ctx = AccessContext.for_owner(AccessCeiling(Sensitivity.RESTRICTED))
     report = service.container.use_cases.health_report.execute(HealthReportRequest(), ctx)
-    assert service.private.get("/api/health").json() == health_view(report)
+    body = service.private.get("/api/health").json()
+    assert {key: body[key] for key in health_view(report)} == health_view(report)
+    assert body.keys() - health_view(report).keys() == {"checked_at", "content", "listeners"}
+    assert datetime.fromisoformat(body["checked_at"]).utcoffset() == timedelta(0)
+    assert body["content"] == {"revision": report.revision, "state": "clean"}
+    assert body["listeners"] == []
     response = service.public.get("/api/health", headers={"X-Forwarded-Host": "private.example.invalid"})
     assert response.status_code == 403
     assert VAULT_ID.value not in response.text
@@ -213,6 +219,7 @@ def test_note_file_problems_are_listed_in_health_and_logged_without_content(
     stray.write_text(f"---\ntitle: {RESTRICTED_MARKER}\n")  # never committed
     health = service.private.get("/api/health")
     assert health.status_code == 200
+    assert health.json()["content"]["state"] == "attention"
     issues = [i for i in health.json()["issues"] if i["code"] == "note_file_blocking"]
     assert [i["subject"] for i in issues] == ["notes/stray-draft.md"]
     assert "differs from the last commit" in issues[0]["message"]

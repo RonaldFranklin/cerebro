@@ -7,7 +7,12 @@ async function owner(page: Page, ceiling = "restricted") {
   }}));
 }
 
-const clean = {ok:true,notes_checked:4,search_index_checked:true,issues:[]};
+const entrances = [
+  {name:"private",mcp_ceiling:"restricted",browser_ceiling:"restricted"},
+  {name:"public",mcp_ceiling:"internal",browser_ceiling:"internal"},
+];
+const summary = {checked_at:"2026-11-27T08:31:00+00:00",content:{revision:"0123456789abcdef".repeat(2) + "01234567",state:"clean"},listeners:entrances};
+const clean = {...summary,ok:true,notes_checked:4,search_index_checked:true,issues:[]};
 function issue(code: string, subject: string, severity: string, message = `${code} fixture message`) {
   return {code,subject,severity,field:null,message};
 }
@@ -105,9 +110,8 @@ test("health summarizes the repository and warns about quarantined plaintext", a
 
 test("health does not claim index results when blocked files stopped the checks", async ({page}) => {
   await owner(page);
-  await page.route("**/api/health", route => route.fulfill({json:{ok:false,notes_checked:0,search_index_checked:false,issues:[
-    issue("note_file_blocking","notes/draft.md","error"),
-  ]}}));
+  await page.route("**/api/health", route => route.fulfill({json:{...clean,ok:false,notes_checked:0,search_index_checked:false,
+    content:{revision:null,state:"attention"},issues:[issue("note_file_blocking","notes/draft.md","error")]}}));
   await page.goto("/health");
   await expect(page.getByText("Not checked", {exact:true})).toHaveCount(3);
   await expect(page.locator("div[data-card=content]")).toContainText("Needs attention");
@@ -118,7 +122,7 @@ test("health does not claim index results when blocked files stopped the checks"
 test("an unstable scan keeps the computed revision result and says nothing about the search limit", async ({page}) => {
   await owner(page);
   let stale = true;
-  await page.route("**/api/health", route => route.fulfill({json:{ok:false,notes_checked:4,search_index_checked:false,issues:[
+  await page.route("**/api/health", route => route.fulfill({json:{...clean,ok:false,notes_checked:4,search_index_checked:false,issues:[
     issue("note_file_blocking","notes/draft.md","error"), ...stale ? [issue("index_stale","index","error")] : [],
   ]}}));
   await page.goto("/health");
@@ -129,4 +133,24 @@ test("an unstable scan keeps the computed revision result and says nothing about
   stale = false;
   await page.getByRole("button",{name:"Refresh report"}).click();
   await expect(revision).toContainText("Matches indexes");
+});
+
+test.describe("server facts", () => {
+  test.use({timezoneId: "UTC"});
+
+  test("health shows the server's check time, the content revision and each entrance", async ({page}) => {
+    await owner(page);
+    await page.route("**/api/health", route => route.fulfill({json:clean}));
+    await page.goto("/health");
+    await expect(page.locator("header time")).toHaveAttribute("datetime", clean.checked_at);
+    await expect(page.locator("header time")).toContainText("08:31");
+    await expect(page.locator("div[data-card=content]")).toContainText("HEAD 0123456");
+    const section = page.getByRole("region", {name:"Entrances"});
+    await expect(section.getByRole("heading", {level:3})).toHaveText(["Private", "Public"]);
+    const open = section.locator("li").nth(1);
+    await expect(open).toContainText("MCP ceiling internal");
+    await expect(open).toContainText("Owner browser internal");
+    await expect(section.locator("li").first().locator("[data-tone=warning]")).toHaveCount(2);
+    await expect(open.locator("[data-tone=warning]")).toHaveCount(0);
+  });
 });
