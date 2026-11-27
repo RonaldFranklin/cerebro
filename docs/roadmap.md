@@ -15,7 +15,7 @@ Manual checkpoints:
 |---|---|
 | Phase 3 | Run the [manual Claude Code and Codex checks](agent-integration.md#manual-check-in-claude-code-and-codex) and decide the [security checkpoint](plans/archive/phase-3.md#security-checkpoint-for-the-owner). |
 | Phase 5 | Complete the [browser walkthrough](plans/archive/phase-5.md#7-open-the-interface-from-wsl) (translation, both listeners) and the visual and [security review](plans/archive/phase-5.md#security-checkpoint-for-the-owner). |
-| Phase 6 | Run the hml restore drill: restore content and state as in [deployment, section G](deploy.md#g-accept-hml-before-promoting-to-prod). |
+| Phase 6 | Run the hml restore drill: restore content and state as in [deployment, section G](deploy.md#g-accept-hml-before-promoting-to-prod). The deployment is already live, so take a fresh hml snapshot with a known test note first; the drill takes hml offline. |
 | Phase 7 | Run the [real-client write walkthrough](agent-integration.md#inspect-the-same-client-writes-in-recent-changes) with Claude Code and Codex. |
 
 The Phase 4 checkpoint covered the Inbox, which [ADR-0023](adr/0023-no-legacy-compatibility.md) removed; it cannot
@@ -72,8 +72,8 @@ Pre-deploy maintenance preserves dirty content checkouts under the state directo
 
 ## ✅ Phase 6 — Deploy (hml, prod)
 
-The owner confirmed on 2026-11-26 that the server deployment is done and in production. The hml restore drill is still
-pending (above).
+The owner confirmed on 2026-11-26 that the server deployment is done and in production, and marked the phase done with
+one checkpoint open: the hml restore drill (above).
 [Approved plan and local validation record](plans/phase-6.md).
 
 - WSL acceptance passed with synthetic content, including startup, health, MCP, browser access, loopback publication and restart persistence.
@@ -87,7 +87,7 @@ pending (above).
 - Backup pushes the content repository to a private GitHub remote, snapshots SQLite and copies the owner verifier. Escrow the Fernet key separately.
 - Scheduled jobs are set outside the host's planned downtime.
 
-**Audit items addressed in deployment preparation**
+**Known operational errors from the audit, addressed in deployment preparation**
 
 - **12. Docker bind and exposure.** Container mode uses the private listener on a project bridge. Compose checks and the WSL trial verified a single host-loopback publication. [ADR-0027](adr/0027-container-loopback-publication.md)
 - **13. Backup.** The backup command pairs the content revision with a SQLite snapshot and the owner verifier. Quarantine and the derived index are excluded. The maintenance example schedules Git garbage collection separately. [Backup and restore](../deploy/backup.md)
