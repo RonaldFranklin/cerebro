@@ -13,6 +13,8 @@
 !web/index.html
 !web/src/
 !web/src/**
+!web/public/
+!web/public/**
 **/__pycache__/
 **/.env
 **/.env.*

@@ -16,20 +16,21 @@ function typing(target: EventTarget | null) {
   return target instanceof HTMLElement && (target.isContentEditable || target.matches("input, textarea, select"));
 }
 
-/** A tooltip stays dismissed until the pointer or focus leaves its destination. */
-function useDismissedTooltip() {
-  const [dismissed, setDismissed] = useState<string | null>(null);
-  const [hovered, setHovered] = useState<string | null>(null);
+/** Escape dismisses every shown tooltip. Each stays hidden until its destination is hovered or focused again. */
+function useDismissedTooltips() {
+  const [dismissed, setDismissed] = useState<ReadonlySet<string>>(new Set<string>());
   useEffect(() => {
-    if (!hovered) return;
-    const escape = (event: KeyboardEvent) => { if (event.key === "Escape") setDismissed(hovered); };
+    function escape(event: KeyboardEvent) {
+      if (event.key !== "Escape") return;
+      const shown = [...document.querySelectorAll(".rail a:is(:hover, :focus-visible)")].map(link => link.getAttribute("href") ?? "");
+      if (shown.length) setDismissed(current => new Set([...current, ...shown]));
+    }
     window.addEventListener("keydown", escape);
     return () => window.removeEventListener("keydown", escape);
-  }, [hovered]);
+  }, []);
   return (path: string) => {
-    const enter = () => setHovered(path);
-    const leave = () => { setHovered(null); setDismissed(null); };
-    return {"data-dismissed": dismissed === path || undefined, onMouseEnter: enter, onFocus: enter, onMouseLeave: leave, onBlur: leave};
+    const restore = () => setDismissed(current => current.has(path) ? new Set([...current].filter(item => item !== path)) : current);
+    return {"data-dismissed": dismissed.has(path) || undefined, onMouseEnter: restore, onFocus: restore};
   };
 }
 
@@ -85,7 +86,7 @@ export function Shell({ path, ceiling, onNavigate, onSearch, onLogout, children 
     onNavigate(anchor.pathname + anchor.search + anchor.hash);
   }
   const section = "/" + path.split(/[?#]/, 1)[0].split("/")[1];
-  const tooltip = useDismissedTooltip();
+  const tooltip = useDismissedTooltips();
 
   return <div className="workspace" onClick={follow}>
     <a className="skip-link" href="#workspace-main">Skip to content</a>

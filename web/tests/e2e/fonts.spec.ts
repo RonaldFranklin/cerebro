@@ -1,5 +1,15 @@
 import { expect } from "@playwright/test";
+import { readFileSync } from "node:fs";
 import { test } from "./fixture";
+
+test("the build carries the license of every font it ships", () => {
+  for (const font of ["inter", "jetbrains-mono", "space-grotesk"]) {
+    const file = (path: string) => readFileSync(new URL(`../../${path}`, import.meta.url), "utf8");
+    const shipped = file(`dist/licenses/${font}-OFL.txt`);
+    expect(shipped).toContain("SIL Open Font License");
+    expect(shipped).toBe(file(`node_modules/@fontsource-variable/${font}/LICENSE`));
+  }
+});
 
 test("the three Latin fonts are served by the application under the production CSP", async ({page, demo}) => {
   const violations: string[] = [];

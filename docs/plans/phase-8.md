@@ -29,7 +29,7 @@ independent review, and keeps backend and browser tests green.
 - Area colors in the graph change with the graph screen (step 3).
 - The `/` shortcut is a single character that cannot be remapped, as requested; it never acts inside a field or the
   editor.
-- The font packages carry their OFL license; the built UI ships the font files, whose metadata names it.
+- The built UI, and therefore the image, ships each font's OFL text under `licenses/`, copied from its package.
 
 ## Left for later
 

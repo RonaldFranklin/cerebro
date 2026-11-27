@@ -199,3 +199,34 @@ test("the search shortcut works when AltGr types the slash", async ({page}) => {
     {key: "/", ctrlKey: true, altKey: true, modifierAltGraph: true, cancelable: true})));
   await expect(page.getByRole("searchbox", {name: "Quick search"})).toBeFocused();
 });
+
+test("Escape dismisses every shown rail tooltip when hover and focus overlap", async ({page}) => {
+  await owner(page);
+  await page.goto("/");
+  const graph = page.getByRole("link", {name: "Graph", exact: true});
+  const notes = page.getByRole("link", {name: "Notes", exact: true});
+  const shown = (link: typeof graph) => link.locator(".rail-tooltip");
+  await page.getByRole("link", {name: "Cérebro home"}).focus();
+  for (let i = 0; i < 3; i++) await page.keyboard.press("Tab");
+  await expect(graph).toBeFocused();
+  // The pointer leaves a focused destination: its tooltip is still shown and dismissable.
+  await graph.hover();
+  await page.mouse.move(600, 600);
+  await expect(shown(graph)).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(shown(graph)).toBeHidden();
+  // Another destination does not bring it back.
+  await notes.hover();
+  await expect(shown(notes)).toBeVisible();
+  await page.mouse.move(600, 600);
+  await expect(shown(graph)).toBeHidden();
+  // One Escape dismisses the focused and the hovered tooltip together.
+  await page.keyboard.press("Tab");
+  await page.keyboard.press("Shift+Tab");
+  await notes.hover();
+  await expect(shown(graph)).toBeVisible();
+  await expect(shown(notes)).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(shown(graph)).toBeHidden();
+  await expect(shown(notes)).toBeHidden();
+});
