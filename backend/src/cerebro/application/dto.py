@@ -7,7 +7,7 @@ note is read on purpose: they are never the ``Note`` entity, so a field added to
 from dataclasses import dataclass, field, replace
 from datetime import date, datetime
 from enum import StrEnum
-from typing import Final
+from typing import Final, Literal
 
 from cerebro.application.ports.graph import GraphSlice
 from cerebro.application.ports.search import MAX_LIMIT, SearchHit
@@ -461,6 +461,15 @@ class HealthIssue:
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
+class LastBackup:
+    """The host job's own account of its last successful run. It does not prove that a restore works."""
+
+    state: Literal["recorded", "never", "unreadable"]
+    completed_at: datetime | None = None
+    content_revision: str | None = None
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
 class HealthReportResult:
     issues: tuple[HealthIssue, ...]
     notes_checked: int
@@ -469,6 +478,7 @@ class HealthReportResult:
     checked_at: datetime
     revision: str | None
     """The content revision read after the scan; ``None`` without commits or when the files could not be scanned."""
+    last_backup: LastBackup
 
     @property
     def errors(self) -> tuple[HealthIssue, ...]:

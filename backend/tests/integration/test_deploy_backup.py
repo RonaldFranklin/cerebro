@@ -1,6 +1,7 @@
 """Run the host backup command with a synthetic private remote. No test calls GitHub."""
 
 import fcntl
+import json
 import os
 import shutil
 import sqlite3
@@ -11,6 +12,7 @@ from collections.abc import Iterator
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import closing
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -192,4 +194,44 @@ def test_overlapping_backups_reserve_one_destination(backup: Backup) -> None:
             assert (backup.copies / ".pending").exists()
             assert backup.run().returncode != 0
         assert first.result().returncode == 0
+    assert len(list(backup.copies.iterdir())) == 1
+
+
+def test_a_completed_backup_records_its_time_and_revision_for_health(backup: Backup) -> None:
+    started = datetime.now(UTC)
+    assert backup.run().returncode == 0
+    status = backup.state / "last-backup.json"
+    assert status.stat().st_mode & 0o777 == 0o600
+    record = json.loads(status.read_text())
+    assert record.keys() == {"completed_at", "content_revision"}
+    (snapshot,) = backup.copies.iterdir()
+    assert record["content_revision"] == (snapshot / "content-revision").read_text().strip()
+    assert started <= datetime.fromisoformat(record["completed_at"]) <= datetime.now(UTC)
+    # The status is not part of the backup, and no temporary file stays behind.
+    assert not (snapshot / status.name).exists()
+    assert not [p for p in backup.state.iterdir() if p.name.startswith(".last-backup")]
+
+
+def test_a_failed_backup_keeps_the_earlier_record(backup: Backup) -> None:
+    status = backup.state / "last-backup.json"
+    status.write_text("earlier record")
+    backup.env["BACKUP_TEST_METADATA"] = '{"nameWithOwner":"example/cerebro-content","visibility":"PUBLIC"}'
+    assert backup.run().returncode == 1
+    assert status.read_text() == "earlier record"
+
+
+def test_a_link_in_place_of_the_record_is_replaced_and_never_followed(backup: Backup) -> None:
+    target = backup.state.parent / "elsewhere"
+    target.write_text("untouched")
+    (backup.state / "last-backup.json").symlink_to(target)
+    assert backup.run().returncode == 0
+    assert target.read_text() == "untouched"
+    assert not (backup.state / "last-backup.json").is_symlink()
+
+
+def test_a_snapshot_stays_successful_when_the_record_cannot_be_written(backup: Backup) -> None:
+    (backup.state / "last-backup.json").mkdir()
+    result = backup.run()
+    assert result.returncode == 0, result.stderr
+    assert "could not record" in result.stderr
     assert len(list(backup.copies.iterdir())) == 1

@@ -183,7 +183,8 @@ def test_health_requires_restricted_listener(service: Service) -> None:
     report = service.container.use_cases.health_report.execute(HealthReportRequest(), ctx)
     body = service.private.get("/api/health").json()
     assert {key: body[key] for key in health_view(report)} == health_view(report)
-    assert body.keys() - health_view(report).keys() == {"checked_at", "content", "listeners"}
+    assert body.keys() - health_view(report).keys() == {"checked_at", "content", "listeners", "last_backup"}
+    assert body["last_backup"] == {"state": "never", "completed_at": None, "content_revision": None}
     assert datetime.fromisoformat(body["checked_at"]).utcoffset() == timedelta(0)
     assert body["content"] == {"revision": report.revision, "state": "clean"}
     assert body["listeners"] == []
