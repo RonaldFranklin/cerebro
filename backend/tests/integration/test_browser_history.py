@@ -242,6 +242,10 @@ def test_a_note_history_requires_a_restricted_owner_and_lists_that_note_only(
         assert client.get(path + "?cursor=a&cursor=b").status_code == 422
         assert client.get(path, params={"history": "true"}).status_code == 422
         assert client.post(path).status_code == 403
+        assert client.head(path + "%0A").status_code == 422
+        # A cursor carries only a position: authorization applies again wherever it is used.
+        other = client.get(f"/api/notes/{DOCKER_ID.value}/changes", params={"cursor": body["page_cursor"]})
+        assert [row["revision"] for row in other.json()["changes"]] == [revisions[DOCKER_ID]]
 
 
 @pytest.mark.parametrize("listener", ["private", "public"])
@@ -272,6 +276,7 @@ def test_a_trailing_line_break_cannot_skip_the_restricted_history_rule(tmp_path:
             "/api/changes%0D",
             "/api/changes%00",
             "/api/changes%7F",
+            f"/api/notes/{DOCKER_ID.value}/changes%0A",
         ):
             response = client.get(path)
             assert response.status_code == 422, path

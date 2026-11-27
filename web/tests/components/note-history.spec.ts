@@ -65,3 +65,22 @@ test("a lower-ceiling session never asks for history", async ({page}) => {
   await expect(page.getByRole("region", {name: "History"})).toHaveCount(0);
   expect(reads).toBe(0);
 });
+
+for (const [status, kept] of [[503, true], [404, false]] as const) {
+  test(`an older page answering ${status} ${kept ? "keeps what was read" : "starts again"}`, async ({page}) => {
+    await reader(page);
+    await page.route("**/api/notes/plan/changes**", route => new URL(route.request().url()).searchParams.get("cursor")
+      ? route.fulfill({status, json: {}}) : route.fulfill({json: {changes: [change], next_cursor: "more"}}));
+    await page.goto("/notes/plan");
+    const history = page.getByRole("region", {name: "History"});
+    await history.getByRole("button", {name: "Load older changes"}).click();
+    if (kept) {
+      await expect(history).toContainText("Older changes are unavailable.");
+      await expect(history.getByRole("listitem")).toHaveCount(1);
+      await expect(history.getByRole("button", {name: "Load older changes"})).toBeEnabled();
+    } else {
+      await history.getByRole("button", {name: "Retry history"}).click();
+      await expect(history.getByRole("listitem")).toHaveCount(1);
+    }
+  });
+}

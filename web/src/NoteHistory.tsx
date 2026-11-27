@@ -18,7 +18,8 @@ export function NoteHistory({api, id}: {api: ApiClient; id: string}) {
   });
   const changes = history.data?.pages.flatMap(page => page.changes) ?? [];
   // A refused or expired continuation starts again; another failure keeps what was read and can continue.
-  const restart = history.isError && (!history.isFetchNextPageError ||
+  // A failed refresh keeps the list already read.
+  const restart = history.isError && (!history.data ||
     history.error instanceof ApiError && [401, 403, 404].includes(history.error.status));
   return <section className="note-history" aria-label="History">
     <h2>History</h2>
