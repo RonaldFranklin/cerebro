@@ -1,9 +1,11 @@
 import { useQuery } from "@tanstack/react-query";
-import { useMemo, type ReactNode } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 
 import { ApiError, type ApiClient, type Ceiling } from "./api";
 import { Markdown, markdownHeadings, TechnicalText } from "./Markdown";
 import { useVisibleGraph } from "./visibleGraph";
+import { Icon } from "./icons";
+import { NoteLinks } from "./NoteLinks";
 import "./reader.css";
 
 interface Member {
@@ -38,28 +40,61 @@ export function notePath(id: string, history: boolean, section?: string): string
   return `/notes/${encodeURIComponent(id)}${query.size ? "?" + query.toString() : ""}`;
 }
 
-function Meta({ label, value }: { label: string; value: string }) {
-  return <div><dt>{label}</dt><dd translate="no">{value}</dd></div>;
+function Property({ label, value, tone }: { label: string; value: string; tone?: string }) {
+  return <div><dt>{label}</dt><dd translate="no" data-tone={tone}>{value}</dd></div>;
 }
 
-function Document({ note, history, outlineBody, outlineStatus, visibleIds }: {
-  note: Note; history: boolean; outlineBody: string; outlineStatus?: ReactNode; visibleIds: ReadonlySet<string>;
+function CopyId({ id }: { id: string }) {
+  const [message, setMessage] = useState("");
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(id);
+      setMessage("Note id copied.");
+    } catch {
+      setMessage("The note id could not be copied.");
+    }
+  }
+  return <>
+    <button type="button" className="copy-id" aria-label="Copy note id" onClick={() => void copy()}><Icon name="copy"/></button>
+    <span role="status" className="copy-status">{message}</span>
+  </>;
+}
+
+function Document({ api, note, history, outlineBody, outlineStatus, visibleIds, areas, hubTitle }: {
+  api: ApiClient; note: Note; history: boolean; outlineBody: string; outlineStatus?: ReactNode;
+  visibleIds: ReadonlySet<string>; areas: string[]; hubTitle: string | undefined;
 }) {
   const headings = useMemo(() => markdownHeadings(outlineBody), [outlineBody]);
   const wholeNote = notePath(note.id, history);
   return <article className="reader-view">
-    <nav className="reader-trail" aria-label="Breadcrumb">
-      <a href="/search">Search</a><span aria-hidden="true">/</span>
-      {note.hub && <><a translate="no" href={notePath(note.hub, history)}>{note.hub}</a><span aria-hidden="true">/</span></>}
-      <span aria-current="page" translate="no">{note.id}</span>
-    </nav>
-    <header className="reader-heading" lang={note.lang}>
-      <div className="reader-class"><span translate="no">{note.type}</span><span translate="no">{note.priority}</span></div>
-      <h1><TechnicalText text={note.title} visibleIds={visibleIds}/></h1>
-      <p><TechnicalText text={note.summary} visibleIds={visibleIds}/></p>
-      {note.content_hash && !note.section && <a className="edit-note-link" href={`/editor/${encodeURIComponent(note.id)}${history ? "?history=true" : ""}`}>Edit note</a>}
-    </header>
-    <div className="reader-columns">
+    <div className="reader-main">
+      <nav className="reader-trail" aria-label="Breadcrumb">
+        <span translate="no">{note.area}</span><span aria-hidden="true">/</span>
+        {note.hub && <><a href={notePath(note.hub, history)}>
+          {hubTitle ? <TechnicalText text={hubTitle} visibleIds={visibleIds}/> : <span translate="no">{note.hub}</span>}
+        </a><span aria-hidden="true">/</span></>}
+        <span aria-current="page"><TechnicalText text={note.title} visibleIds={visibleIds}/></span>
+      </nav>
+      <header className="reader-heading" lang={note.lang}>
+        <div>
+          <h1><TechnicalText text={note.title} visibleIds={visibleIds}/></h1>
+          <p className="reader-id" translate="no">{note.id}</p>
+        </div>
+        <div className="reader-actions">
+          {note.content_hash && !note.section && <a className="primary-btn edit-note-link"
+            href={`/editor/${encodeURIComponent(note.id)}${history ? "?history=true" : ""}`}>Edit note</a>}
+          <CopyId id={note.id}/>
+        </div>
+      </header>
+      <section aria-label="Note properties"><dl className="reader-properties">
+        <Property label="Type · priority" value={`${note.type} · ${note.priority}`}/>
+        <Property label="Sensitivity" value={note.sensitivity} tone={note.sensitivity === "restricted" ? "warning" : undefined}/>
+        <Property label="Status" value={note.status} tone={note.status === "current" || note.status === "verified" ? "ok" : undefined}/>
+        <Property label="Updated" value={note.updated}/>
+        {note.review_by && <Property label="Review by" value={note.review_by}/>}
+      </dl></section>
+      <p className="reader-summary" lang={note.lang}><TechnicalText text={note.summary} visibleIds={visibleIds}/></p>
+      {note.superseded_by && <p className="reader-replaced">Replaced by <a translate="no" href={notePath(note.superseded_by, history)}>{note.superseded_by}</a></p>}
       <div className="reader-document">
         {note.section && <p className="reader-section-return"><a href={wholeNote}>Read full note</a></p>}
         <Markdown body={note.body} lang={note.lang} history={history} visibleIds={visibleIds}/>
@@ -71,23 +106,15 @@ function Document({ note, history, outlineBody, outlineStatus, visibleIds }: {
           </li>)}</ul> : <p>No visible members.</p>}
         </section>}
       </div>
-      <aside className="reader-aside" aria-label="Note information">
-        {outlineStatus}
-        {headings.length > 0 && <nav aria-label="Sections"><h2>Sections</h2><ul>{headings.map((heading, index) =>
-          <li key={index}><a translate="no" href={notePath(note.id, history, heading.title)}
-            aria-current={note.section === heading.title ? "location" : undefined}>{heading.title}</a></li>
-        )}</ul></nav>}
-        <section><h2>Details</h2><dl>
-          <Meta label="Area" value={note.area}/><Meta label="Status" value={note.status}/>
-          <Meta label="Sensitivity" value={note.sensitivity}/><Meta label="Updated" value={note.updated}/>
-          {note.review_by && <Meta label="Review by" value={note.review_by}/>}
-        </dl></section>
-        {(note.related.length > 0 || note.superseded_by) && <section><h2>Related notes</h2><ul>
-          {note.superseded_by && <li>Replaced by <a translate="no" href={notePath(note.superseded_by, history)}>{note.superseded_by}</a></li>}
-          {note.related.map(id => <li key={id}><a translate="no" href={notePath(id, history)}>{id}</a></li>)}
-        </ul></section>}
-      </aside>
     </div>
+    <aside className="reader-aside" aria-label="Note information">
+      {outlineStatus}
+      {headings.length > 0 && <nav aria-label="Sections"><h2>Sections</h2><ul>{headings.map((heading, index) =>
+        <li key={index}><a translate="no" href={notePath(note.id, history, heading.title)}
+          aria-current={note.section === heading.title ? "location" : undefined}>{heading.title}</a></li>
+      )}</ul></nav>}
+      <NoteLinks api={api} id={note.id} history={history} areas={areas} visibleIds={visibleIds}/>
+    </aside>
   </article>;
 }
 
@@ -119,6 +146,7 @@ export function ReaderScreen({ api, id, history, section }: {
   const outlineStatus = section && !full.data && (full.isError
     ? <div><p role="status">Could not load sections.</p><button onClick={() => void full.refetch()}>Retry sections</button></div>
     : <p role="status">Loading sections…</p>);
-  return <Document note={result.data} history={history} outlineBody={full.data?.body ?? result.data.body}
-    outlineStatus={outlineStatus} visibleIds={visibleIds}/>;
+  const hub = graph.data?.nodes.find(node => node.id === result.data.hub);
+  return <Document key={result.data.id} api={api} note={result.data} history={history} outlineBody={full.data?.body ?? result.data.body}
+    outlineStatus={outlineStatus} visibleIds={visibleIds} areas={graph.data?.nodes.map(node => node.area) ?? []} hubTitle={hub?.title}/>;
 }
