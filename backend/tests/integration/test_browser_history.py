@@ -195,3 +195,38 @@ def test_private_api_follows_an_opaque_cursor_after_an_empty_window(tmp_path: Pa
         assert client.get(f"/api/changes/{revision}", params={"cursor": first["next_cursor"]}).status_code == 200
         subprocess.run(["git", "-C", str(sample.root), "reset", "--hard", revision], check=True, capture_output=True)
         assert client.get("/api/changes", params={"cursor": first["next_cursor"]}).status_code == 404
+
+
+@pytest.mark.parametrize("listener", ["private", "public"])
+def test_a_trailing_line_break_cannot_skip_the_restricted_history_rule(tmp_path: Path, listener: str) -> None:
+    sample = make_sample_repo(tmp_path)
+    container = build_container(sample.settings)
+    note = container.notes.get(DOCKER_ID)
+    assert note
+    revision = container.notes.apply(
+        [NoteChange(note=replace(note, body="Changed."), expected_hash=content_hash(note))],
+        OwnerCommit.for_update(DOCKER_ID),
+    )
+    owner_credentials(sample.settings).provision(b"history-fixture")
+    origin = f"https://{listener}.example.invalid"
+    app = browser_api(container.browser_auth, BrowserBinding(listener, origin), AccessCeiling(Sensitivity.INTERNAL))
+    install_browser_history(app, container.use_cases.history)
+    with TestClient(app, base_url=origin) as client:
+        login = client.post(
+            "/api/login", headers={"Origin": origin, "X-Cerebro-Request": "1"}, json={"password": "history-fixture"}
+        )
+        assert login.status_code == 200
+        # The router's end anchor also matches before a final line break, which an exact path comparison misses.
+        for path in (
+            "/api/changes%0A",
+            "/api/changes%0A?cursor=x&history=true",
+            f"/api/changes/{revision}%0A",
+            "/api/session%0A",
+            "/api/changes%0D",
+            "/api/changes%00",
+            "/api/changes%7F",
+        ):
+            response = client.get(path)
+            assert response.status_code == 422, path
+            assert revision not in response.text
+            assert response.headers["cache-control"] == "no-store"
