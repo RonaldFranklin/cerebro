@@ -29,8 +29,8 @@ Do not contradict an ADR; propose a new ADR that supersedes it instead.
 
 ## 3. Current status
 
-Phases 0-5 and 7 are delivered. Phase 6 (deploy) is in progress. The hml Compose stack passed [local WSL acceptance](docs/plans/phase-6.md#wsl-acceptance).
-Server installation, hml restore and workstation checks against prod are pending.
+Phases 0-7 are delivered. Phase 6 (deploy) is done and the server deployment is in production, except for one open
+checkpoint: the restore drill on hml. No new phase has started.
 See [the roadmap](docs/roadmap.md) for pending checkpoints. Update this section and the roadmap whenever a phase starts or finishes.
 
 ## 4. Non-negotiable rules
