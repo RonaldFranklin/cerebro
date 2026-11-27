@@ -316,7 +316,9 @@ an error naming its path and version, and is never deleted, upgraded or repaired
 - **Recent changes:** a restricted owner session sees who changed each note, when, and a bounded
   diff. History reads require visibility of the current note and both sides of an edit. Links in historical
   content receive the same visibility protection as links in the reader.
-- **Editor (owner):** CodeMirror 6 with `[[link]]` autocomplete; saves go through `OwnerEditNote`.
+- **Editor (owner):** CodeMirror 6 with `[[link]]` autocomplete; saves go through `OwnerEditNote`. After each pause in
+  typing the draft is checked by `CheckOwnerEdit` (the same rules, nothing written; restricted owner only), and the
+  screen blocks saving while a check fails.
 - English only; no i18n library ([ADR-0009](adr/0009-english-only.md)).
 
 ## 7. Dependency policy and stack

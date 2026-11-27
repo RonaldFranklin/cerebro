@@ -7,9 +7,12 @@ const seed = {
   created:"2026-01-01",updated:"2026-01-01",section:null,members:null,body:"Original body.",content_hash:oldHash,
 };
 
+const passing = {validation:{ok:true,violations:[]}, budget:{words:2,soft:1500,hard:3000}, link_lines:[], base_current:true};
+
 async function session(page: Page) {
   await page.route("**/api/session", route => route.fulfill({json:{ceiling:"restricted",csrf_token:"fixture",absolute_remaining_seconds:28800}}));
   await page.route("**/api/graph?*", route => route.fulfill({json:{center:null,edges:[],nodes:[{id:"visible-example",type:"guide",area:"research",priority:"P2",status:"current"}]}}));
+  await page.route("**/api/notes/*/validate", route => route.fulfill({json:passing}));
 }
 
 test("stale saves keep the draft and require review of the reloaded note", async ({page}) => {
@@ -32,13 +35,13 @@ test("stale saves keep the draft and require review of the reloaded note", async
   await page.getByRole("button",{name:"Preview",exact:true}).click();
   await expect(page.getByRole("link",{name:"[[visible-example]]"})).toBeVisible();
   await expect(page.getByRole("link",{name:"[[missing-example]]"})).toHaveCount(0);
-  await page.getByRole("button",{name:"Save changes"}).click();
-  await expect(page.getByRole("button",{name:"Save changes"})).toBeDisabled();
+  await page.getByRole("button",{name:"Save & commit"}).click();
+  await expect(page.getByRole("button",{name:"Save & commit"})).toBeDisabled();
   await page.getByRole("button",{name:"Reload stored note"}).click();
   await expect(page.getByText("Updated elsewhere", {exact:true}).first()).toBeVisible();
   await page.getByRole("button",{name:"Keep my changes"}).click();
   await expect(page.getByLabel("Title",{exact:true})).toHaveValue("Updated elsewhere");
-  await page.getByRole("button",{name:"Save changes"}).click();
+  await page.getByRole("button",{name:"Save & commit"}).click();
   await expect(page.getByText("Changes saved.",{exact:true})).toBeVisible();
   await expect(page.getByText("Earlier versions remain in history.")).toBeVisible();
   expect(writes.map(w => w.expected_hash)).toEqual([oldHash,currentHash]);
@@ -60,7 +63,7 @@ test("whole-note hash is mandatory and validation preserves the draft", async ({
   editable = true;
   await page.reload();
   await page.getByLabel("Title",{exact:true}).fill("Changed title");
-  await page.getByRole("button",{name:"Save changes"}).click();
+  await page.getByRole("button",{name:"Save & commit"}).click();
   await expect(page.getByText("Title blank", {exact:false})).toBeVisible();
   await expect(page.getByLabel("Title",{exact:true})).toHaveValue("Changed title");
 });
@@ -149,4 +152,73 @@ test("reopening the editor waits for this visit's read and retry", async ({page}
   });
   await refreshed;
   await expect(title).toHaveValue("Unsaved local draft");
+});
+
+const violation = (code: string, severity = "error", field: string | null = "body", line: number | null = null) => ({code, severity, field, line});
+
+test("saving waits for the checks and stays blocked while one fails, broken links included", async ({page}) => {
+  await session(page);
+  const asked: Array<{expected_hash:string;note:typeof seed}> = [];
+  let writes = 0;
+  await page.route("**/api/notes/example*", route => {
+    if (route.request().method() === "PUT") { writes++; return route.fulfill({json:{content_hash:savedHash,commit:"c",validation:{ok:true,violations:[]},warnings:[]}}); }
+    return route.fulfill({json:seed});
+  });
+  await page.route("**/api/notes/example/validate", route => {
+    const body = route.request().postDataJSON();
+    expect(route.request().headers()["x-csrf-token"]).toBe("fixture");
+    asked.push(body);
+    const text: string = body.note.body;
+    return route.fulfill({json: text.includes("broken") ? {...passing, link_lines:[1],
+      validation:{ok:true,violations:[violation("broken_link","warning")]}}
+      : text.includes("long") ? {...passing, budget:{words:1600,soft:1500,hard:3000},
+        validation:{ok:true,violations:[violation("body_over_soft_limit","warning")]}} : passing});
+  });
+  await page.goto("/editor/example");
+  const panel = page.getByRole("complementary", {name:"Validation"});
+  const save = page.getByRole("button", {name:"Save & commit"});
+  await expect(panel.getByRole("status")).toHaveText("All checks pass.");
+  await expect(save).toBeDisabled();
+  const editor = page.getByRole("textbox",{name:"Markdown body"});
+  await editor.fill("A broken link.");
+  await expect(panel.getByRole("status")).toHaveText("Saving is blocked while a check fails.");
+  await expect(panel.getByRole("listitem").filter({hasText:"Links: Failed"}).first()).toContainText("Line 1 of the body");
+  await expect(save).toBeDisabled();
+  await page.keyboard.press("Control+s");
+  await editor.fill("A long note.");
+  await expect(panel.getByRole("listitem").filter({hasText:"Word budget · P2: Warning"}).first()).toContainText("1,600 / 1,500 soft · 3,000 hard");
+  await expect(save).toBeEnabled();
+  expect(writes).toBe(0);
+  expect(asked.at(-1)!.expected_hash).toBe(oldHash);
+  expect(asked.at(-1)!.note.body).toBe("A long note.");
+  await page.keyboard.press("Control+s");
+  await expect(page.getByText("Changes saved.",{exact:true})).toBeVisible();
+  expect(writes).toBe(1);
+});
+
+test("fast typing asks once and a failed check can be retried", async ({page}) => {
+  await session(page);
+  let asked = 0;
+  await page.route("**/api/notes/example*", route => route.fulfill({json:seed}));
+  await page.route("**/api/notes/example/validate", route => ++asked === 2
+    ? route.fulfill({status:503,json:{}}) : route.fulfill({json:passing}));
+  await page.goto("/editor/example");
+  await expect(page.getByText("All checks pass.")).toBeVisible();
+  await page.getByLabel("Title",{exact:true}).pressSequentially(" typed quickly");
+  await expect(page.getByText("The draft could not be checked. Saving is blocked.")).toBeVisible();
+  await expect(page.getByRole("button", {name:"Save & commit"})).toBeDisabled();
+  expect(asked).toBe(2);
+  await page.getByRole("button", {name:"Retry checks"}).click();
+  await expect(page.getByRole("button", {name:"Save & commit"})).toBeEnabled();
+});
+
+test("a change made elsewhere opens the comparison before any save", async ({page}) => {
+  await session(page);
+  await page.route("**/api/notes/example*", route => route.fulfill({json:seed}));
+  await page.route("**/api/notes/example/validate", route => route.fulfill({json:{...passing,
+    base_current: route.request().postDataJSON().note.title === seed.title}}));
+  await page.goto("/editor/example");
+  await page.getByLabel("Title",{exact:true}).fill("Mine");
+  await expect(page.getByRole("region",{name:"Conflict recovery"})).toBeVisible();
+  await expect(page.getByRole("button", {name:"Save & commit"})).toBeDisabled();
 });

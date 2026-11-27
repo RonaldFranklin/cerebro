@@ -78,5 +78,5 @@ entrances and the token table wait for the data design. The author filter covers
 | 3b | #111 | Note screen: merged on 2026-11-27 |
 | 3c | #112, #113 | Recent changes and Health with existing data: merged on 2026-11-27 |
 | 3d | #109, #115, #116 | Data design approved. Parts A and G: merged on 2026-11-27. Parts F, B, C: not started |
-| 3e | | Edit screen with live validation (part D): not started |
+| 3e | | Edit screen with live validation (part D): implemented and tested, awaiting owner review |
 | 4 | | Live synapses: not started |

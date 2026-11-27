@@ -11,6 +11,8 @@ async function owner(page: Page, ceiling = "restricted") {
   await page.route("**/api/overview", route => route.fulfill({json: overview}));
   await page.route("**/api/graph?**", route => route.fulfill({json: {nodes: [node], edges: [], center: null}}));
   await page.route("**/api/notes/a**", route => route.fulfill({json: note}));
+  await page.route("**/api/notes/a/validate", route => route.fulfill({json: {validation: {ok: true, violations: []},
+    budget: {words: 1, soft: 1500, hard: 3000}, link_lines: [], base_current: true}}));
   const linked = {...node, id: "c", title: "C"};
   await page.route("**/api/notes/a/neighbors**", route => route.fulfill({json: {nodes: [node, linked],
     edges: [{source: "a", target: "c", kind: "wikilink", section: null}], center: "a"}}));
