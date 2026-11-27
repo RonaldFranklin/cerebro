@@ -12,7 +12,7 @@ The commands below are for Bash on Linux or WSL. Replace `<public-hostname>` wit
 
 **Same machine as the server** (the [README quickstart](../README.md#quickstart-with-docker)): use
 `http://127.0.0.1:<private-port>/mcp` in place of `https://<public-hostname>/mcp`. Skip the `https://` check in
-step 1, and in the token test of section 4 replace `--proto '=https'` with `--proto '=http'`. Plain HTTP is acceptable
+step 1 but still set `CEREBRO_MCP_URL`, and in the token test of section 4 replace `--proto '=https'` with `--proto '=http'`. Plain HTTP is acceptable
 only on this loopback address; a token must never cross a network without TLS. Each client needs its own token: issue
 one for every client you set up below.
 
@@ -30,7 +30,8 @@ hidden prompt keeps it out of shell history:
 ```bash
 install -d -m 700 ~/.config/cerebro
 for client in claude-code codex; do
-  (umask 077; IFS= read -rsp "$client token: " t && printf '%s' "$t" > ~/.config/cerebro/$client.token); echo
+  (umask 077; IFS= read -rsp "$client token (Enter keeps the current file): " t && [ -n "$t" ] &&
+    printf '%s' "$t" > ~/.config/cerebro/$client.token); echo
 done
 ```
 

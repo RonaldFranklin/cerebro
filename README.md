@@ -90,17 +90,19 @@ dc build
 dc run --rm --no-deps backend cerebro init-content
 ```
 
-Create the encryption key for restricted notes:
+Create the encryption key for restricted notes (an existing key is never overwritten):
 
 ```bash
-(umask 077; set -o noclobber
+(umask 077; key="$CEREBRO_HOME/prod/secrets/fernet.key"
+ test ! -e "$key" &&
  docker run --rm --network none "cerebro-backend:git-$(git rev-parse HEAD)" python -c \
    'import sys; from cerebro.adapters.outbound.crypto import generate_key; sys.stdout.buffer.write(generate_key() + b"\n")' \
-   > "$CEREBRO_HOME/prod/secrets/fernet.key")
+   > "$key.new" &&
+ mv "$key.new" "$key")
 ```
 
-**Save a copy of `$CEREBRO_HOME/prod/secrets/fernet.key` in your password manager.** Without it, restricted notes
-cannot be recovered.
+**Save a copy of `$CEREBRO_HOME/prod/secrets/fernet.key` in your password manager, outside this machine**, and keep
+the owner password you are about to choose there too. Without the key, restricted notes cannot be recovered.
 
 Set the password for the web UI (typed twice, not shown):
 
@@ -114,7 +116,7 @@ them:
 ```bash
 content="$CEREBRO_HOME/prod/content/repo"
 printf 'areas:\n  - projects\n  - infrastructure\n' > "$content/schema/areas.yaml"
-git -C "$content" -c user.name='Cerebro Service' -c user.email='cerebro@example.invalid' \
+git -C "$content" -c user.name='Cerebro Service' -c user.email='cerebro@example.invalid' -c commit.gpgsign=false \
   commit -m 'Add areas' -- schema/areas.yaml
 ```
 
@@ -129,15 +131,21 @@ Expect `MCP HTTP 401`: the server is up and refuses requests without a token.
 
 ### 5. Connect your first agent
 
-Issue a token for it. `read` searches and reads, `write` records notes, and `core` also allows changing the global
-rules every agent receives, so grant `core` only to agents you trust.
+Issue a token for it. `read` searches and reads, and `write` records notes. The ceiling `internal` keeps restricted
+notes out of its reach.
 
 ```bash
 install -d -m 700 ~/.config/cerebro
-(umask 077; set -o noclobber
- dc exec -T backend cerebro token issue claude-code --ceiling internal --scope read --scope write --scope core \
-   > ~/.config/cerebro/claude-code.token)
+(umask 077; token="$HOME/.config/cerebro/claude-code.token"
+ test ! -e "$token" &&
+ dc exec -T backend cerebro token issue claude-code --ceiling internal --scope read --scope write > "$token.new" &&
+ mv "$token.new" "$token")
 ```
+
+A third scope, `core`, lets an agent change the global rules every agent receives. Grant it only to an agent you
+trust with that: revoke its token, remove the token file and issue it again with `--scope core` added. Any command
+running as your user, including project scripts and hooks an agent runs, can read these token files, so use them
+only in projects you trust.
 
 **Claude Code:**
 
@@ -149,8 +157,9 @@ JSON
 claude mcp get cerebro
 ```
 
-Expect `Connected`. For **Codex** and **other clients**, issue a separate token for each and follow
-[client setup](docs/client-setup.md) with the URL `http://127.0.0.1:8765/mcp`.
+Expect `Connected`. For **Codex** or **another client**, run the token block again with a different client name in
+both the file name and `token issue` (for Codex, `codex`). Then follow [client setup](docs/client-setup.md) from
+section 3 (Codex) or 4 (others) with the URL `http://127.0.0.1:8765/mcp`.
 
 Open a **new** agent session and ask:
 
@@ -167,15 +176,19 @@ header and forwards to `127.0.0.1:8765` works. For example, take the [Caddy](htt
 its Docker image and run it on your machine (no root needed):
 
 ```bash
-cid=$(docker create caddy:2.11.8)
+cid=$(docker create caddy:2.11.8@sha256:4fcafa98afd1c2e642e353e3c5cf9ddbe892fcee14bc990e7ba2c5b78e51f9cf)
 docker cp "$cid:/usr/bin/caddy" "$CEREBRO_HOME/caddy" && docker rm "$cid" > /dev/null
-printf '{\n  admin off\n  auto_https disable_redirects\n  skip_install_trust\n}\nhttps://localhost:8443 {\n  reverse_proxy 127.0.0.1:8765\n}\n' \
+printf '{\n  admin off\n  auto_https disable_redirects\n  skip_install_trust\n}\nhttps://localhost:8443 {\n  bind 127.0.0.1 [::1]\n  reverse_proxy 127.0.0.1:8765\n}\n' \
   > "$CEREBRO_HOME/Caddyfile"
 "$CEREBRO_HOME/caddy" run --config "$CEREBRO_HOME/Caddyfile" --adapter caddyfile
 ```
 
 Open `https://localhost:8443`, accept the browser's warning about the local certificate, and sign in with your owner
 password. Stop the proxy with Ctrl+C.
+
+Keep the `bind` line: without it the proxy would also accept connections from your network. If you changed
+`PRIVATE_PORT`, use it in the `reverse_proxy` line. If 8443 is taken, change it both in the Caddyfile and in
+`PRIVATE_ORIGIN`, then run `deploy/start.sh` again.
 
 ### Everyday commands
 
@@ -186,12 +199,33 @@ dc exec backend cerebro health               # check content and index
 dc exec backend cerebro token list           # token metadata; revoke with: cerebro token revoke <token-id>
 dc stop                                      # stop
 deploy/start.sh "$CEREBRO_HOME/prod.env"     # start again
-dc restart backend                           # needed after editing areas or types
 ```
 
-To **update**, [back up](deploy/backup.md) first, then `git pull`, set the new `APP_SHA` in `prod.env`, run
-`dc build` and `deploy/start.sh` again. To **remove** the instance, run `dc down`; your data stays in
-`$CEREBRO_HOME` until you delete it.
+To **change areas or types**, run `dc stop`, edit and commit the file under `schema/` as in step 3, then start again.
+
+### Back up, update, remove
+
+A local backup holds the notes and the state. It leaves out the key (kept in your password manager), the rebuildable
+index and the quarantine folders, which may contain plaintext:
+
+```bash
+dc stop
+(umask 077; tar -C "$CEREBRO_HOME/prod" --exclude='quarantine-*' --exclude='cerebro-quarantine-in-progress' \
+  -czf "$CEREBRO_HOME/backup-$(date +%Y%m%d-%H%M%S).tar.gz" content state)
+deploy/start.sh "$CEREBRO_HOME/prod.env"
+```
+
+Copy the archive to another disk or machine and keep it private. To restore, stop the instance, move the old
+`content` and `state` directories aside, extract the archive into `$CEREBRO_HOME/prod` with `tar -xpzf`, put the
+matching key in `secrets/`, empty `index/` and start. The [server backup procedure](deploy/backup.md) also pushes
+the notes to a private GitHub repository.
+
+To **update**, back up, note the current `APP_SHA`, then `git pull`, set the new `APP_SHA` in `prod.env`, run
+`dc build` and `deploy/start.sh`. To go back, check out the old commit, restore the old `APP_SHA` and start; its
+image is still on your machine. A newer release may use a state format an older one refuses, in which case restore
+the backup too.
+
+To **remove** the instance, run `dc down`; your data stays in `$CEREBRO_HOME` until you delete it.
 
 ## Documentation
 
@@ -199,7 +233,7 @@ To **update**, [back up](deploy/backup.md) first, then `git pull`, set the new `
 |---|---|
 | [Client setup](docs/client-setup.md) | Claude Code, Codex and other MCP clients |
 | [Server deployment](docs/deploy.md) | Test and production environments, private and public HTTPS access |
-| [Backup and restore](deploy/backup.md) | Protecting content and state |
+| [Server backup and restore](deploy/backup.md) | Off-machine copies of content and state |
 | [Configuration](.env.example) | Environment variables |
 | [Writing guide](backend/src/cerebro/adapters/inbound/write-guide-v1.md) | What agents should record, and how |
 | [Connecting agents](docs/agent-integration.md#project-agentsmd-snippet) | Project snippet and client checks |
