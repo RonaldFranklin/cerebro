@@ -4,6 +4,7 @@ import http.client
 import json
 import ssl
 import subprocess
+from contextlib import ExitStack
 from http.cookies import SimpleCookie
 from pathlib import Path
 
@@ -13,7 +14,7 @@ from cerebro.bootstrap.browser import owner_credentials
 from tests.integration.browser_tls import certificate, tls_relay
 from tests.integration.content_kit import VAULT_ID, make_sample_repo
 from tests.integration.test_cli_bootstrap import SAMPLE
-from tests.integration.test_mcp_transports import SERVER, free_ports, serving
+from tests.integration.test_mcp_transports import SERVER, reserve_ports, serving
 
 
 def request(
@@ -54,8 +55,12 @@ def test_two_https_origins_share_service_but_isolate_sessions(
     dist.mkdir()
     (dist / "index.html").write_text("<html><head></head><body>Fixture browser</body></html>")
     server, client = certificate(tmp_path)
-    private_port, public_port = free_ports(2)
-    with tls_relay(private_port, server) as private, tls_relay(public_port, server) as public:
+    with ExitStack() as relays:
+        with ExitStack() as reservation:
+            private_port, public_port = reserve_ports(reservation, 2)
+            # The relays pick their own ports while the backend ports are still held, so they cannot take them.
+            private = relays.enter_context(tls_relay(private_port, server))
+            public = relays.enter_context(tls_relay(public_port, server))
         origins = {p: f"https://localhost:{p}" for p in (private, public)}
         options = (
             *("--private-origin", origins[private], "--public-origin", origins[public]),
