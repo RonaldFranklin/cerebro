@@ -12,7 +12,7 @@ interface Change {
   title: string;
   actor: string;
   timestamp: string;
-  operation: "create" | "update";
+  operation: "create" | "update" | "superseded";
 }
 
 interface ChangeDetail extends Change {
@@ -48,6 +48,8 @@ function useToday() {
   }, [today]);
   return today;
 }
+
+const operations = {create: "Created", update: "Updated", superseded: "Superseded"};
 
 function author(actor: string) {
   return actor === "owner" ? "Owner" : actor;
@@ -124,7 +126,7 @@ export function RecentChangesScreen({api}: {api: ApiClient}) {
             <button type="button" className="change-row" aria-expanded={expanded}
               onClick={() => setSelected(expanded ? null : change.revision)}>
               <time dateTime={change.timestamp}>{timeFormat.format(new Date(change.timestamp))}</time>
-              <span className="change-operation" data-operation={change.operation}>{change.operation === "create" ? "Created" : "Updated"}</span>
+              <span className="change-operation" data-operation={change.operation}>{operations[change.operation]}</span>
               <span className="change-area">{area && <><svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true">
                 <circle cx="5" cy="5" r="5" fill={colorFor(area, areas.values())}/></svg><span className="visually-hidden" translate="no">{area}</span></>}</span>
               <span className="change-note"><strong>{change.title}</strong><span translate="no">{change.note_id}</span></span>

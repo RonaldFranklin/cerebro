@@ -14,6 +14,7 @@
 .change-row time, .change-row code { color: var(--muted); font: .8rem var(--font-mono); }
 .change-operation { justify-self: start; padding: .15rem .6rem; font-size: .78rem; color: var(--amber); background: color-mix(in srgb, var(--amber) 12%, transparent); border-radius: .4rem; }
 .change-operation[data-operation="create"] { color: var(--success); background: color-mix(in srgb, var(--success) 12%, transparent); }
+.change-operation[data-operation="superseded"] { color: var(--muted); background: var(--raised); }
 .change-area { display: flex; }
 .change-note { display: grid; gap: .2rem; min-width: 0; overflow-wrap: anywhere; }
 .change-note strong { font-weight: 500; }

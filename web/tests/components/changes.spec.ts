@@ -107,7 +107,7 @@ test("changes group by day, show where they happened and filter by author", asyn
   const changes = [
     {...row, revision:"a".repeat(40), timestamp:"2026-11-27T12:00:00Z", actor:"owner", title:"Newest"},
     {...row, revision:"b".repeat(40), timestamp:"2026-11-26T12:00:00Z", operation:"create", title:"Earlier"},
-    {...row, revision:"c".repeat(40), timestamp:"2026-11-20T12:00:00Z", note_id:"gone", title:"Oldest"},
+    {...row, revision:"c".repeat(40), timestamp:"2026-11-20T12:00:00Z", operation:"superseded", note_id:"gone", title:"Oldest"},
   ];
   await page.route("**/api/changes", route => route.fulfill({json:{changes, next_cursor:null}}));
   await page.goto("/changes");
@@ -115,6 +115,7 @@ test("changes group by day, show where they happened and filter by author", asyn
   const newest = page.getByRole("button", {name:/Newest/});
   for (const text of ["Updated", "island-hub", "Owner", "aaaaaaa", "projects"]) await expect(newest).toContainText(text);
   await expect(page.getByRole("button", {name:/Earlier/})).toContainText("Created");
+  await expect(page.getByRole("button", {name:/Oldest/})).toContainText("Superseded");
   await expect(newest.locator("circle")).toHaveAttribute("fill", "#5ce1e6");
   await expect(page.getByRole("button", {name:/Oldest/}).locator("circle")).toHaveCount(0);
   const authors = page.getByRole("group", {name:"Filter by author"});

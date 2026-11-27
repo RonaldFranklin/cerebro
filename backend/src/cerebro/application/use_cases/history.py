@@ -26,6 +26,7 @@ from cerebro.application.history import (
 from cerebro.application.ports.history import ChangeHistory
 from cerebro.application.ports.notes import NoteRepository
 from cerebro.domain.access import AccessContext
+from cerebro.domain.enums import Status
 from cerebro.domain.frontmatter import note_to_raw
 from cerebro.domain.links import redact_wikilinks
 from cerebro.domain.note import Note, NoteId
@@ -135,7 +136,9 @@ class OwnerHistory:
     def _summary(self, versions: _Versions, ctx: AccessContext) -> ChangeSummary:
         info = versions.info
         title = redact_wikilinks(versions.after.title, self._visibility(info.revision, ctx))
-        return ChangeSummary(info.revision, info.note_id.value, title[:160], info.actor, info.timestamp, info.operation)
+        return ChangeSummary(
+            info.revision, info.note_id.value, title[:160], info.actor, info.timestamp, _operation(versions)
+        )
 
     def _visibility(self, revision: str, ctx: AccessContext) -> Callable[[NoteId], bool]:
         checked = 0
@@ -153,6 +156,14 @@ class OwnerHistory:
             return old is not None and ctx.ceiling.allows(old.sensitivity)
 
         return visible
+
+
+def _operation(versions: _Versions) -> str:
+    """The commit's operation, or ``superseded`` when this change is the one that replaced an existing note."""
+    before = versions.before
+    if before and before.status is not Status.SUPERSEDED and versions.after.status is Status.SUPERSEDED:
+        return "superseded"
+    return versions.info.operation
 
 
 def _lines(note: Note, visible: Callable[[NoteId], bool]) -> list[str]:
