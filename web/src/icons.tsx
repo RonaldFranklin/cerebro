@@ -5,6 +5,7 @@ const shapes = {
   changes: <><circle cx="12" cy="12" r="8.5" /><path d="M12 7v5l3.5 2" /></>,
   health: <path d="M3 12h4l2.5-6 5 12 2.5-6h4" />,
   search: <><circle cx="11" cy="11" r="6.5" /><path d="M16 16l4.5 4.5" /></>,
+  copy: <><rect x="8" y="8" width="12" height="12" rx="2" /><path d="M16 8V5a1 1 0 00-1-1H5a1 1 0 00-1 1v10a1 1 0 001 1h3" /></>,
   lock: <><rect x="5" y="11" width="14" height="9" rx="2" /><path d="M8 11V8a4 4 0 018 0v3" /></>,
 };
 
