@@ -8,6 +8,7 @@ import { Login } from "./Login";
 import { OverviewScreen, Shell } from "./Shell";
 import { ReaderScreen } from "./Reader";
 import { requestSearch, SearchScreen } from "./Search";
+import "./fonts.css";
 import "./app.css";
 
 const GraphScreen = lazy(() => import("./GraphScreen"));

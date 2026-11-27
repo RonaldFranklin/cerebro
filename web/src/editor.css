@@ -19,6 +19,7 @@
 .owner-code:focus-within { border-color: var(--accent); }
 .owner-code .cm-editor { min-height: 15rem; }
 .owner-code .cm-scroller { max-height: 32rem; overflow: auto; }
+.owner-code .cm-editor .cm-scroller { font-family: var(--font-mono); }
 .owner-code .cm-content { min-height: 15rem; width: 100%; padding: .7rem 0; caret-color: var(--text); }
 .owner-code .cm-line { padding: 0 .75rem; }
 .owner-code .cm-tooltip { background: var(--raised); color: var(--text); border-color: var(--line); }

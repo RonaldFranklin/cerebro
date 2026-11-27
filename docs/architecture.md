@@ -371,7 +371,9 @@ Node 26.13.1 and pnpm 12.22.0 build and test the static UI. React and React DOM 
 TanStack React Query 5.108.0, Sigma 4.0.6, Graphology 0.26.0 and ForceAtlas2 0.10.1
 provide the UI and graph. The editor uses CodeMirror state 6.7.6, view 6.43.15, commands 6.11.1,
 lang-markdown 6.5.2 and autocomplete 6.20.4. Marked 18.2.1 and DOMPurify 3.4.18 render
-and sanitize Markdown. TypeScript 7.0.2, Vite 8.3.8 and Playwright 1.65.1 compile, bundle and
+and sanitize Markdown. The Space Grotesk, Inter and JetBrains Mono variable fonts come from the
+`@fontsource-variable` packages 5.3.0 (OFL-1.1, released 2026-07-19, no dependencies); only their Latin files are
+built into the UI and served from its own origin, as the CSP requires. TypeScript 7.0.2, Vite 8.3.8 and Playwright 1.65.1 compile, bundle and
 test the frontend. The [Phase 5 inventory](plans/archive/phase-5.md#4-dependency-proposal-and-verified-versions)
 records the type packages, transitive distributions and UTC release dates for the committed
 [web lockfile](../web/pnpm-lock.yaml).

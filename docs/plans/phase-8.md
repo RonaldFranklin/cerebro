@@ -27,6 +27,9 @@ independent review, and keeps backend and browser tests green.
 - The top bar search starts a new search with default filters. The search screen keeps its own field and filters.
 - Controls are bounded by a stronger line than decorative separators, so their edges keep 3:1 contrast.
 - Area colors in the graph change with the graph screen (step 3).
+- The `/` shortcut is a single character that cannot be remapped, as requested; it never acts inside a field or the
+  editor.
+- The font packages carry their OFL license; the built UI ships the font files, whose metadata names it.
 
 ## Left for later
 
@@ -38,5 +41,4 @@ independent review, and keeps backend and browser tests green.
 | Step | Pull request | State |
 |---|---|---|
 | 1 | #107 | Merged on 2026-11-27 after owner review |
-| 2a | | Theme tokens, top bar, icon rail and touch targets: implemented and tested |
-| 2b | | Self-hosted fonts: not started (new dependency, needs owner review) |
+| 2 | #108 | Theme tokens, top bar, icon rail, touch targets and self-hosted fonts: implemented, tested and independently reviewed; awaiting owner review (new dependency) |
