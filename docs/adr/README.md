@@ -6,7 +6,7 @@
 | [0002](0002-markdown-git-source-of-truth.md) | Markdown + git as source of truth, SQLite as derived index | accepted |
 | [0003](0003-two-repositories.md) | Two repositories — public application, private content | accepted |
 | [0004](0004-priority-levels-and-context-budget.md) | Priority levels and context budgets | accepted, amended by [0020](0020-direct-agent-writes.md) and [0025](0025-core-word-budget.md) |
-| [0005](0005-sensitivity-and-access-ceiling.md) | Sensitivity levels and access ceiling by listener and token | accepted, amended by [0028](0028-token-decides-public-access.md) |
+| [0005](0005-sensitivity-and-access-ceiling.md) | Sensitivity levels and access ceiling by listener and token | accepted, amended by [0028](0028-token-decides-public-access.md) and [0029](0029-owner-browser-full-access-on-public-listener.md) |
 | [0006](0006-write-path-inbox-curator.md) | Write path — Inbox, validation, curator, approval | superseded by [0020](0020-direct-agent-writes.md) |
 | [0007](0007-curator-provider-agnostic.md) | Curator is provider-agnostic and optional | superseded by [0020](0020-direct-agent-writes.md) |
 | [0008](0008-encryption-of-restricted-notes.md) | Encrypt restricted notes at rest with Fernet | accepted |

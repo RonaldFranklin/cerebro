@@ -2,7 +2,8 @@
 
 - **Status:** accepted
 - **Date:** 2026-11-27
-- **Amends:** [ADR-0019](0019-owner-browser-api.md) (writes and health require the private listener),
+- **Amends:** [ADR-0005](0005-sensitivity-and-access-ceiling.md) (owner browser capped on the public listener),
+  [ADR-0019](0019-owner-browser-api.md) (writes and health require the private listener),
   [ADR-0020](0020-direct-agent-writes.md) (change history for the private owner only) and
   [ADR-0028](0028-token-decides-public-access.md) (owner browser capped at `internal` on the public listener).
 

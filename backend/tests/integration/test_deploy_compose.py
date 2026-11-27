@@ -22,10 +22,19 @@ def checked(model: object) -> subprocess.CompletedProcess[str]:
 
 
 @pytest.mark.parametrize(
-    ("environment", "port", "public", "ceiling"),
-    [("hml", "18765", "18766", None), ("prod", "28765", "28766", "restricted")],
+    ("environment", "port", "public", "ceiling", "browser"),
+    [
+        ("hml", "18765", "18766", None, None),
+        ("prod", "28765", "28766", "restricted", "restricted"),
+        # Neither ceiling follows the other: the browser opt-in is its own variable.
+        ("prod", "28765", "28766", "restricted", None),
+        ("hml", "18765", "18766", "restricted", ""),
+        ("hml", "18765", "18766", "internal", "restricted"),
+    ],
 )
-def test_deployment_model(tmp_path: Path, environment: str, port: str, public: str, ceiling: str | None) -> None:
+def test_deployment_model(
+    tmp_path: Path, environment: str, port: str, public: str, ceiling: str | None, browser: str | None
+) -> None:
     data = tmp_path / environment
     origin = f"https://{environment}.example.invalid"
     public_origin = f"https://{environment}-public.example.invalid"
@@ -49,7 +58,8 @@ def test_deployment_model(tmp_path: Path, environment: str, port: str, public: s
             "PRIVATE_ORIGIN": origin,
             "PUBLIC_PORT": public,
             "PUBLIC_ORIGIN": public_origin,
-            **({} if ceiling is None else {"PUBLIC_CEILING": ceiling, "PUBLIC_BROWSER_CEILING": ceiling}),
+            **({} if ceiling is None else {"PUBLIC_CEILING": ceiling}),
+            **({} if browser is None else {"PUBLIC_BROWSER_CEILING": browser}),
             "DATA_DIR": str(data),
             "APP_SHA": sha,
             "CEREBRO_GIT_NAME": "Fixture",
@@ -92,7 +102,7 @@ def test_deployment_model(tmp_path: Path, environment: str, port: str, public: s
         "--public-ceiling",
         ceiling or "internal",
         "--public-browser-ceiling",
-        ceiling or "internal",
+        browser or "internal",
         "--web-dist",
         "/opt/cerebro/web",
     ]

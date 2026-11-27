@@ -300,18 +300,21 @@ done
 
 Expect `401` for unauthenticated MCP, an HTTPS redirect with HSTS, and an Access redirect for every UI, API and asset path. Then open `PUBLIC_ORIGIN` in the owner's browser. Pass Access, then sign in with the owner password. With the default `PUBLIC_BROWSER_CEILING=internal` the public session reports ceiling `internal` and offers no Recent changes, editing or Health; use the private origin for those.
 
-**Optional: full owner UI on the public entrance** ([ADR-0029](adr/0029-owner-browser-full-access-on-public-listener.md)). Only after every check above passes, and with the owner's approval, set this environment's `*_PUBLIC_BROWSER_CEILING` to `restricted` in the installation variables (keep it there for later shells and updates), then apply it and repeat the checks:
+**Optional: full owner UI on the public entrance** ([ADR-0029](adr/0029-owner-browser-full-access-on-public-listener.md)). Only after every check above passes, and with the owner's approval, set this environment's `*_PUBLIC_BROWSER_CEILING` to `restricted` in the installation variables and keep it there for later shells and updates. Then run the installation variables block again. It ends by selecting hml, so select the environment being changed and load its release before recreating the container:
 
 ```bash
-select_env "$ENVIRONMENT"
-test "$PUBLIC_BROWSER_CEILING" = restricted
+select_env '<hml-or-prod>'
+# During a first install, before record_release, use the SHA and image ID loaded in E instead of these two lines.
+read -r sha image_id < "$ENV_DIR/current"
+use_release "$sha"
+echo "$PUBLIC_BROWSER_CEILING"  # expect the value just set
 dc stop backend
 start_release
 ```
 
-The public session then reports ceiling `restricted`, whatever `PUBLIC_CEILING` is, and offers editing, Recent changes and Health. Run the Access checks again after every change to Access or the tunnel: Cérebro does not verify Access, and without it only the owner password protects restricted notes and edits. To turn the access off, set `internal` and start the release again.
+The public session then reports ceiling `restricted`, whatever `PUBLIC_CEILING` is, and offers editing, Recent changes and Health. Run the Access checks again after every change to Access or the tunnel: Cérebro does not verify Access, and without it only the owner password protects restricted notes and edits. **To turn the access off,** set the variable to `internal` and run the same steps: the running container stays `restricted` until it is recreated. A release older than this setting ignores it and stays at `internal`.
 
-**Stop** on any `200` without Access, a tunnel route to the private port, a wildcard bypass or a hostname shared with other services. If any of these appears on a running instance, remove the public route first. **Accepted risk:** a leaked token works from the internet until it is revoked, up to its ceiling and scopes.
+**Stop** on any `200` without Access, a tunnel route to the private port, a wildcard bypass or a hostname shared with other services. If any of these appears on a running instance, remove the public route first, then turn `restricted` browser access off if it was enabled. **Accepted risk:** a leaked token works from the internet until it is revoked, up to its ceiling and scopes.
 
 ## F. Issue one token per client
 
