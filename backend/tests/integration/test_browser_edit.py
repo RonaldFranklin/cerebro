@@ -61,7 +61,7 @@ def editor(tmp_path: Path, request: pytest.FixtureRequest) -> Iterator[tuple[Tes
             listeners=(),
         ),
     )
-    install_browser_edit(app, cases.owner_edit_note)
+    install_browser_edit(app, cases.owner_edit_note, cases.check_owner_edit)
     with TestClient(app, base_url=origin) as client:
         response = client.post(
             "/api/login", headers={"Origin": origin, "X-Cerebro-Request": "1"}, json={"password": "fixture"}
@@ -191,3 +191,55 @@ def test_editor_counts_metadata_in_utf8_bytes(editor: tuple[TestClient, Path]) -
     exact = {**inspected["note"], "lang": "é" * 128}
     assert client.put(PATH, json={**inspected, "note": exact}).status_code == 200
     assert client.get(PATH).json()["lang"] == exact["lang"]
+
+
+def test_checking_a_draft_reports_the_rules_and_writes_nothing(editor: tuple[TestClient, Path]) -> None:
+    client, repo = editor
+    inspected = payload(client)
+    before = git(repo, "rev-parse", "HEAD")
+    clean = client.post(PATH + "/validate", json=inspected)
+    assert clean.status_code == 200, clean.text
+    assert clean.headers["cache-control"] == "no-store"
+    assert clean.json()["validation"]["ok"]
+    assert clean.json()["base_current"]
+    assert clean.json()["budget"]["hard"] == 3000
+    body = "First.\n[[not-written]]\n-----BEGIN PRIVATE KEY-----\n"
+    draft = {"expected_hash": "0" * 64, "note": {**inspected["note"], "body": body}}
+    response = client.post(PATH + "/validate", json=draft)
+    assert response.status_code == 200
+    result = response.json()
+    assert {(v["code"], v["line"]) for v in result["validation"]["violations"]} >= {("secret_detected", 3)}
+    assert "broken_link" in {v["code"] for v in result["validation"]["violations"]}
+    assert result["link_lines"] == [2]
+    assert not result["base_current"]
+    assert "PRIVATE KEY" not in response.text
+    assert "not-written" not in response.text
+    invalid = client.post(PATH + "/validate", json={**inspected, "note": {**inspected["note"], "priority": "P9"}})
+    assert invalid.status_code == 200
+    assert invalid.json()["budget"] is None
+    assert not invalid.json()["validation"]["ok"]
+    assert git(repo, "rev-parse", "HEAD") == before
+    assert not git(repo, "status", "--porcelain")
+
+
+@pytest.mark.parametrize("editor", ["private", "public"], indirect=True)
+def test_checking_needs_the_same_session_proof_as_saving(editor: tuple[TestClient, Path]) -> None:
+    client, _ = editor
+    inspected = payload(client)
+    path = PATH + "/validate"
+    assert client.post(path, json=inspected, headers={"X-CSRF-Token": "invalid"}).status_code == 403
+    assert client.post(path, json=inspected, headers={"Origin": "https://other.invalid"}).status_code == 403
+    assert client.post(path, content="{}", headers={"Content-Type": "text/plain"}).status_code == 415
+    assert client.post(path, content='{"a":1,"a":2}', headers={"Content-Type": "application/json"}).status_code == 422
+    assert client.post(path + "?history=true", json=inspected).status_code == 422
+    assert client.post(path, content=b"x" * 70000, headers={"Content-Type": "application/json"}).status_code == 413
+    assert client.post("/api/notes/absent-note/validate", json=inspected).status_code == 404
+    client.cookies.clear()
+    assert client.post(path, json=inspected).status_code == 401
+
+
+@pytest.mark.parametrize("editor", ["lower"], indirect=True)
+def test_a_lower_ceiling_session_cannot_check_a_draft(editor: tuple[TestClient, Path]) -> None:
+    client, _ = editor
+    response = client.post(PATH + "/validate", content="invalid", headers={"Content-Type": "application/json"})
+    assert response.status_code == 403

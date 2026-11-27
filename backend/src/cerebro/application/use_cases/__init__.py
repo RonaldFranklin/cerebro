@@ -1,6 +1,7 @@
 """Use cases: one class per use case, ports injected in ``__init__``, a single ``execute(request, ctx)``."""
 
 from cerebro.application.use_cases.authenticate_token import AuthenticateToken
+from cerebro.application.use_cases.check_owner_edit import CheckOwnerEdit
 from cerebro.application.use_cases.get_graph import GetGraph
 from cerebro.application.use_cases.get_neighbors import GetNeighbors
 from cerebro.application.use_cases.get_overview import GetOverview
@@ -16,6 +17,7 @@ from cerebro.application.use_cases.search_notes import SearchNotes
 
 __all__ = [
     "AuthenticateToken",
+    "CheckOwnerEdit",
     "GetGraph",
     "GetNeighbors",
     "GetOverview",

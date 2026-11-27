@@ -219,7 +219,7 @@ def serve() -> int:
                 api = browser_api(auth, binding, browser_ceilings[port])
                 install_browser_history(api, cases.history)
                 install_browser_reads(api, reads)
-                install_browser_edit(api, cases.owner_edit_note)
+                install_browser_edit(api, cases.owner_edit_note, cases.check_owner_edit)
                 browsers[port] = BrowserListener(binding, api)
             app = browser_http(
                 http_app(tools, cases.authenticate_token, listeners), browsers, browser_assets(options.web_dist)
