@@ -114,3 +114,19 @@ test("health does not claim index results when blocked files stopped the checks"
   await expect(page.locator("div[data-card=quarantine]")).toContainText("None");
   await expect(page.getByText("All systems normal")).toHaveCount(0);
 });
+
+test("an unstable scan keeps the computed revision result and says nothing about the search limit", async ({page}) => {
+  await owner(page);
+  let stale = true;
+  await page.route("**/api/health", route => route.fulfill({json:{ok:false,notes_checked:4,search_index_checked:false,issues:[
+    issue("note_file_blocking","notes/draft.md","error"), ...stale ? [issue("index_stale","index","error")] : [],
+  ]}}));
+  await page.goto("/health");
+  const revision = page.locator("div[data-card=revision]");
+  await expect(revision).toContainText("Out of date");
+  await expect(page.getByText("Not checked", {exact:true})).toHaveCount(2);
+  await expect(page.getByText("search comparison limit")).toHaveCount(0);
+  stale = false;
+  await page.getByRole("button",{name:"Refresh report"}).click();
+  await expect(revision).toContainText("Matches indexes");
+});

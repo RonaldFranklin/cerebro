@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ApiError, type ApiClient } from "./api";
 import { notePath } from "./Reader";
@@ -20,15 +20,33 @@ interface ChangeDetail extends Change {
   truncated: boolean;
 }
 
+// The interface is English only, so dates and times are too.
 const dayFormat = new Intl.DateTimeFormat("en", {weekday: "long", year: "numeric", month: "long", day: "numeric"});
-const timeFormat = new Intl.DateTimeFormat(undefined, {hour: "2-digit", minute: "2-digit"});
+const timeFormat = new Intl.DateTimeFormat("en", {hour: "2-digit", minute: "2-digit", hourCycle: "h23"});
 
-function dayName(moment: Date) {
-  const day = new Date(moment.getFullYear(), moment.getMonth(), moment.getDate());
-  const now = new Date();
-  // Rounded because a day with a clock change is not 24 hours long.
-  const age = Math.round((new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime() - day.getTime()) / 86_400_000);
-  return age === 0 ? "Today" : age === 1 ? "Yesterday" : dayFormat.format(day);
+/** The local calendar date as ``YYYY-MM-DD``: the identity of a day group. */
+function dayKey(moment: Date) {
+  return [moment.getFullYear(), moment.getMonth() + 1, moment.getDate()].map(part => String(part).padStart(2, "0")).join("-");
+}
+
+function dayName(key: string, today: Date) {
+  if (key === dayKey(today)) return "Today";
+  if (key === dayKey(new Date(today.getFullYear(), today.getMonth(), today.getDate() - 1))) return "Yesterday";
+  const [year, month, day] = key.split("-").map(Number);
+  return dayFormat.format(new Date(year, month - 1, day));
+}
+
+/** The current date, renewed at local midnight and when the page returns, so open screens keep correct headings. */
+function useToday() {
+  const [today, setToday] = useState(() => new Date());
+  useEffect(() => {
+    const renew = () => setToday(current => dayKey(current) === dayKey(new Date()) ? current : new Date());
+    const midnight = new Date(today.getFullYear(), today.getMonth(), today.getDate() + 1);
+    const timer = window.setTimeout(() => setToday(new Date()), Math.max(midnight.getTime() - Date.now(), 1000));
+    document.addEventListener("visibilitychange", renew);
+    return () => { window.clearTimeout(timer); document.removeEventListener("visibilitychange", renew); };
+  }, [today]);
+  return today;
 }
 
 function author(actor: string) {
@@ -46,7 +64,7 @@ function ChangeDetails({api, revision, cursor}: {api: ApiClient; revision: strin
     <button type="button" onClick={() => void result.refetch()}>Retry</button></div>;
   const {diff, note_id, truncated} = result.data;
   return <section aria-label="Commit diff" className="change-detail">
-    <header><div><h2>Commit diff</h2><code translate="no">{revision}</code></div>
+    <header><div><h3>Commit diff</h3><code translate="no">{revision}</code></div>
       <a href={notePath(note_id, true)}>Open note</a></header>
     {truncated && <p>Only part of this diff is shown.</p>}
     {diff ? <pre tabIndex={0} aria-label="Diff text"><code translate="no">{diff.split("\n").map((line, index, lines) => {
@@ -74,21 +92,22 @@ export function RecentChangesScreen({api}: {api: ApiClient}) {
   const expired = history.isFetchNextPageError && history.error instanceof ApiError && history.error.status === 404;
   const graph = useVisibleGraph(api, true);
   const areas = useMemo(() => new Map(graph.data?.nodes.map(node => [node.id, node.area])), [graph.data]);
+  const today = useToday();
   const [actor, setActor] = useState("");
   // Authors present in the loaded changes; the owner leads.
   const actors = [...new Set([...changes.map(({change}) => change.actor), ...actor ? [actor] : []])]
     .sort((a, b) => Number(b === "owner") - Number(a === "owner") || a.localeCompare(b));
   const shown = changes.filter(({change}) => !actor || change.actor === actor);
-  const days: {name: string; rows: typeof shown}[] = [];
+  // History order is Git order: a clock correction can return to an earlier day, which keeps a single heading.
+  const days = new Map<string, typeof shown>();
   for (const row of shown) {
-    const name = dayName(new Date(row.change.timestamp));
-    if (days.at(-1)?.name !== name) days.push({name, rows: []});
-    days.at(-1)!.rows.push(row);
+    const key = dayKey(new Date(row.change.timestamp));
+    days.set(key, [...days.get(key) ?? [], row]);
   }
   return <article className="changes-view">
     <header className="changes-heading"><div><h1>Recent changes</h1>
       <p>Every write is a Git commit, attributed to the token or the owner that made it.</p></div>
-      {actors.length > 0 && <div className="change-authors" role="group" aria-label="Filter by author">
+      {actors.length > 0 && !denied && <div className="change-authors" role="group" aria-label="Filter by author">
         {["", ...actors].map(name => <button key={name} type="button" aria-pressed={actor === name} onClick={() => setActor(name)}>
           {name ? <span translate={name === "owner" ? undefined : "no"}>{author(name)}</span> : "All"}</button>)}
       </div>}</header>
@@ -97,8 +116,8 @@ export function RecentChangesScreen({api}: {api: ApiClient}) {
         <button type="button" onClick={() => void cache.resetQueries({queryKey:["changes", "list"], exact:true})}>Retry</button></div>
       : changes.length === 0 && !history.hasNextPage ? <p className="empty-state">No note changes to show.</p>
       : actor && shown.length === 0 ? <p className="empty-state">No loaded changes by this author.</p>
-      : days.map(day => <section key={day.name} className="change-day"><h2>{day.name}</h2><ol className="change-list">
-        {day.rows.map(({change, cursor}) => {
+      : [...days].map(([key, rows]) => <section key={key} className="change-day"><h2>{dayName(key, today)}</h2><ol className="change-list">
+        {rows.map(({change, cursor}) => {
           const expanded = selected === change.revision;
           const area = areas.get(change.note_id);
           return <li key={change.revision}>

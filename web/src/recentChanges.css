@@ -6,7 +6,7 @@
 .changes-view .change-authors button { min-width: var(--target); padding: .4rem 1rem; color: var(--text); background: transparent; border: 1px solid var(--line-strong); border-radius: 2rem; }
 .changes-view .change-authors button[aria-pressed="true"] { color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, transparent); border-color: var(--accent); }
 .change-day { margin-top: 1.75rem; }
-.change-day h2 { color: var(--muted); font: 600 .8rem var(--font-body); letter-spacing: .08em; text-transform: uppercase; }
+.change-day > h2 { color: var(--muted); font: 600 .8rem var(--font-body); letter-spacing: .08em; text-transform: uppercase; }
 .change-list { display: grid; gap: .6rem; margin: .8rem 0 0; padding: 0; list-style: none; }
 .change-list > li { min-width: 0; }
 .changes-view .change-row { display: grid; width: 100%; grid-template-columns: 4.5rem 5.5rem .75rem minmax(0,1fr) auto auto; align-items: center; gap: 1rem; text-align: left; padding: .85rem 1.1rem; color: var(--text); background: var(--surface); border: 1px solid var(--line); border-radius: .75rem; }
@@ -25,7 +25,7 @@
 .change-detail header { display: flex; justify-content: space-between; align-items: center; gap: 1rem; padding: 1rem 1.2rem; background: var(--surface); }
 .change-detail header code { color: var(--muted); font-size: .77rem; overflow-wrap: anywhere; }
 .change-detail header a { flex-shrink: 0; text-underline-offset: .2em; }
-.change-detail h2 { margin: 0 0 .35rem; font-size: 1.08rem; }
+.change-detail h3 { margin: 0 0 .35rem; font-size: 1.08rem; }
 .change-detail p { padding: .8rem 1.2rem; color: var(--muted); }
 .change-detail pre { margin: 0; max-height: 25rem; overflow: auto; padding: 1rem 1.2rem; font-size: .83rem; line-height: 1.65; tab-size: 4; }
 .change-detail pre:focus-visible { outline-offset: -3px; }

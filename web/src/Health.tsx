@@ -36,26 +36,29 @@ interface Card {id: string; name: string; value: string; detail: string; tone?: 
 
 function cards(report: HealthReport): Card[] {
   const codes = new Set(report.issues.map(issue => issue.code));
-  // Files that block the scan stop the checks before any index is compared.
+  // Blocking files skip the entry comparisons. The revision is still compared unless the scan failed altogether.
   const blocked = codes.has("note_file_blocking") && !report.search_index_checked;
+  const unread = blocked && report.notes_checked === 0;
   const index = (id: string, name: string, differs: boolean, [same, other]: [string, string], checked = true): Card =>
-    blocked || !checked ? {id, name, value: "Not checked", detail: "Compared with the content repository", tone: "warning"}
+    !differs && !checked ? {id, name, value: "Not checked", detail: "Compared with the content repository", tone: "warning"}
       : {id, name, value: differs ? other : same, detail: "Compared with the content repository", tone: differs ? "error" : "ok"};
   const quarantined = report.issues.filter(issue => issue.code === "changes_quarantined").length;
   const files = codes.has("note_file_blocking") || codes.has("note_file_excluded");
   return [
-    index("revision", "Repository revision", codes.has("index_stale"), ["Matches indexes", "Out of date"]),
-    index("graph", "Graph index", codes.has("graph_index_stale"), ["Entries match", "Entries differ"]),
-    index("search", "Search index", codes.has("search_index_stale"), ["Entries match", "Entries differ"], report.search_index_checked),
+    index("revision", "Repository revision", codes.has("index_stale"), ["Matches indexes", "Out of date"], !unread),
+    index("graph", "Graph index", codes.has("graph_index_stale"), ["Entries match", "Entries differ"], !blocked),
+    index("search", "Search index", codes.has("search_index_stale"), ["Entries match", "Entries differ"],
+      report.search_index_checked),
     {id: "content", name: "Content repository", value: files ? "Needs attention" : "Clean", tone: files ? "error" : "ok",
-      detail: `${report.notes_checked} ${report.notes_checked === 1 ? "note" : "notes"} checked`},
+      // About the files only: content findings are listed below and set the overall status.
+      detail: `${report.notes_checked} ${report.notes_checked === 1 ? "note" : "notes"} checked${files ? "" : " · all files committed and valid"}`},
     {id: "quarantine", name: "Quarantine", tone: quarantined ? "warning" : "ok",
       value: quarantined ? `${quarantined} ${quarantined === 1 ? "folder" : "folders"}` : "None",
       detail: quarantined ? "Plaintext — review and remove by hand" : "No uncommitted changes were set aside"},
   ];
 }
 
-const checkedFormat = new Intl.DateTimeFormat(undefined, {hour: "2-digit", minute: "2-digit", timeZoneName: "short"});
+const checkedFormat = new Intl.DateTimeFormat("en", {hour: "2-digit", minute: "2-digit", hourCycle: "h23", timeZoneName: "short"});
 
 export function HealthScreen({api}: {api:ApiClient}) {
   const report = useQuery({queryKey:["health"],queryFn:({signal})=>api.read<HealthReport>("/api/health",signal)});
@@ -85,7 +88,7 @@ export function HealthScreen({api}: {api:ApiClient}) {
       {cards(data).map(card => <div key={card.id} data-card={card.id} data-tone={card.tone}>
         <h2>{card.name}</h2><strong>{card.value}</strong><p>{card.detail}</p></div>)}
     </section>
-    {!data.search_index_checked && data.notes_checked > 0 && <p className="health-note">The repository exceeds the search comparison limit.</p>}
+    {!data.search_index_checked && data.notes_checked > 0 && !data.issues.some(issue => issue.code === "note_file_blocking") && <p className="health-note">The repository exceeds the search comparison limit.</p>}
     <section className="health-findings"><header><div><h2>Findings</h2><p>{errors} {errors === 1 ? "error" : "errors"} · {warnings} {warnings === 1 ? "warning" : "warnings"}</p></div>
       <label>Severity <select value={severity} onChange={event=>setSeverity(event.target.value)}>
         <option value="all">All severities</option><option value="error">Errors</option><option value="warning">Warnings</option>

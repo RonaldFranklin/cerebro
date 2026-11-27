@@ -1,5 +1,8 @@
 import { expect, test, type Page } from "@playwright/test";
 
+// Day headings depend on the local date; the fixed timestamps assume one zone whatever the machine uses.
+test.use({timezoneId: "UTC"});
+
 const row = { revision: "a".repeat(40), note_id: "island-hub", title: "Island hub",
   operation: "update", actor: "fixture-agent", timestamp: "2026-11-26T10:30:00Z" };
 const detailPath = "**/api/changes/" + row.revision;
@@ -108,7 +111,7 @@ test("changes group by day, show where they happened and filter by author", asyn
   ];
   await page.route("**/api/changes", route => route.fulfill({json:{changes, next_cursor:null}}));
   await page.goto("/changes");
-  await expect(page.getByRole("heading", {level:2})).toHaveText(["Today", "Yesterday", /20/]);
+  await expect(page.getByRole("heading", {level:2})).toHaveText(["Today", "Yesterday", "Friday, November 20, 2026"]);
   const newest = page.getByRole("button", {name:/Newest/});
   for (const text of ["Updated", "island-hub", "Owner", "aaaaaaa", "projects"]) await expect(newest).toContainText(text);
   await expect(page.getByRole("button", {name:/Earlier/})).toContainText("Created");
@@ -124,4 +127,33 @@ test("changes group by day, show where they happened and filter by author", asyn
   await expect(page.getByRole("button", {name:/Newest|Earlier|Oldest/})).toHaveCount(3);
   await page.setViewportSize({width:360, height:780});
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+});
+
+test("a day appears once, the diff heading sits under it and denied history names no author", async ({page}) => {
+  await page.clock.setFixedTime(new Date("2026-11-27T15:00:00Z"));
+  await owner(page);
+  const changes = ["2026-11-27T12:00:00Z", "2026-11-26T12:00:00Z", "2026-11-27T11:00:00Z"].map((timestamp, index) =>
+    ({...row, revision:"abc"[index].repeat(40), timestamp, title:`Entry ${index}`}));
+  await page.route("**/api/changes", route => route.fulfill({json:{changes, next_cursor:"older", page_cursor:null}}));
+  await page.route("**/api/changes?cursor=older", route => route.fulfill({status:403, json:{}}));
+  await page.route(detailPath, route => route.fulfill({json:{...row, diff:"+line", truncated:false}}));
+  await page.goto("/changes");
+  await expect(page.getByRole("heading", {level:2})).toHaveText(["Today", "Yesterday"]);
+  await page.getByRole("button", {name:/Entry 0/}).click();
+  await expect(page.getByRole("heading", {level:3, name:"Commit diff"})).toBeVisible();
+  await page.getByRole("button", {name:"Load more"}).click();
+  await expect(page.getByRole("alert")).toHaveText("Recent changes are unavailable.");
+  await expect(page.getByRole("group", {name:"Filter by author"})).toHaveCount(0);
+});
+
+test("day headings follow the date past midnight and use one language", async ({page}) => {
+  await page.clock.install({time: new Date(2026, 10, 27, 23, 59, 0)});
+  await owner(page);
+  const timestamp = await page.evaluate(() => new Date(2026, 10, 27, 20, 5).toISOString());
+  await page.route("**/api/changes", route => route.fulfill({json:{changes:[{...row, timestamp}], next_cursor:null}}));
+  await page.goto("/changes");
+  await expect(page.getByRole("heading", {level:2})).toHaveText(["Today"]);
+  await expect(page.getByRole("button", {name:/Island hub/}).locator("time")).toHaveText("20:05");
+  await page.clock.runFor(2 * 60_000);
+  await expect(page.getByRole("heading", {level:2})).toHaveText(["Yesterday"]);
 });
