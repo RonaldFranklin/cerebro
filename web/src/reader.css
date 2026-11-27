@@ -5,16 +5,16 @@
 .reader-trail [aria-current] { overflow-wrap: anywhere; }
 .reader-heading { margin-block: clamp(2rem, 4vw, 3.5rem) 2.4rem; }
 .reader-class { display: flex; align-items: center; gap: .55rem; font-size: .76rem; color: var(--accent); }
-.reader-class span { padding: .22rem .6rem; border: 1px solid #40584d; border-radius: 1rem; }
+.reader-class span { padding: .22rem .6rem; border: 1px solid var(--line-strong); border-radius: 1rem; }
 .reader-class span + span { color: var(--muted); border-color: var(--line); }
-.reader-heading h1 { margin: .85rem 0; font-family: "Baskervville", Georgia, serif; font-weight: 400; font-size: clamp(2.6rem,4.3vw,4.4rem); line-height: 1.04; letter-spacing: -.045em; overflow-wrap: anywhere; }
+.reader-heading h1 { margin: .85rem 0; font-size: clamp(2rem,3.2vw,2.75rem); line-height: 1.1; overflow-wrap: anywhere; }
 .reader-heading p { max-width: 60ch; color: var(--muted); font-size: 1.03rem; line-height: 1.6; }
 .reader-columns { display: grid; grid-template-columns: minmax(0, 1fr) minmax(13rem, 19rem); gap: clamp(2rem, 5vw, 5rem); border-top: 1px solid var(--line); padding-top: 2rem; }
 .reader-document { min-width: 0; overflow-wrap: anywhere; }
 .reader-aside { display: flex; flex-direction: column; gap: 1.65rem; padding-left: 1.7rem; border-left: 1px solid var(--line); align-self: start; }
 .reader-aside h2, .reader-members h2 { margin: 0 0 .9rem; font-size: 1.05rem; }
 .reader-aside ul,.reader-members ul { list-style: none; margin: 0; padding: 0; }
-.reader-aside li { margin-top: .58rem; font-size: .89rem; line-height: 1.45; overflow-wrap: anywhere; }
+.reader-aside li { margin-top: 0; font-size: .89rem; line-height: 1.45; overflow-wrap: anywhere; }
 .reader-aside a, .reader-members a, .reader-section-return a { color: var(--accent); text-underline-offset: .2em; }
 .reader-aside dl { margin: 0; font-size: .83rem; }
 .reader-aside dl div { display: flex; justify-content: space-between; gap: .8rem; margin-top: .6rem; }

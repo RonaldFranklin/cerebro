@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useState, type FormEvent } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
 
 import type { ApiClient } from "./api";
 import { markdownHeadings, TechnicalText } from "./Markdown";
 import { notePath, type Note } from "./Reader";
 import { useVisibleGraph } from "./visibleGraph";
+import { Icon } from "./icons";
 import "./search.css";
 
 type Filter = "area" | "type" | "priority" | "status";
@@ -23,6 +24,11 @@ function visibleFilters(draft: Criteria, options?: Options): Criteria {
   return next;
 }
 const searchState = ["search-form"];
+
+/** Search from outside the screen: a new text with default filters, kept for the session like a submitted form. */
+export function requestSearch(client: QueryClient, q: string) {
+  client.setQueryData(searchState, {...defaults, q});
+}
 
 function searchPath(criteria: Criteria) {
   const params = new URLSearchParams({ history: String(criteria.history) });
@@ -103,7 +109,7 @@ export function SearchScreen({api}: {api: ApiClient}) {
     <form role="search" className="search-form" onSubmit={submit}>
       <label htmlFor="note-query">Search notes</label>
       <div className="search-entry">
-        <div><i aria-hidden="true" className="nav-icon icon-search"/>
+        <div><Icon name="search"/>
           <input id="note-query" type="search" value={draft.q} autoComplete="off" placeholder="Search by keyword"
             aria-invalid={invalid} aria-describedby={invalid ? "query-error" : undefined}
             onChange={e => {setDraft({...draft, q: e.target.value}); setInvalid(false);}}/></div>

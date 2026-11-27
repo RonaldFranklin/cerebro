@@ -41,7 +41,7 @@ test("private health findings link to their notes and stay off the public listen
     if (new URL(req.url()).pathname === "/api/health") requests.push(req.method());
   });
   await signIn(lower, demo.public_origin, demo.password);
-  await expect(lower.getByText("This view requires the private listener.")).toBeVisible();
+  await expect(lower.getByText("This view requires a restricted owner session.")).toBeVisible();
   await expect(lower.getByRole("link", {name:"Health", exact:true})).toHaveCount(0);
   expect(requests).toEqual([]);
   for (const headers of [undefined, {"X-Forwarded-Host":"private.example.invalid","X-Forwarded-Proto":"https"}]) {

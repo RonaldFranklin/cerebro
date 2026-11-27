@@ -60,7 +60,7 @@ test("lower-ceiling sessions cannot navigate to or request history", async ({pag
   const reads: string[] = [];
   page.on("request", req => { if (new URL(req.url()).pathname.startsWith("/api/changes")) reads.push(req.url()); });
   await page.goto("/changes");
-  await expect(page.getByText("This view requires the private listener.")).toBeVisible();
+  await expect(page.getByText("This view requires a restricted owner session.")).toBeVisible();
   await expect(page.getByRole("navigation").getByRole("link", {name:"Recent changes"})).toHaveCount(0);
   expect(reads).toEqual([]);
 });

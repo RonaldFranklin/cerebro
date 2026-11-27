@@ -43,7 +43,7 @@ test("search failure can be retried and oversized queries stay in the browser", 
   await expect(page.getByText("Search is unavailable.")).toBeVisible();
   await page.getByRole("button", {name: "Retry search"}).click();
   await expect(page.getByText("No matching notes.")).toBeVisible();
-  const input = page.getByRole("searchbox");
+  const input = page.getByRole("searchbox", {name: "Search notes"});
   await input.fill("é".repeat(513));
   await input.press("Enter");
   await expect(page.getByText("Search text must fit in 1,024 UTF-8 bytes.")).toBeVisible();
@@ -60,7 +60,7 @@ test("submitting a new search cancels a slow, superseded request", async ({ page
     } else await route.fulfill({json: {results: []}});
   });
   await page.goto("/search");
-  const query = page.getByRole("searchbox");
+  const query = page.getByRole("searchbox", {name: "Search notes"});
   await query.fill("slow");
   await query.press("Enter");
   await expect.poll(() => Boolean(release)).toBe(true);
@@ -104,7 +104,7 @@ test("search state outlives query garbage collection and clears on sign-out", as
   await page.route("**/api/logout", route => route.fulfill({status: 204}));
   await page.route("**/api/login", route => route.fulfill({json: {ceiling: "restricted", csrf_token: "next", absolute_remaining_seconds: 28800}}));
   await page.goto("/search");
-  const input = page.getByRole("searchbox");
+  const input = page.getByRole("searchbox", {name: "Search notes"});
   await input.fill("retain within session");
   await input.press("Enter");
   await page.getByRole("navigation", {name: "Workspace"}).getByRole("link", {name: "Graph"}).click();
@@ -170,7 +170,7 @@ test("missing metadata preserves the active filters and technical tokens", async
   await page.goBack();
   await expect(page.getByRole("button", {name: "Retry filters"})).toBeVisible();
   await expect(area).toHaveValue("research");
-  const input = page.getByRole("searchbox");
+  const input = page.getByRole("searchbox", {name: "Search notes"});
   await input.fill("updated");
   await input.press("Enter");
   await expect.poll(() => requests.at(-1)?.get("q")).toBe("updated");
@@ -183,7 +183,7 @@ test("cached searches with equal result counts announce the new criteria", async
   await session(page);
   await page.route("**/api/search?*", route => route.fulfill({json: {results: [note]}}));
   await page.goto("/search");
-  const input = page.getByRole("searchbox");
+  const input = page.getByRole("searchbox", {name: "Search notes"});
   const status = page.getByRole("region", {name: "Results"}).getByRole("status");
   for (const text of ["alpha", "beta", "alpha"]) {
     await input.fill(text);

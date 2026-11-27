@@ -7,7 +7,7 @@ import { BrowserSession } from "./session";
 import { Login } from "./Login";
 import { OverviewScreen, Shell } from "./Shell";
 import { ReaderScreen } from "./Reader";
-import { SearchScreen } from "./Search";
+import { requestSearch, SearchScreen } from "./Search";
 import "./app.css";
 
 const GraphScreen = lazy(() => import("./GraphScreen"));
@@ -37,6 +37,7 @@ function App() {
   const [manager] = useState(() => new BrowserSession());
   const state = useSyncExternalStore(manager.subscribe, manager.snapshot);
   const [route, setRoute] = useState(address);
+  const [searchRequest, setSearchRequest] = useState(0);
   const url = new URL(route, location.origin);
   const path = url.pathname;
 
@@ -80,15 +81,19 @@ function App() {
       const denied = state.session.ceiling !== "restricted" && (path === "/changes" || path === "/health" || path.startsWith("/editor/"));
       return <QueryClientProvider key={state.generation} client={state.queries}>
         {state.checking && <Status>Checking session…</Status>}
-        <div hidden={state.checking}><Shell path={home ? "/" : path} ceiling={state.session.ceiling} onNavigate={navigate} onLogout={manager.signOut}>
-          {denied ? <section className="pending-view"><h1>{title}</h1><p>This view requires the private listener.</p>
+        <div hidden={state.checking}><Shell path={home ? "/" : path} ceiling={state.session.ceiling} onNavigate={navigate}
+          onSearch={query => { requestSearch(state.queries, query); setSearchRequest(count => count + 1); navigate("/search"); }}
+          onLogout={manager.signOut}>
+          {denied ? <section className="pending-view"><h1>{title}</h1>
+            <p>This view requires a restricted owner session. This session is limited to {state.session.ceiling}.</p>
+            <p>Open it through the private address, or ask the instance operator to allow restricted browser access here.</p>
             <a href="/">Back to overview</a></section> : home ? <Home api={state.api}/> :
             path === "/changes" ? <Suspense fallback={<p role="status">Loading recent changes…</p>}><RecentChangesScreen api={state.api}/></Suspense> :
             path === "/health" ? <Suspense fallback={<p role="status">Loading health report…</p>}><HealthScreen api={state.api}/></Suspense> :
             path.startsWith("/editor/") ? <Suspense fallback={<p role="status">Loading editor…</p>}><EditorScreen
               key={path} api={state.api} id={path.slice("/editor/".length)} history={url.searchParams.get("history") === "true"}/></Suspense> :
             path === "/graph" ? <Suspense fallback={<p role="status">Loading graph…</p>}><GraphScreen api={state.api}/></Suspense> :
-            path === "/search" ? <SearchScreen api={state.api}/> :
+            path === "/search" ? <SearchScreen key={searchRequest} api={state.api}/> :
             path.startsWith("/notes/") ? <ReaderScreen api={state.api} id={path.slice("/notes/".length)}
               history={url.searchParams.get("history") === "true"} section={url.searchParams.get("section")}/> : <section className="pending-view"><h1>{title}</h1>
             <p>This page could not be found.</p>

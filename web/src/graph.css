@@ -5,11 +5,10 @@
 .graph-controls { padding-block: 1.25rem; }
 .graph-filter-row { display: grid; grid-template-columns: repeat(5,minmax(0,1fr)); gap: .7rem; }
 .graph-filter-row label { font-size: .84rem; font-weight: 570; }
-.graph-view select { background: var(--surface); color: var(--text); border: 1px solid var(--line); border-radius: .4rem; padding: .5rem .55rem; }
+.graph-view select { background: var(--surface); color: var(--text); border: 1px solid var(--line-strong); border-radius: .4rem; padding: .5rem .55rem; }
 .graph-filter-row select { display: block; width: 100%; margin-top: .35rem; font-weight: 400; }
 .graph-settings { flex-wrap: wrap; gap: 1.2rem; margin-top: .9rem; }
 .graph-settings label, .graph-settings fieldset { display: inline-flex; gap: .4rem; align-items: center; color: var(--muted); font-size: .85rem; }
-.graph-settings input { accent-color: var(--accent); }
 .graph-settings fieldset { gap: .7rem; border: 0; margin: 0; padding: 0; }
 .graph-settings legend { float: left; margin-right: .3rem; }
 .graph-map, .graph-list { border: 1px solid var(--line); border-radius: .65rem; background: var(--surface); }
@@ -25,7 +24,7 @@
 .graph-list li { gap: .6rem; border-top: 1px solid var(--line); padding: .7rem 0; }
 .graph-list li svg { flex-shrink: 0; }
 .graph-list li > div { min-width: 0; overflow-wrap: anywhere; }
-.graph-list li a { color: var(--text); text-decoration-color: #638474; text-underline-offset: .2rem; }
+.graph-list li a { color: var(--text); text-decoration-color: var(--line-strong); text-underline-offset: .2rem; }
 .graph-list li > div > span { display: block; margin-top: .2rem; color: var(--muted); font-size: .76rem; }
 .graph-list .graph-action { margin-left: auto; font-size: .82rem; }
 @media(max-width: 52rem) { .graph-filter-row { grid-template-columns: repeat(3,minmax(0,1fr)); } }

@@ -21,6 +21,13 @@ independent review, and keeps backend and browser tests green.
 - Health additions (last backup, token table): their design is proposed to the owner before implementation. Token
   "last used" and 24-hour activity are counters in the state database and record no request content.
 
+## Layout decisions (step 2)
+
+- The rail's **Notes** destination is the search screen; the overview stays on `/`, reached through the logo.
+- The top bar search starts a new search with default filters. The search screen keeps its own field and filters.
+- Controls are bounded by a stronger line than decorative separators, so their edges keep 3:1 contrast.
+- Area colors in the graph change with the graph screen (step 3).
+
 ## Left for later
 
 - Verify the Cloudflare Access assertion (JWT) in the application, so that `restricted` on the public listener does
@@ -30,4 +37,6 @@ independent review, and keeps backend and browser tests green.
 
 | Step | Pull request | State |
 |---|---|---|
-| 1 | #107 | Implemented, tested and independently reviewed; awaiting owner review |
+| 1 | #107 | Merged on 2026-11-27 after owner review |
+| 2a | | Theme tokens, top bar, icon rail and touch targets: implemented and tested |
+| 2b | | Self-hosted fonts: not started (new dependency, needs owner review) |

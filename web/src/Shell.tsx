@@ -1,25 +1,59 @@
-import type { MouseEvent, ReactNode } from "react";
+import { useEffect, useRef, useState, type FormEvent, type MouseEvent, type ReactNode } from "react";
 
 import type { Ceiling, Overview } from "./api";
 import { Brand } from "./Login";
+import { Icon } from "./icons";
 
 const destinations = [
-  { path: "/", label: "Overview", icon: "overview" },
-  { path: "/search", label: "Search", icon: "search" },
-  { path: "/graph", label: "Graph", icon: "graph" },
-  { path: "/changes", label: "Recent changes", icon: "changes", private: true },
-  { path: "/health", label: "Health", icon: "health", private: true },
-];
+  { path: "/graph", label: "Graph", icon: "graph", sections: ["/graph"] },
+  { path: "/search", label: "Notes", icon: "notes", sections: ["/search", "/notes", "/editor"] },
+  { path: "/changes", label: "Recent changes", icon: "changes", sections: ["/changes"], restricted: true },
+  { path: "/health", label: "Health", icon: "health", sections: ["/health"], restricted: true },
+] as const;
+
+/** Keys typed into a field or the editor belong to it, not to the search shortcut. */
+function typing(target: EventTarget | null) {
+  return target instanceof HTMLElement && (target.isContentEditable || target.matches("input, textarea, select"));
+}
+
+function QuickSearch({ onSearch }: { onSearch: (query: string) => void }) {
+  const [query, setQuery] = useState("");
+  const input = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    function shortcut(event: KeyboardEvent) {
+      if (event.key !== "/" || event.defaultPrevented || event.altKey || event.ctrlKey || event.metaKey || typing(event.target)) return;
+      // A workspace hidden behind a session check cannot take focus.
+      if (!input.current?.checkVisibility()) return;
+      event.preventDefault();
+      input.current.focus();
+    }
+    window.addEventListener("keydown", shortcut);
+    return () => window.removeEventListener("keydown", shortcut);
+  }, []);
+  function submit(event: FormEvent) {
+    event.preventDefault();
+    onSearch(query.trim());
+    setQuery("");
+  }
+  return <form className="quick-search" role="search" aria-label="Quick search" onSubmit={submit}>
+    <Icon name="search" />
+    {/* 256 UTF-16 units always fit the 1,024-byte search limit. */}
+    <input ref={input} type="search" aria-label="Quick search" aria-keyshortcuts="/" placeholder="Search notes, ids, summaries…"
+      autoComplete="off" maxLength={256} value={query} onChange={event => setQuery(event.target.value)} />
+    <kbd aria-hidden="true">/</kbd>
+  </form>;
+}
 
 type ShellProps = {
   path: string;
   ceiling: Ceiling;
   onNavigate: (path: string) => void;
+  onSearch: (query: string) => void;
   onLogout: () => void;
   children: ReactNode;
 };
 
-export function Shell({ path, ceiling, onNavigate, onLogout, children }: ShellProps) {
+export function Shell({ path, ceiling, onNavigate, onSearch, onLogout, children }: ShellProps) {
   function follow(event: MouseEvent<HTMLDivElement>) {
     if (event.defaultPrevented || event.button !== 0 || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
     const anchor = event.target instanceof Element ? event.target.closest("a[href]") : null;
@@ -28,24 +62,27 @@ export function Shell({ path, ceiling, onNavigate, onLogout, children }: ShellPr
     event.preventDefault();
     onNavigate(anchor.pathname + anchor.search + anchor.hash);
   }
+  const section = "/" + path.split(/[?#]/, 1)[0].split("/")[1];
 
   return <div className="workspace" onClick={follow}>
     <a className="skip-link" href="#workspace-main">Skip to content</a>
-    <aside className="workspace-rail">
-      <a className="brand-home" href="/" aria-label="Cérebro home"><Brand /></a>
-      <nav className="workspace-nav" aria-label="Workspace">
-        {destinations.filter(item => !item.private || ceiling === "restricted").map(item =>
-          <a key={item.path} href={item.path} aria-current={path.split(/[?#]/, 1)[0] === item.path ? "page" : undefined}>
-            <i className={`nav-icon icon-${item.icon}`} aria-hidden="true" />{item.label}
-          </a>
-        )}
-      </nav>
-      <div className="rail-session">
-        <span className="session-caption">Session access</span>
-        <strong><i className="session-light" aria-hidden="true" />{ceiling}</strong>
-        <button className="sign-out" onClick={onLogout}>Sign out</button>
+    <header className="topbar">
+      <a className="brand-home" href="/" aria-label="Cérebro home" aria-current={section === "/" ? "page" : undefined}><Brand /></a>
+      <QuickSearch onSearch={onSearch} />
+      <div className="topbar-session">
+        <span className="ceiling-badge"><Icon name="lock" /><span>{ceiling} · owner</span></span>
+        <button type="button" className="sign-out" onClick={onLogout}>Sign out</button>
       </div>
-    </aside>
+    </header>
+    <nav className="rail" aria-label="Workspace">
+      {destinations.filter(item => !("restricted" in item) || ceiling === "restricted").map(item =>
+        <a key={item.path} href={item.path} aria-label={item.label}
+          aria-current={(item.sections as readonly string[]).includes(section) ? "page" : undefined}>
+          <Icon name={item.icon} />
+          <span className="rail-tooltip" aria-hidden="true">{item.label}</span>
+        </a>
+      )}
+    </nav>
     <main id="workspace-main" className="workspace-main" tabIndex={-1}>{children}</main>
   </div>;
 }

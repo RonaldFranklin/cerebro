@@ -5,17 +5,17 @@
 .health-stats > div { padding: 1.2rem 1.4rem; display: grid; gap: .6rem; align-content: center; min-width: 0; }
 .health-stats > div + div { border-left: 1px solid var(--line); }
 .health-stats span, .health-index dt, .health-findings label { color: var(--muted); font-size: .85rem; }
-.health-stats strong { font-size: clamp(1.35rem, 2.6vw, 2.4rem); font-weight: 520; letter-spacing: -.045em; line-height: 1.12; }
-.health-summary { background: linear-gradient(110deg,#25322f,var(--surface)); }
-.health-view [data-tone="warning"] { color: #ebcc91; }
-.health-view [data-tone="error"] { color: #f0ada8; }
+.health-stats strong { font: 600 clamp(1.35rem, 2.2vw, 1.9rem) var(--font-heading); letter-spacing: -.045em; line-height: 1.12; }
+.health-summary { background: var(--surface); }
+.health-view [data-tone="warning"] { color: var(--amber); }
+.health-view [data-tone="error"] { color: var(--error); }
 .health-view [data-tone="ok"] { color: var(--accent); }
 .health-index dl { margin: 1rem 0 0; padding: 1.15rem 0; display: grid; grid-template-columns: repeat(3,1fr); border-block: 1px solid var(--line); }
 .health-index dl > div + div { padding-left: 1rem; border-left: 1px solid var(--line); }
 .health-index dd { margin: .4rem 0 0; font-weight: 550; }
 .health-findings { margin-top: 2rem; }
 .health-findings header p { margin-top: .3rem; font-size: .88rem; }
-.health-findings select { margin-left: .4rem; padding: .5rem; border: 1px solid var(--line); border-radius: .4rem; color: var(--text); background: var(--surface); }
+.health-findings select { margin-left: .4rem; padding: .5rem; border: 1px solid var(--line-strong); border-radius: .4rem; color: var(--text); background: var(--surface); }
 .health-findings ul { margin: 1.1rem 0; padding: 0; list-style: none; border-top: 1px solid var(--line); }
 .health-findings li { padding: .9rem 0; display: grid; grid-template-columns: 5.8rem minmax(0,1.4fr) minmax(0,1fr); align-items: start; gap: .8rem; border-bottom: 1px solid var(--line); }
 .health-severity { justify-self: start; display: inline-flex; gap: .45rem; align-items: center; font-size: .85rem; }

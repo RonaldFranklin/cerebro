@@ -226,6 +226,6 @@ export function EditorScreen({api,id,history}: {api:ApiClient;id:string;history:
     return result.data;
   }}/>;
   if (source.isPending || source.isFetching) return <p role="status">Loading note…</p>;
-  return <section className="pending-view"><h1>Edit note</h1><p role="alert">A complete private note is required for editing.</p>
+  return <section className="pending-view"><h1>Edit note</h1><p role="alert">The complete note is required for editing.</p>
     <button onClick={()=>void source.refetch()}>Retry</button><a href={notePath(id,history)}>Read note</a></section>;
 }
