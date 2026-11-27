@@ -73,7 +73,7 @@ function Document({ api, note, history, outlineBody, outlineStatus, visibleIds, 
         {note.hub && <><a href={notePath(note.hub, history)}>
           {hubTitle ? <TechnicalText text={hubTitle} visibleIds={visibleIds}/> : <span translate="no">{note.hub}</span>}
         </a><span aria-hidden="true">/</span></>}
-        <span aria-current="page"><TechnicalText text={note.title} visibleIds={visibleIds}/></span>
+        <span aria-current="page" lang={note.lang}><TechnicalText text={note.title} visibleIds={visibleIds}/></span>
       </nav>
       <header className="reader-heading" lang={note.lang}>
         <div>

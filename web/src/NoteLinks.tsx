@@ -7,26 +7,31 @@ import { TechnicalText } from "./Markdown";
 import { notePath } from "./Reader";
 import type { GraphData, GraphNode } from "./visibleGraph";
 
-const SHOWN = 8;
+// Six positions keep the labels apart.
+const SHOWN = 6;
 const WIDTH = 320, HEIGHT = 230;
 
 function short(title: string) {
-  return title.length > 22 ? title.slice(0, 21) + "…" : title;
+  return title.length > 16 ? title.slice(0, 15) + "…" : title;
 }
 
 /** A drawing of the direct links. The lists beside it carry the same information as text. */
+function historical(node: GraphNode) {
+  return node.status === "superseded" || node.status === "archived";
+}
+
 function Neighborhood({center, neighbors, color}: {center: GraphNode; neighbors: GraphNode[]; color: (area: string) => string}) {
   const shown = neighbors.slice(0, SHOWN);
   const middle = [WIDTH / 2, HEIGHT / 2];
   const placed = shown.map((node, i) => {
-    const angle = Math.PI + i / shown.length * 2 * Math.PI + .5;
+    const angle = Math.PI + i / shown.length * 2 * Math.PI;
     return {node, x: middle[0] + 105 * Math.cos(angle), y: middle[1] + 78 * Math.sin(angle)};
   });
   return <svg className="neighborhood" viewBox={`0 0 ${WIDTH} ${HEIGHT}`} aria-hidden="true" focusable="false">
     {placed.map(({node, x, y}) => <line key={node.id} x1={middle[0]} y1={middle[1]} x2={x} y2={y}/>)}
     {placed.map(({node, x, y}) => <g key={node.id}>
       <circle data-note={node.id} className={node.type === "hub" ? "hub" : undefined} cx={x} cy={y} r={node.type === "hub" ? 8 : 5} fill={color(node.area)}/>
-      <text x={x} y={y < middle[1] ? y - 13 : y + 19} textAnchor="middle">{short(node.title)}</text>
+      <text {...{translate: "no"}} x={x} y={y <= middle[1] + 1 ? y - 13 : y + 19} textAnchor="middle">{short(node.title)}</text>
     </g>)}
     <circle className="halo" cx={middle[0]} cy={middle[1]} r="14"/>
     <circle data-note={center.id} cx={middle[0]} cy={middle[1]} r="8" fill={color(center.area)}/>
@@ -41,8 +46,8 @@ function LinkList({title, notes, history, visibleIds}: {
   return <section className="note-links" aria-label={title}>
     <h2>{title} · {notes.length}</h2>
     {notes.length ? <ul>{notes.map(node => <li key={node.id}>
-      <a href={notePath(node.id, history)}><TechnicalText text={node.title} visibleIds={visibleIds}/></a>
-      <span translate="no">{node.type}</span>
+      <a href={notePath(node.id, history || historical(node))}><TechnicalText text={node.title} visibleIds={visibleIds}/></a>
+      <span translate="no">{node.type}{historical(node) && ` · ${node.status}`}</span>
     </li>)}</ul> : <p>No visible links.</p>}
   </section>;
 }
@@ -50,7 +55,8 @@ function LinkList({title, notes, history, visibleIds}: {
 export function NoteLinks({api, id, history, areas, visibleIds}: {
   api: ApiClient; id: string; history: boolean; areas: string[]; visibleIds: ReadonlySet<string>;
 }) {
-  const path = `/api/notes/${encodeURIComponent(id)}/neighbors?history=${history}&hops=1`;
+  // A note links to history notes whatever the flag, and may be one itself, so the read always includes history.
+  const path = `/api/notes/${encodeURIComponent(id)}/neighbors?history=true&hops=1`;
   const nearby = useQuery({queryKey: ["neighborhood", path], queryFn: ({signal}) => api.read<GraphData>(path, signal)});
   const links = useMemo(() => {
     const data = nearby.data;
@@ -60,9 +66,11 @@ export function NoteLinks({api, id, history, areas, visibleIds}: {
       const ids = new Set(data.edges.filter(edge => edge[from] === id).map(edge => edge[to]));
       return data.nodes.filter(node => node.id !== id && ids.has(node.id));
     };
-    const out = ends("source", "target"), back = ends("target", "source");
+    // Without the flag a current note hides what history says about it, never what it links to.
+    const out = ends("source", "target");
+    const back = ends("target", "source").filter(node => history || historical(center) || !historical(node));
     return {center, out, back, neighbors: [...new Set([...out, ...back])]};
-  }, [nearby.data, id]);
+  }, [nearby.data, id, history]);
   if (nearby.isPending) return <p role="status">Loading links…</p>;
   if (nearby.isError || !links) return <div><p role="status">Links are unavailable.</p>
     <button type="button" onClick={() => void nearby.refetch()}>Retry links</button></div>;
