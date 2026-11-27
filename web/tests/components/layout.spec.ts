@@ -1,11 +1,16 @@
 import { expect, test, type Page } from "@playwright/test";
 
-const overview = {core: [], core_words: 0, core_truncated: false, areas: ["research"], hubs: []};
+const summary = {id: "a", title: "A", summary: "A fixture summary."};
+const overview = {core: [{...summary, body: "Body."}], core_words: 1, core_truncated: false, areas: ["research"], hubs: [summary]};
+const node = {id: "a", title: "B", area: "research", type: "guide", priority: "P1", status: "current", sensitivity: "internal", summary: "B."};
+const note = {...node, hub: null, related: [], superseded_by: null, lang: "en", review_by: null, created: "2026-01-01",
+  updated: "2026-01-01", section: null, members: null, body: "Body.", content_hash: "a".repeat(64)};
 
 async function owner(page: Page, ceiling = "restricted") {
   await page.route("**/api/session", route => route.fulfill({json: {ceiling, csrf_token: "fixture", absolute_remaining_seconds: 28800}}));
   await page.route("**/api/overview", route => route.fulfill({json: overview}));
-  await page.route("**/api/graph?**", route => route.fulfill({json: {nodes: [], edges: []}}));
+  await page.route("**/api/graph?**", route => route.fulfill({json: {nodes: [node], edges: [], center: null}}));
+  await page.route("**/api/notes/a**", route => route.fulfill({json: note}));
 }
 
 test("the icon rail names every destination and shows a tooltip on focus", async ({page}) => {
@@ -35,9 +40,8 @@ test("the icon rail names every destination and shows a tooltip on focus", async
 
 test("note pages keep the Notes destination current", async ({page}) => {
   await owner(page);
-  await page.route("**/api/notes/**", route => route.fulfill({status: 404, json: {}}));
-  await page.goto("/notes/example-note");
-  await expect(page.getByRole("link", {name: "Notes", exact: true})).toHaveAttribute("aria-current", "page");
+  await page.goto("/notes/a");
+  await expect(page.getByRole("link", {name: "Notes", exact: true})).toHaveAttribute("aria-current", "true");
 });
 
 test("the top bar shows the session ceiling and signs out", async ({page}) => {
@@ -116,19 +120,82 @@ test("text and control colors keep their contrast on every surface", async ({pag
   expect(contrast("on-accent", "accent")).toBeGreaterThanOrEqual(4.5);
 });
 
-for (const path of ["/", "/search", "/graph"]) {
-  test(`controls on ${path} are 44px targets and fit a narrow screen`, async ({page}) => {
+for (const path of ["/", "/search", "/graph", "/editor/a"]) {
+  test(`controls on ${path} are bounded 44px targets that fit a narrow screen`, async ({page}) => {
     await owner(page);
-    await page.route("**/api/search?**", route => route.fulfill({json: {results: []}}));
+    await page.route("**/api/search?**", route => route.fulfill({json: {results: [node]}}));
     await page.setViewportSize({width: 360, height: 780});
     await page.goto(path);
     await expect(page.getByRole("main").getByRole("heading", {level: 1})).toBeVisible();
+    if (path === "/") await expect(page.getByRole("link", {name: "A", exact: true}).first()).toBeVisible();
+    if (path === "/search" || path === "/graph") await expect(page.getByRole("link", {name: "B", exact: true})).toBeVisible();
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
     const small = await page.evaluate(() => [...document.querySelectorAll<HTMLElement>(
-      "button, select, input:not([type=checkbox]):not([type=radio]), label:has(> input[type=checkbox]), label:has(> input[type=radio]), .topbar a, .rail a")]
+      "button, select, input:not([type=checkbox]):not([type=radio]), label:has(> input[type=checkbox]), label:has(> input[type=radio]), .topbar a, .rail a, .overview-notes a, .search-results h3 a, .graph-list li a, .editor-head a")]
       .filter(node => node.offsetParent !== null)
-      .map(node => ({node: node.outerHTML.slice(0, 120), height: node.getBoundingClientRect().height}))
-      .filter(item => item.height < 43.5));
+      .map(node => ({node: node.outerHTML.slice(0, 120), box: node.getBoundingClientRect()}))
+      .filter(({box}) => box.height < 43.5 || box.width < 43.5)
+      .map(({node, box}) => ({node, width: box.width, height: box.height})));
     expect(small).toEqual([]);
+    // Every bordered control uses the 3:1 boundary or its own accent, never the decorative line.
+    const faint = await page.evaluate(() => {
+      const probe = document.body.appendChild(document.createElement("i"));
+      probe.className = "line-probe";
+      probe.style.color = "var(--line)";
+      const line = getComputedStyle(probe).color;
+      probe.remove();
+      return [...document.querySelectorAll<HTMLElement>("main button, main select, main input:not([type=checkbox]):not([type=radio]), main textarea")]
+        .filter(node => { const style = getComputedStyle(node); return node.offsetParent !== null && style.borderTopStyle !== "none" &&
+          parseFloat(style.borderTopWidth) > 0 && style.borderTopColor === line; })
+        .map(node => node.outerHTML.slice(0, 120));
+    });
+    expect(faint).toEqual([]);
   });
 }
+
+test("narrow screens keep the focus order of the top bar", async ({page}) => {
+  await owner(page);
+  await page.setViewportSize({width: 320, height: 700});
+  await page.goto("/");
+  const stops = [page.getByRole("link", {name: "Cérebro home"}), page.getByRole("searchbox", {name: "Quick search"}),
+    page.getByRole("button", {name: "Sign out"})];
+  const tops: number[] = [];
+  for (const stop of stops) tops.push((await stop.boundingBox())!.y);
+  expect(tops).toEqual([...tops].sort((a, b) => a - b));
+  expect((await stops[2].boundingBox())!.height).toBeLessThan(50);
+});
+
+test("an empty quick search keeps the saved search", async ({page}) => {
+  await owner(page);
+  await page.route("**/api/search?**", route => route.fulfill({json: {results: []}}));
+  await page.goto("/search");
+  const field = page.getByRole("searchbox", {name: "Search notes"});
+  await field.fill("retained");
+  await field.press("Enter");
+  await page.getByRole("link", {name: "Graph", exact: true}).click();
+  await page.getByRole("searchbox", {name: "Quick search"}).press("Enter");
+  await expect(page).toHaveURL(/\/graph$/);
+});
+
+test("Escape dismisses a rail tooltip until the destination is entered again", async ({page}) => {
+  await owner(page);
+  await page.goto("/");
+  const graph = page.getByRole("link", {name: "Graph", exact: true});
+  const tooltip = graph.locator(".rail-tooltip");
+  await graph.hover();
+  await expect(tooltip).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(tooltip).toBeHidden();
+  await page.mouse.move(600, 600);
+  await graph.hover();
+  await expect(tooltip).toBeVisible();
+});
+
+test("the search shortcut works when AltGr types the slash", async ({page}) => {
+  await owner(page);
+  await page.goto("/");
+  await expect(page.getByRole("heading", {name: "Overview", exact: true})).toBeVisible();
+  await page.evaluate(() => window.dispatchEvent(new KeyboardEvent("keydown",
+    {key: "/", ctrlKey: true, altKey: true, modifierAltGraph: true, cancelable: true})));
+  await expect(page.getByRole("searchbox", {name: "Quick search"})).toBeFocused();
+});

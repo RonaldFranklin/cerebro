@@ -13,7 +13,7 @@
 .editor-property-grid { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 0 .7rem; }
 .editor-property-grid :is(.field-hub, .field-related, .field-superseded_by, .field-review_by) { grid-column: 1 / -1; }
 .editor-switch { gap: .2rem; }
-.editor-switch button, .editor-conflict button { background: var(--ground); color: var(--muted); border: 1px solid var(--line); border-radius: .35rem; padding: .42rem .65rem; }
+.editor-switch button, .editor-conflict button { background: var(--ground); color: var(--muted); border: 1px solid var(--line-strong); border-radius: .35rem; padding: .42rem .65rem; }
 .editor-switch button[aria-pressed="true"] { background: var(--raised); color: var(--accent); border-color: var(--accent); }
 .owner-code { background: var(--ground); color: var(--text); border: 1px solid var(--line-strong); border-radius: .35rem; overflow: hidden; }
 .owner-code:focus-within { border-color: var(--accent); }
@@ -25,6 +25,7 @@
 .owner-code .cm-tooltip-autocomplete ul li[aria-selected] { background: var(--accent); color: var(--ground); }
 .editor-preview { min-height: 15rem; padding: 1rem; border: 1px solid var(--line); border-radius: .35rem; }
 .field-problem, .editor-feedback { color: var(--amber); line-height: 1.5; margin-block: .5rem; }
+.field-problem { color: var(--error); }
 .field-problem { font-size: .85rem; }
 .editor-conflict { border-color: var(--amber); margin-bottom: 1rem; }
 .editor-conflict > p, .editor-conflict > button, .comparison-list { margin-top: .85rem; }

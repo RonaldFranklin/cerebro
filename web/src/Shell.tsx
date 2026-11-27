@@ -16,12 +16,31 @@ function typing(target: EventTarget | null) {
   return target instanceof HTMLElement && (target.isContentEditable || target.matches("input, textarea, select"));
 }
 
+/** A tooltip stays dismissed until the pointer or focus leaves its destination. */
+function useDismissedTooltip() {
+  const [dismissed, setDismissed] = useState<string | null>(null);
+  const [hovered, setHovered] = useState<string | null>(null);
+  useEffect(() => {
+    if (!hovered) return;
+    const escape = (event: KeyboardEvent) => { if (event.key === "Escape") setDismissed(hovered); };
+    window.addEventListener("keydown", escape);
+    return () => window.removeEventListener("keydown", escape);
+  }, [hovered]);
+  return (path: string) => {
+    const enter = () => setHovered(path);
+    const leave = () => { setHovered(null); setDismissed(null); };
+    return {"data-dismissed": dismissed === path || undefined, onMouseEnter: enter, onFocus: enter, onMouseLeave: leave, onBlur: leave};
+  };
+}
+
 function QuickSearch({ onSearch }: { onSearch: (query: string) => void }) {
   const [query, setQuery] = useState("");
   const input = useRef<HTMLInputElement>(null);
   useEffect(() => {
     function shortcut(event: KeyboardEvent) {
-      if (event.key !== "/" || event.defaultPrevented || event.altKey || event.ctrlKey || event.metaKey || typing(event.target)) return;
+      // Some layouts type "/" with AltGr, which browsers may report as Control and Alt.
+      const modified = !event.getModifierState("AltGraph") && (event.altKey || event.ctrlKey);
+      if (event.key !== "/" || event.defaultPrevented || modified || event.metaKey || typing(event.target)) return;
       // A workspace hidden behind a session check cannot take focus.
       if (!input.current?.checkVisibility()) return;
       event.preventDefault();
@@ -32,13 +51,16 @@ function QuickSearch({ onSearch }: { onSearch: (query: string) => void }) {
   }, []);
   function submit(event: FormEvent) {
     event.preventDefault();
+    // A blank submit must not reset the search kept for the session.
+    if (!query.trim()) return;
     onSearch(query.trim());
     setQuery("");
   }
   return <form className="quick-search" role="search" aria-label="Quick search" onSubmit={submit}>
     <Icon name="search" />
     {/* 256 UTF-16 units always fit the 1,024-byte search limit. */}
-    <input ref={input} type="search" aria-label="Quick search" aria-keyshortcuts="/" placeholder="Search notes, ids, summaries…"
+    <label htmlFor="quick-search">Quick search</label>
+    <input ref={input} id="quick-search" type="search" aria-keyshortcuts="/" placeholder="Search notes, ids, summaries…"
       autoComplete="off" maxLength={256} value={query} onChange={event => setQuery(event.target.value)} />
     <kbd aria-hidden="true">/</kbd>
   </form>;
@@ -63,6 +85,7 @@ export function Shell({ path, ceiling, onNavigate, onSearch, onLogout, children 
     onNavigate(anchor.pathname + anchor.search + anchor.hash);
   }
   const section = "/" + path.split(/[?#]/, 1)[0].split("/")[1];
+  const tooltip = useDismissedTooltip();
 
   return <div className="workspace" onClick={follow}>
     <a className="skip-link" href="#workspace-main">Skip to content</a>
@@ -76,8 +99,9 @@ export function Shell({ path, ceiling, onNavigate, onSearch, onLogout, children 
     </header>
     <nav className="rail" aria-label="Workspace">
       {destinations.filter(item => !("restricted" in item) || ceiling === "restricted").map(item =>
-        <a key={item.path} href={item.path} aria-label={item.label}
-          aria-current={(item.sections as readonly string[]).includes(section) ? "page" : undefined}>
+        <a key={item.path} href={item.path} aria-label={item.label} {...tooltip(item.path)}
+          aria-current={path.split(/[?#]/, 1)[0] === item.path ? "page" :
+            (item.sections as readonly string[]).includes(section) ? "true" : undefined}>
           <Icon name={item.icon} />
           <span className="rail-tooltip" aria-hidden="true">{item.label}</span>
         </a>

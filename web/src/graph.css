@@ -1,7 +1,7 @@
 .graph-view { max-width: 76rem; margin: 0 auto; }
 .graph-heading, .graph-map-heading, .graph-list li, .graph-settings, .graph-legend, .graph-legend > span { display: flex; align-items: center; }
 .graph-heading, .graph-map-heading { justify-content: space-between; gap: .7rem; }
-.graph-action, .graph-view button:not(.graph-action) { border: 1px solid var(--line); color: var(--accent); border-radius: .4rem; background: var(--surface); padding: .4rem .7rem; }
+.graph-action, .graph-view button:not(.graph-action) { border: 1px solid var(--line-strong); color: var(--accent); border-radius: .4rem; background: var(--surface); padding: .4rem .7rem; }
 .graph-controls { padding-block: 1.25rem; }
 .graph-filter-row { display: grid; grid-template-columns: repeat(5,minmax(0,1fr)); gap: .7rem; }
 .graph-filter-row label { font-size: .84rem; font-weight: 570; }

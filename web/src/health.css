@@ -9,7 +9,7 @@
 .health-summary { background: var(--surface); }
 .health-view [data-tone="warning"] { color: var(--amber); }
 .health-view [data-tone="error"] { color: var(--error); }
-.health-view [data-tone="ok"] { color: var(--accent); }
+.health-view [data-tone="ok"] { color: var(--success); }
 .health-index dl { margin: 1rem 0 0; padding: 1.15rem 0; display: grid; grid-template-columns: repeat(3,1fr); border-block: 1px solid var(--line); }
 .health-index dl > div + div { padding-left: 1rem; border-left: 1px solid var(--line); }
 .health-index dd { margin: .4rem 0 0; font-weight: 550; }
