@@ -101,8 +101,9 @@ Approved on 2026-11-27. [Plan](plans/phase-8.md).
 
 1. ✅ Opt-in full owner access on the public listener (default `internal`)
    ([ADR-0029](adr/0029-owner-browser-full-access-on-public-listener.md)).
-2. 🟨 Dark theme, self-hosted fonts and the new layout.
-3. ⬜ Redesigned screens: graph, note, edit, Recent changes, health and sign in.
+2. ✅ Dark theme, self-hosted fonts and the new layout.
+3. 🟨 Redesigned screens: graph, note, edit, Recent changes, health and sign in.
+   [New data they need](plans/phase-8-data.md) is approved and being built.
 4. ⬜ Live agent activity in the graph (needs an ADR).
 
 **Acceptance:** each step keeps backend and browser tests green; no new dependency without owner review.

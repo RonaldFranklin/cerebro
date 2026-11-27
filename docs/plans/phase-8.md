@@ -18,8 +18,9 @@ independent review, and keeps backend and browser tests green.
 - No new dependency without owner review ([ADR-0013](../adr/0013-stack-and-dependency-policy.md)).
 - Fonts, approved by the owner on 2026-11-27: `@fontsource-variable/space-grotesk`, `inter` and `jetbrains-mono`
   5.3.0, importing only the `latin` subset.
-- Health additions (last backup, token table): their design is proposed to the owner before implementation. Token
-  "last used" and 24-hour activity are counters in the state database and record no request content.
+- New data for the screens is designed in [phase-8-data.md](phase-8-data.md), approved by the owner on 2026-11-27 and
+  built in the order A and G, F, B, C, D. Token "last used" and 24-hour activity are counters in a separate
+  `usage.sqlite` in the state directory and record no request content. The editor has no commit message field.
 
 ## Layout decisions (step 2)
 
@@ -52,6 +53,16 @@ directions and a property grid.
 Step 3c: both screens with the data that exists, implemented and tested. The superseded badge, last backup,
 entrances and the token table wait for the data design. The author filter covers the loaded changes.
 
+## Live synapses (step 4)
+
+1. Design its event together with the usage counters of part C
+   ([shared design](phase-8-data.md#shared-design-with-the-live-channel-step-4)).
+2. Propose the ADR for the live channel (SSE for the owner session only, filtered by the session ceiling, `connect-src
+   'self'`, events with note id, verb and client only, bounded connections, no token logging). Nothing is implemented
+   before the owner accepts it.
+3. Backend channel, then the pulse on the node or edge and the **Live activity** feed under the graph's note panel,
+   with names shown on active notes. Under `prefers-reduced-motion` the highlight is static.
+
 ## Left for later
 
 - Verify the Cloudflare Access assertion (JWT) in the application, so that `restricted` on the public listener does
@@ -62,4 +73,10 @@ entrances and the token table wait for the data design. The author filter covers
 | Step | Pull request | State |
 |---|---|---|
 | 1 | #107 | Merged on 2026-11-27 after owner review |
-| 2 | #108 | Theme tokens, top bar, icon rail, touch targets and self-hosted fonts: implemented, tested and independently reviewed; awaiting owner review (new dependency) |
+| 2 | #108 | Merged on 2026-11-27 after owner review. The image build is checked at deployment |
+| 3a | #110 | Graph and sign-in: merged on 2026-11-27 |
+| 3b | #111 | Note screen: merged on 2026-11-27 |
+| 3c | #112, #113 | Recent changes and Health with existing data: merged on 2026-11-27 |
+| 3d | #109 | Data design approved. Parts A, G, F, B, C: not started |
+| 3e | | Edit screen with live validation (part D): not started |
+| 4 | | Live synapses: not started |
