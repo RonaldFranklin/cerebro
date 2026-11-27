@@ -44,8 +44,9 @@ OAuth (such as the ChatGPT and claude.ai web connectors) cannot connect yet.
 This runs one instance on your machine, reachable only from that machine, and connects a first agent.
 
 **You need:** Linux or WSL 2; Docker Engine 28+ with Compose v2, usable without `sudo`; Git; Python 3.10+; `flock`;
-and an MCP client. Ports 8765 and 8766 must be free. Run the commands in Bash, as a regular user (not root), in one
-terminal. Stop at the first command that fails.
+and an MCP client. Ports 8765 and 8766 must be free (with Docker Desktop, on Windows too). If one is taken, change
+`PRIVATE_PORT` or `PUBLIC_PORT` in step 2 and use your port in the later commands. Run the commands in Bash, as a
+regular user (not root), in one terminal. Stop at the first command that fails.
 
 ### 1. Get the code and choose where data lives
 
@@ -162,16 +163,19 @@ from Cérebro.
 ### 6. Open the web UI (optional)
 
 The browser login requires HTTPS. Any TLS reverse proxy that serves `https://localhost:8443`, keeps the `Host`
-header and forwards to `127.0.0.1:8765` works. With [Caddy](https://caddyserver.com/) in Docker, using a local
-certificate that your browser will warn about:
+header and forwards to `127.0.0.1:8765` works. For example, take the [Caddy](https://caddyserver.com/) binary out of
+its Docker image and run it on your machine (no root needed):
 
 ```bash
-docker run --rm --name cerebro-tls --network host caddy:2.11.8 \
-  caddy reverse-proxy --disable-redirects --from localhost:8443 --to 127.0.0.1:8765
+cid=$(docker create caddy:2.11.8)
+docker cp "$cid:/usr/bin/caddy" "$CEREBRO_HOME/caddy" && docker rm "$cid" > /dev/null
+printf '{\n  admin off\n  auto_https disable_redirects\n  skip_install_trust\n}\nhttps://localhost:8443 {\n  reverse_proxy 127.0.0.1:8765\n}\n' \
+  > "$CEREBRO_HOME/Caddyfile"
+"$CEREBRO_HOME/caddy" run --config "$CEREBRO_HOME/Caddyfile" --adapter caddyfile
 ```
 
-Open `https://localhost:8443`, sign in with your owner password, and stop the proxy with Ctrl+C. Docker Desktop
-needs host networking enabled in its settings for `--network host`.
+Open `https://localhost:8443`, accept the browser's warning about the local certificate, and sign in with your owner
+password. Stop the proxy with Ctrl+C.
 
 ### Everyday commands
 
