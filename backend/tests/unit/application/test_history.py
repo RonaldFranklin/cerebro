@@ -85,6 +85,14 @@ def test_a_change_that_supersedes_a_note_is_reported_as_superseded(
     assert history.detail(HistoryRequest(port.revision), owner).change.operation == operation
 
 
+def test_a_note_created_already_superseded_is_reported_as_created() -> None:
+    world = standard_world()
+    base = make_note(id=NoteId("server-ssh-access"), sensitivity=Sensitivity.INTERNAL)
+    created = replace(base, status=Status.SUPERSEDED, superseded_by=NoteId("gone-note"))
+    history = OwnerHistory(world.notes, FakeHistory(None, created))
+    assert [row.operation for row in history.list(ctx(owner=True)).changes] == ["create"]
+
+
 def _detail(before_body: str, after_body: str) -> ChangeDetail:
     world = standard_world()
     base = make_note(id=NoteId("server-ssh-access"), sensitivity=Sensitivity.INTERNAL, body=before_body)

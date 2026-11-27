@@ -1,3 +1,5 @@
+from typing import Literal
+
 from cerebro.application.history import ChangeUnavailable, HistoryVersion
 from cerebro.domain.note import Note, NoteId
 
@@ -6,7 +8,7 @@ class FakeHistory:
     revision = "a" * 40
     parent = "b" * 40
 
-    def __init__(self, before: Note, after: Note) -> None:
+    def __init__(self, before: Note | None, after: Note) -> None:
         self.before = before
         self.after = after
         self.unreadable: set[str] = set()
@@ -26,7 +28,8 @@ class FakeHistory:
         self._require_known(revision)
         if revision != self.revision:
             return None
-        return HistoryVersion(revision, self.parent, self.after.id, "codex", "2026-11-26T12:00:00+00:00", "update")
+        operation: Literal["create", "update"] = "create" if self.before is None else "update"
+        return HistoryVersion(revision, self.parent, self.after.id, "codex", "2026-11-26T12:00:00+00:00", operation)
 
     def _require_known(self, revision: str) -> None:
         if revision not in (self.revision, self.parent):
