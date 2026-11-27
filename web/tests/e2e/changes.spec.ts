@@ -3,7 +3,7 @@ import { test } from "./fixture";
 
 test("the private owner can trace the agent update from history to its note", async ({page, context, demo}) => {
   await page.goto(demo.private_origin);
-  const password = page.getByLabel("Password", {exact:true});
+  const password = page.getByLabel("Owner password", {exact:true});
   await password.fill(demo.password);
   await password.press("Enter");
   await page.getByRole("navigation").getByRole("link", {name:"Recent changes"}).click();
@@ -24,8 +24,8 @@ test("the private owner can trace the agent update from history to its note", as
 
   const lower = await context.newPage();
   await lower.goto(demo.public_origin + "/changes");
-  await lower.getByLabel("Password", {exact:true}).fill(demo.password);
-  await lower.getByLabel("Password", {exact:true}).press("Enter");
+  await lower.getByLabel("Owner password", {exact:true}).fill(demo.password);
+  await lower.getByLabel("Owner password", {exact:true}).press("Enter");
   await expect(lower.getByText("This view requires a restricted owner session.")).toBeVisible();
   await expect(lower.getByRole("navigation").getByRole("link", {name:"Recent changes"})).toHaveCount(0);
   for (const path of ["/api/changes",new URL(detail.url()).pathname]) {

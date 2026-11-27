@@ -131,3 +131,71 @@ test("connections mount on request and distinguish notes sharing a title", async
   }
   await expect(row).toContainText("Index (guide) → Index (catalog)");
 });
+
+test("selecting a note shows its panel with open, edit and neighborhood actions", async ({page}) => {
+  await session(page);
+  await page.route("**/api/graph**", route => route.fulfill({json:{nodes:[guide, hub], edges:[edge], center:null}}));
+  await page.route("**/api/notes/guide**", route => route.fulfill({json:{...guide, updated:"2026-11-20", content_hash:"a".repeat(64)}}));
+  await page.route("**/api/notes/guide/neighbors**", route => route.fulfill({json:{nodes:[guide, hub], edges:[edge], center:"guide"}}));
+  await page.goto("/graph");
+  const panel = page.getByRole("complementary", {name:"Selected note"});
+  await expect(panel).toContainText("Select a note");
+  const select = page.getByRole("button", {name:"Select Field guide", exact:true});
+  await select.click();
+  await expect(select).toHaveAttribute("aria-current", "true");
+  await expect(panel.getByRole("heading", {name:"Field guide", exact:true})).toBeVisible();
+  for (const text of ["research · guide", "P1", "internal", "verified"]) await expect(panel.getByText(text, {exact:true})).toBeVisible();
+  await expect(panel.locator("time")).toHaveAttribute("datetime", "2026-11-20");
+  await expect(panel.getByRole("link", {name:"Open note"})).toHaveAttribute("href", "/notes/guide");
+  await expect(panel.getByRole("link", {name:"Edit"})).toHaveAttribute("href", "/editor/guide");
+  // A filter that hides the selected note clears the panel.
+  await page.getByRole("combobox", {name:"Type", exact:true}).selectOption("hub");
+  await expect(panel).toContainText("Select a note");
+  await page.getByRole("combobox", {name:"Type", exact:true}).selectOption("");
+  await panel.getByRole("button", {name:"Show neighborhood"}).click();
+  await expect(page.getByRole("button", {name:"Back to global graph"})).toBeVisible();
+});
+
+test("keyboard focus stays visible and follows the selection", async ({page}) => {
+  await session(page);
+  await page.route("**/api/graph**", route => route.fulfill({json:{nodes:[guide, hub], edges:[edge], center:null}}));
+  await page.route("**/api/notes/guide**", route => route.fulfill({json:{...guide, summary:"Redacted summary.", updated:"2026-11-20"}}));
+  await page.route("**/api/notes/guide/neighbors**", route => route.fulfill({json:{nodes:[guide, hub], edges:[edge], center:"guide"}}));
+  await page.setViewportSize({width:700, height:700});
+  await page.goto("/graph");
+  const panel = page.getByRole("complementary", {name:"Selected note"});
+  const select = page.getByRole("button", {name:"Select Field guide", exact:true});
+  await select.focus();
+  await select.press("Enter");
+  const title = panel.getByRole("heading", {name:"Field guide", exact:true});
+  await expect(title).toBeFocused();
+  await expect(title).toBeInViewport();
+  await expect(select).toHaveAttribute("aria-current", "true");
+  // The full read redacts what the caller may not see, so its text wins over the graph's.
+  await expect(panel.getByText("Redacted summary.")).toBeVisible();
+  await select.press("Enter");
+  await expect(title).toBeFocused();
+  await panel.getByRole("button", {name:"Show neighborhood"}).press("Enter");
+  const heading = page.getByRole("heading", {name:"Graph", exact:true});
+  await expect(heading).toBeFocused();
+  expect((await heading.boundingBox())!.height).toBeGreaterThan(20);
+  await expect(panel.getByRole("button", {name:"Show neighborhood"})).toHaveCount(0);
+});
+
+test("filters name their dimension and areas keep distinct colors without the catalog", async ({page}) => {
+  await session(page);
+  const other = {...hub, area:"security"};
+  let reads = 0;
+  await page.route("**/api/graph**", route => ++reads === 1
+    ? route.fulfill({json:{nodes:[guide, other], edges:[edge], center:null}}) : route.fulfill({status:503, json:{}}));
+  await page.route("**/api/notes/guide/neighbors**", route => route.fulfill({json:{nodes:[guide, other], edges:[edge], center:"guide"}}));
+  await page.goto("/graph");
+  await expect(page.getByRole("option", {name:"Type: guide", exact:true})).toHaveCount(1);
+  await page.getByRole("button", {name:"Explore Field guide", exact:true}).click();
+  await page.getByLabel("Include history").check();
+  await expect(page.getByText("Filter options are unavailable.")).toBeVisible();
+  const fills = await page.getByRole("group", {name:"Graph legend"}).locator("circle[r='5']").evaluateAll(
+    dots => dots.map(dot => dot.getAttribute("fill")));
+  expect(fills).toHaveLength(2);
+  expect(new Set(fills).size).toBe(2);
+});

@@ -2,7 +2,7 @@ import { expect, type Page } from "@playwright/test";
 import { test } from "./fixture";
 
 async function signIn(page: Page, password: string) {
-  const field = page.getByLabel("Password", { exact: true });
+  const field = page.getByLabel("Owner password", { exact: true });
   await field.focus();
   await field.fill(password);
   await field.press("Enter");
@@ -38,9 +38,9 @@ test("owner sessions stay on their issuing HTTPS listener", async ({ page, conte
   const signOut = page.getByRole("button", { name: "Sign out", exact: true });
   await signOut.focus();
   await page.keyboard.press("Enter");
-  await expect(page.getByLabel("Password", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("Owner password", { exact: true })).toBeVisible();
   await page.reload();
-  await expect(page.getByLabel("Password", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("Owner password", { exact: true })).toBeVisible();
   expect(await page.evaluate(async () => (await fetch("/api/session")).status)).toBe(401);
   expect(await publicPage.evaluate(async () => (await fetch("/api/session")).status)).toBe(200);
 });

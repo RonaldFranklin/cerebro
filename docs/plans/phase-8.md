@@ -31,6 +31,16 @@ independent review, and keeps backend and browser tests green.
   editor.
 - The built UI, and therefore the image, ships each font's OFL text under `licenses/`, copied from its package.
 
+## Graph and sign-in decisions (step 3)
+
+Step 3a (#110): graph and sign-in, implemented and tested.
+
+- Filters keep every former dimension and start at "all", including status.
+- A click selects a note; the neighborhood view opens from the panel or the note list, which stays below the graph
+  as the keyboard and no-WebGL path.
+- Unnamed areas take a palette in sorted order, so a new area can change the color of another unnamed one.
+- Labels of notes with live activity and the activity feed belong to step 4.
+
 ## Left for later
 
 - Verify the Cloudflare Access assertion (JWT) in the application, so that `restricted` on the public listener does

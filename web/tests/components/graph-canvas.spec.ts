@@ -4,8 +4,9 @@ import { colorFor, sizeFor } from "../../src/graphAppearance";
 test("priority size is strictly descending and a category has a stable color", () => {
   const sizes = ["P0", "P1", "P2", "P3"].map(sizeFor);
   expect(sizes.every((size, i) => size > 0 && (i === 0 || sizes[i - 1] > size))).toBe(true);
-  expect(colorFor("research")).toBe(colorFor("research"));
-  expect(colorFor("research")).not.toBe(colorFor("infrastructure"));
+  const areas = ["research", "infrastructure"];
+  expect(colorFor("research", areas)).toBe(colorFor("research", [...areas].reverse()));
+  expect(colorFor("research", areas)).not.toBe(colorFor("infrastructure", areas));
 });
 
 test("the isolated node can be picked on the real Sigma canvas after layout", async ({ page }) => {

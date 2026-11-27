@@ -23,7 +23,7 @@ test("the three Latin fonts are served by the application under the production C
       status: response.status(), type: response.headers()["content-type"]});
   });
   await page.goto(demo.private_origin);
-  const password = page.getByLabel("Password", {exact:true});
+  const password = page.getByLabel("Owner password", {exact:true});
   await password.fill(demo.password);
   await password.press("Enter");
   await expect(page.getByRole("heading", {name:"Overview", exact:true})).toBeVisible();

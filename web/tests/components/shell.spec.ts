@@ -32,7 +32,7 @@ test("lower-ceiling navigation omits private destinations and empty overview sho
 test("login provides a labelled password field and keyboard submission", async ({ page }) => {
   await page.route("**/api/session", route => route.fulfill({ status: 401, json: {} }));
   await page.goto("/");
-  const password = page.getByLabel("Password", { exact: true });
+  const password = page.getByLabel("Owner password", { exact: true });
   await expect(password).toHaveAttribute("type", "password");
   await password.focus();
   await page.keyboard.press("Tab");

@@ -309,7 +309,8 @@ an error naming its path and version, and is never deleted, upgraded or repaired
 - React + TypeScript + Vite. Data fetching through a small `api/` layer (the UI's port); components never call
   `fetch` directly. TanStack Query for caching.
 - **Graph:** Sigma.js (WebGL) + graphology; ForceAtlas2 layout in a web worker. Node size by priority,
-  color by area or type (toggle), filters by priority/status/area/sensitivity, local graph (N hops) on click.
+  color by area or type (toggle), filters by type/priority/status/area/sensitivity; a click selects a note in a side
+  panel, which opens its local graph (N hops).
 - **Reader:** notes rendered as real HTML with `lang` set so browser translation works. Code blocks, inline
   code, paths, commands, note ids and links carry `translate="no"`.
 - **Recent changes:** a restricted owner session sees who changed each note, when, and a bounded

@@ -2,29 +2,46 @@ import Graph from "graphology";
 import type Sigma from "sigma";
 import { useLayoutEffect, useRef, useState } from "react";
 import type { GraphData } from "./visibleGraph";
-import type { LayoutInput } from "./graphLayout.worker";
-import { colorFor, sizeFor } from "./graphAppearance";
+import type { LayoutInput } from "./graphLayout";
+import { sizeFor } from "./graphAppearance";
 import "./graphCanvas.css";
 
 interface Props {
   data: GraphData;
   colorBy: "area" | "type";
+  colorOf: (value: string) => string;
+  selected: string;
   onSelect: (id: string) => void;
 }
 
-export function GraphCanvas({data, colorBy, onSelect}: Props) {
+/** Names are drawn for hubs and the selected note only; hubs carry a white ring. */
+function emphasis(hub: boolean, selected: boolean) {
+  return {
+    labelVisibility: hub || selected ? "visible" : "hidden",
+    ringVisibility: hub || selected ? "visible" : "hidden",
+    ringColor: selected ? "#5ce1e6" : "#e6edf5",
+    // The selection also differs in shape, not only in color: a wider ring further out.
+    ringWidth: selected ? 3 : 2,
+    ringPadding: selected ? 5 : 2,
+  };
+}
+
+export function GraphCanvas({data, colorBy, colorOf, selected, onSelect}: Props) {
   const surface = useRef<HTMLDivElement>(null);
   const renderer = useRef<Sigma | null>(null);
   const select = useRef(onSelect);
-  const color = useRef(colorBy);
+  const color = useRef({colorBy, colorOf});
+  const chosen = useRef(selected);
   const [status, setStatus] = useState<"loading" | "ready" | "fallback">("loading");
 
   useLayoutEffect(() => { select.current = onSelect; }, [onSelect]);
   useLayoutEffect(() => {
-    color.current = colorBy;
+    color.current = {colorBy, colorOf};
+    chosen.current = selected;
     const graph = renderer.current?.getGraph();
-    if (graph) graph.updateEachNodeAttributes((_key, attrs) => ({...attrs, color: colorFor(attrs[colorBy])}));
-  }, [colorBy]);
+    if (graph) graph.updateEachNodeAttributes((_key, attrs) => ({...attrs, color: colorOf(attrs[colorBy]),
+      ...emphasis(attrs.type === "hub", attrs.id === selected)}));
+  }, [colorBy, colorOf, selected]);
 
   useLayoutEffect(() => {
     const host = surface.current;
@@ -66,8 +83,9 @@ export function GraphCanvas({data, colorBy, onSelect}: Props) {
           if (positions.length !== data.nodes.length * 2 || !positions.every(Number.isFinite)) { fallback(); return; }
           const graph = new Graph({multi:true});
           data.nodes.forEach((node, i) => graph.addNode(i, {
-            x:positions[i * 2], y:positions[i * 2 + 1], label:node.title, area:node.area, type:node.type,
-            color:colorFor(node[color.current]), size:sizeFor(node.priority),
+            x:positions[i * 2], y:positions[i * 2 + 1], label:node.title, area:node.area, type:node.type, id:node.id,
+            color:color.current.colorOf(node[color.current.colorBy]), size:sizeFor(node.priority),
+            ...emphasis(node.type === "hub", node.id === chosen.current),
           }));
           for (const [a,b] of edges) graph.addEdge(a,b);
           sigma = new SigmaRenderer(graph, host, {
@@ -80,6 +98,10 @@ export function GraphCanvas({data, colorBy, onSelect}: Props) {
               nodes: {
                 label: {attribute:"label"}, color:{attribute:"color"}, size:{attribute:"size"},
                 labelColor:"#e6edf5", labelSize:13, labelPosition:"below", cursor:"pointer",
+                labelVisibility:{attribute:"labelVisibility"},
+                backdropVisibility:{attribute:"ringVisibility"}, backdropArea:"node", backdropColor:"rgba(0, 0, 0, 0)",
+                backdropShadowBlur:0, backdropPadding:{attribute:"ringPadding"}, backdropBorderWidth:{attribute:"ringWidth"},
+                backdropBorderColor:{attribute:"ringColor"},
               },
               edges: { color:"#5a6b82", size:1.3 },
             },
