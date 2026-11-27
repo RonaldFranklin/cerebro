@@ -158,3 +158,49 @@ def test_a_missing_directory_never_raises(tmp_path: Path) -> None:
     counters = SqliteUsageCounters(tmp_path / "absent" / "usage.sqlite")
     counters.record("token-a", NOW)
     assert counters.summary(NOW) is None
+
+
+def wrong_tables_of_this_version(path: Path) -> None:
+    with closing(sqlite3.connect(path)) as db:
+        db.execute("CREATE TABLE uses (something TEXT)")
+        db.execute("PRAGMA user_version = 1")
+        db.commit()
+
+
+def test_the_right_version_with_other_tables_is_discarded(tmp_path: Path) -> None:
+    path = tmp_path / "usage.sqlite"
+    wrong_tables_of_this_version(path)
+    path.chmod(0o600)
+    counters = SqliteUsageCounters(path)
+    counters.record("token-a", NOW)
+    summary = counters.summary(NOW)
+    assert summary is not None
+    assert list(summary) == ["token-a"]
+
+
+def test_a_second_name_for_another_database_is_removed_without_touching_it(tmp_path: Path) -> None:
+    other = tmp_path / "state.sqlite"
+    with closing(sqlite3.connect(other)) as db:
+        db.execute("CREATE TABLE tokens (id TEXT)")
+        db.commit()
+    before = other.read_bytes()
+    path = tmp_path / "usage.sqlite"
+    path.hardlink_to(other)
+    counters = SqliteUsageCounters(path)
+    counters.record("token-a", NOW)
+    assert other.read_bytes() == before
+    assert sorted(p.name for p in tmp_path.iterdir() if p.name.startswith("state")) == ["state.sqlite"]
+    assert path.stat().st_ino != other.stat().st_ino
+
+
+def test_a_removed_file_is_noticed_and_recreated(tmp_path: Path) -> None:
+    path = tmp_path / "usage.sqlite"
+    counters = SqliteUsageCounters(path)
+    counters.record("token-a", NOW)
+    for suffix in ("", "-wal", "-shm"):
+        Path(str(path) + suffix).unlink(missing_ok=True)
+    counters.record("token-b", NOW)
+    summary = counters.summary(NOW)
+    assert summary is not None
+    assert list(summary) == ["token-b"]
+    assert path.is_file()

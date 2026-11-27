@@ -4,6 +4,7 @@ import asyncio
 import json
 import re
 from collections.abc import AsyncIterator, Callable, Mapping
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
 
 from mcp.server.streamable_http_manager import StreamableHTTPSessionManager
@@ -22,6 +23,7 @@ from cerebro.application.use_case import AnonymousUseCase
 from cerebro.domain.access import AccessCeiling, AccessContext
 from cerebro.domain.access import Scope as AgentScope
 
+MAX_PENDING_OBSERVATIONS = 16
 _BEARER = re.compile(r"Bearer ([a-z0-9_~-]{1,512})", re.ASCII | re.IGNORECASE)
 
 
@@ -79,14 +81,24 @@ def http_app(
         tools.server(agent), stateless=True, json_response=True, max_request_body_size=MAX_INPUT_BYTES
     )
 
-    async def _observed(ctx: AccessContext) -> None:
+    # Observation runs beside the response on its own thread: a slow disk can neither delay an agent nor occupy the
+    # workers that authenticate requests. Beyond the bound, observations are dropped.
+    observer = ThreadPoolExecutor(max_workers=1, thread_name_prefix="observe")
+    pending: set[asyncio.Future[None]] = set()
+
+    def finished(future: asyncio.Future[None]) -> None:
+        pending.discard(future)
+        if not future.cancelled() and (error := future.exception()) is not None:
+            log_failure("mcp observation", error)
+
+    def _observe(ctx: AccessContext) -> None:
         """Once for each authenticated request that is not refused for its scopes. The SDK authenticates again while
         serving it; those calls are not observed. An observer's failure never changes the response."""
-        if observe is not None:
-            try:
-                await asyncio.to_thread(observe, ctx)
-            except Exception as error:
-                log_failure("mcp observation", error)
+        if observe is None or len(pending) >= MAX_PENDING_OBSERVATIONS:
+            return
+        future = asyncio.get_running_loop().run_in_executor(observer, observe, ctx)
+        pending.add(future)
+        future.add_done_callback(finished)
 
     async def handle(scope: Scope, receive: Receive, send: Send) -> None:
         request = Request(scope, receive)
@@ -122,13 +134,13 @@ def http_app(
                     await Response("Access denied.", status_code=403)(scope, receive, send)
                     return
         except InvalidToolArguments as error:
-            await _observed(ctx)
+            _observe(ctx)
             response: Response = JSONResponse(invalid_arguments(rpc_id, error), status_code=400)
         except ValueError, RecursionError:
-            await _observed(ctx)
+            _observe(ctx)
             response = Response("Invalid request.", status_code=400)
         else:
-            await _observed(ctx)
+            _observe(ctx)
             if request.method != "POST":
                 response = Response(status_code=405, headers={"Allow": "POST"})
             elif "last-event-id" in request.headers or "mcp-session-id" in request.headers:
@@ -150,8 +162,13 @@ def http_app(
 
     @asynccontextmanager
     async def lifespan(app: Router) -> AsyncIterator[None]:
-        async with manager.run():
-            yield
+        try:
+            async with manager.run():
+                yield
+        finally:
+            if pending:
+                await asyncio.wait(pending, timeout=1)
+            observer.shutdown(wait=False, cancel_futures=True)
 
     return Router(
         routes=[Route("/mcp", RequestBodyLimitMiddleware(handle, MAX_INPUT_BYTES))],

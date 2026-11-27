@@ -2,7 +2,9 @@
 
 Disposable, unlike ``state.sqlite``: it is not backed up, it is never migrated, and a file with an unknown schema or
 damaged content is discarded and recreated. Nothing here raises: the worst outcome is lost counts. The file is
-``0600``, a link in its place is removed and never followed, and a busy database drops the count quickly.
+``0600``, a link in its place (symbolic or hard) is removed and never followed, and a busy database drops the count
+quickly. One connection stays open, so a count neither checkpoints nor syncs the disk; it is reopened after a failure
+or when the file at the path changes.
 """
 
 import contextlib
@@ -10,8 +12,8 @@ import os
 import sqlite3
 import stat
 import threading
+import weakref
 from collections.abc import Callable, Mapping
-from contextlib import closing
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Final
@@ -36,10 +38,20 @@ class _Unusable(Exception):  # noqa: N818
     """The file is not a usage database of this version: discard it."""
 
 
+def _close_all(connections: list[sqlite3.Connection]) -> None:
+    while connections:
+        with contextlib.suppress(Exception):
+            connections.pop().close()
+
+
 class SqliteUsageCounters:
     def __init__(self, path: Path | str) -> None:
         self._path = Path(os.path.abspath(path))
         self._lock = threading.Lock()
+        # Holds the open connection, if any, so it is closed when this object is collected.
+        self._held: list[sqlite3.Connection] = []
+        weakref.finalize(self, _close_all, self._held)
+        self._identity = (0, 0)
 
     def record(self, token_id: str, at: datetime) -> None:
         moment = (at - _EPOCH) // _MICROSECOND
@@ -89,19 +101,38 @@ class SqliteUsageCounters:
             # A second attempt follows only a discard, with a new empty file.
             for _ in range(2):
                 try:
-                    with closing(self._connect()) as db:
-                        return action(db)
+                    return action(self._open())
                 except _Unusable:
+                    self._close()
                     self._discard()
                 except sqlite3.DatabaseError as error:
+                    self._close()
                     if getattr(error, "sqlite_errorcode", None) not in _DAMAGE:
                         return None
                     self._discard()
             return None
         except Exception:
+            self._close()
             return None
         finally:
             self._lock.release()
+
+    def _open(self) -> sqlite3.Connection:
+        if self._held and self._present() == self._identity:
+            return self._held[0]
+        self._close()
+        self._held.append(self._connect())
+        return self._held[0]
+
+    def _present(self) -> tuple[int, int] | None:
+        try:
+            info = os.lstat(self._path)
+        except FileNotFoundError:
+            return None
+        return (info.st_dev, info.st_ino) if stat.S_ISREG(info.st_mode) and info.st_nlink == 1 else None
+
+    def _close(self) -> None:
+        _close_all(self._held)
 
     def _connect(self) -> sqlite3.Connection:
         try:
@@ -114,11 +145,15 @@ class SqliteUsageCounters:
             info = os.fstat(fd)
             if not stat.S_ISREG(info.st_mode):
                 raise OSError("not a regular file")
+            if info.st_nlink != 1:
+                # Another name for some other file: SQLite must not write through it.
+                raise _Unusable
             if stat.S_IMODE(info.st_mode) & 0o077:
                 os.fchmod(fd, 0o600)
         finally:
             os.close(fd)
-        db = sqlite3.connect(self._path, isolation_level=None, timeout=BUSY_TIMEOUT_SECONDS)
+        # Used by one thread at a time, under the lock.
+        db = sqlite3.connect(self._path, isolation_level=None, timeout=BUSY_TIMEOUT_SECONDS, check_same_thread=False)
         try:
             db.execute("PRAGMA journal_mode = WAL")
             db.execute("PRAGMA synchronous = NORMAL")
@@ -126,23 +161,25 @@ class SqliteUsageCounters:
         except BaseException:
             db.close()
             raise
+        self._identity = (info.st_dev, info.st_ino)
         return db
 
     def _ensure_schema(self, db: sqlite3.Connection) -> None:
         version = int(db.execute("PRAGMA user_version").fetchone()[0])
-        if version == SCHEMA_VERSION:
-            return
-        db.execute("BEGIN IMMEDIATE")
-        version = int(db.execute("PRAGMA user_version").fetchone()[0])
-        if version == SCHEMA_VERSION:  # another process created it
+        if version == 0:
+            db.execute("BEGIN IMMEDIATE")
+            version = int(db.execute("PRAGMA user_version").fetchone()[0])
+            if version == 0:  # still so now that no other process can be creating it
+                if db.execute("SELECT count(*) FROM sqlite_master").fetchone()[0]:
+                    raise _Unusable
+                for statement in _TABLES:
+                    db.execute(statement)
+                db.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
+                version = SCHEMA_VERSION
             db.execute("COMMIT")
-            return
-        if version != 0 or db.execute("SELECT count(*) FROM sqlite_master").fetchone()[0]:
+        tables = {row[0] for row in db.execute("SELECT sql FROM sqlite_master WHERE type = 'table'")}
+        if version != SCHEMA_VERSION or tables != set(_TABLES):
             raise _Unusable
-        for statement in _TABLES:
-            db.execute(statement)
-        db.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
-        db.execute("COMMIT")
 
     def _discard(self) -> None:
         # ``unlink`` removes a link itself and refuses a directory.

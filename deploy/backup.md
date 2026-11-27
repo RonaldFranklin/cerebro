@@ -44,7 +44,8 @@ already exists. Check for an active backup. After a timeout or power loss, confi
 and ask the owner to inspect and move the interrupted directory aside before retrying. Git pushes never include
 untracked checkout or Git metadata. The state backup reads an explicit list of files. Keep all `quarantine-*`
 directories, quarantine scratch data, the derived `index.sqlite` and the disposable `usage.sqlite` (token usage
-counters, with its `-wal` and `-shm` files) out of any external filesystem backup.
+counters, with its `-wal` and `-shm` files) out of any external filesystem backup. After a restore it may be left
+absent: the service creates it again.
 
 ## Schedule
 

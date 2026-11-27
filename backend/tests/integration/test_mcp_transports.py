@@ -8,6 +8,7 @@ import os
 import socket
 import subprocess
 import sys
+import threading
 import time
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -19,7 +20,10 @@ import pytest
 from mcp.client import Client
 from mcp.client.stdio import StdioServerParameters
 from mcp.client.streamable_http import streamable_http_client
+from starlette.testclient import TestClient
 
+from cerebro.adapters.inbound.mcp_http import MAX_PENDING_OBSERVATIONS, http_app
+from cerebro.adapters.inbound.mcp_tools import MCPTools
 from cerebro.adapters.outbound.sqlite.usage import SqliteUsageCounters
 from cerebro.application.dto import IssueAgentTokenRequest, RevokeAgentTokenRequest
 from cerebro.bootstrap.container import build_container
@@ -450,3 +454,49 @@ def test_each_authenticated_request_is_counted_once_and_refusals_never(tmp_path:
     summary = counters.summary(datetime.now(UTC))
     assert summary is not None
     assert {token: sum(usage.hourly) for token, usage in summary.items()} == {issued.token_id: 3}
+
+
+def test_a_slow_counter_never_delays_the_agent(tmp_path: Path) -> None:
+    release = threading.Event()
+    started: list[str] = []
+
+    def slow(ctx: AccessContext) -> None:
+        started.append("counting")
+        release.wait(10)
+
+    sample = make_sample_repo(tmp_path)
+    container = build_container(sample.settings)
+    container.start()
+    issued = container.use_cases.issue_agent_token.execute(
+        IssueAgentTokenRequest(
+            agent="patient", scopes=frozenset({Scope.READ}), ceiling=AccessCeiling(Sensitivity.INTERNAL)
+        ),
+        AccessContext.for_owner(AccessCeiling(Sensitivity.RESTRICTED)),
+    )
+    cases = container.use_cases
+    tools = MCPTools(
+        get_overview=cases.get_overview,
+        search_notes=cases.search_notes,
+        read_note=cases.read_note,
+        get_neighbors=cases.get_neighbors,
+        agent_write=cases.agent_write,
+        get_vocabulary=cases.get_vocabulary,
+    )
+    app = http_app(tools, cases.authenticate_token, {80: AccessCeiling(Sensitivity.INTERNAL)}, slow)
+    headers = {
+        "Authorization": "Bearer " + issued.secret,
+        "Accept": "application/json, text/event-stream",
+        "Content-Type": "application/json",
+    }
+    try:
+        with TestClient(app, base_url="http://localhost") as client:
+            begun = time.monotonic()
+            for _ in range(MAX_PENDING_OBSERVATIONS * 3):
+                assert client.post("/mcp", content=call("cerebro_overview", {}), headers=headers).status_code == 200
+            assert time.monotonic() - begun < 8
+            # One runs, a bounded number waits and the rest were dropped.
+            assert started == ["counting"]
+            release.set()
+    finally:
+        release.set()
+    assert len(started) <= MAX_PENDING_OBSERVATIONS
