@@ -33,18 +33,20 @@ if (
 command = service.get("command", [])
 if (
     service.get("entrypoint") is not None
-    or len(command) != 13
+    or len(command) != 15
     or command[:3] != ["cerebro-mcp", "--container", "--private-origin"]
     or command[4:6] != ["--enable-public", "--public-port"]
     or command[7] != "--public-origin"
     or command[9] != "--public-ceiling"
-    or command[11:] != ["--web-dist", "/opt/cerebro/web"]
+    or command[11] != "--public-browser-ceiling"
+    or command[13:] != ["--web-dist", "/opt/cerebro/web"]
     or not command[3].startswith("https://")
     or not command[8].startswith("https://")
     or command[3] == command[8]
     or command[10] not in ("public", "internal", "restricted")
+    or command[12] not in ("internal", "restricted")
 ):
-    sys.exit("Start both listeners with their origins, the public ceiling and the web directory.")
+    sys.exit("Start both listeners with their origins, the public ceilings and the web directory.")
 network = networks["default"]
 if (
     set(service.get("networks", {})) != {"default"}

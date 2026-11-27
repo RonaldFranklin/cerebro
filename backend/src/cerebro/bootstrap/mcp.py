@@ -35,8 +35,8 @@ _DOCKER_MARKER = Path("/.dockerenv")
 MAX_CONCURRENCY = 128
 """Open connections plus running requests across both listeners; beyond it new requests get 503. A single owner's
 clients use a handful, and the bound stays above cloudflared's default pool of 100 idle origin connections."""
-_PUBLIC_BROWSER_CEILING = AccessCeiling(Sensitivity.INTERNAL)
-"""The owner's browser on the public listener never exceeds this, whatever the public MCP ceiling (ADR-0028)."""
+_OWNER_CEILING = AccessCeiling(Sensitivity.RESTRICTED)
+"""The signed-in owner's browser on the private listener."""
 
 
 def _loopback(value: str) -> str:
@@ -55,6 +55,21 @@ def _port(value: str) -> int:
 
 def _ceiling(value: str) -> AccessCeiling:
     return AccessCeiling(Sensitivity(value))
+
+
+def _browser_ceiling(value: str) -> AccessCeiling:
+    level = Sensitivity(value)
+    if level is Sensitivity.PUBLIC:
+        raise ValueError("invalid browser ceiling")
+    return AccessCeiling(level)
+
+
+def _public_browser_ceiling(mcp: AccessCeiling, configured: AccessCeiling) -> AccessCeiling:
+    """``restricted`` is the owner's explicit opt-in, whatever the MCP ceiling of the public listener. Otherwise the
+    browser there never exceeds that ceiling nor ``internal`` (ADR-0029)."""
+    if configured.level is Sensitivity.RESTRICTED:
+        return configured
+    return effective_ceiling(mcp, configured)
 
 
 def _origin(value: str) -> str:
@@ -107,6 +122,13 @@ def _arguments(*, stdio: bool) -> argparse.Namespace:
             type=_ceiling,
             default=AccessCeiling(Sensitivity.INTERNAL),
             help="MCP ceiling of the public listener: public, internal (default) or restricted",
+        )
+        parser.add_argument(
+            "--public-browser-ceiling",
+            type=_browser_ceiling,
+            default=AccessCeiling(Sensitivity.INTERNAL),
+            help="owner browser on the public listener: internal (default) or restricted, which enables editing, "
+            "history and health; use restricted only behind an identity layer",
         )
         parser.add_argument("--private-origin", type=_origin, help="external private HTTPS origin")
         parser.add_argument("--public-origin", type=_origin, help="external public HTTPS origin")
@@ -175,14 +197,17 @@ def serve() -> int:
                 health_report=cases.health_report,
             )
             browsers = {}
-            for port, ceiling in listeners.items():
+            for port in listeners:
                 private = port == options.private_port
                 binding = BrowserBinding(
                     "private" if private else "public", options.private_origin if private else options.public_origin
                 )
-                api = browser_api(
-                    auth, binding, ceiling if private else effective_ceiling(ceiling, _PUBLIC_BROWSER_CEILING)
+                ceiling = (
+                    _OWNER_CEILING
+                    if private
+                    else _public_browser_ceiling(options.public_ceiling, options.public_browser_ceiling)
                 )
+                api = browser_api(auth, binding, ceiling)
                 install_browser_history(api, cases.history)
                 install_browser_reads(api, reads)
                 install_browser_edit(api, cases.owner_edit_note)

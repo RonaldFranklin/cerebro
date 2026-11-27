@@ -22,10 +22,19 @@ def checked(model: object) -> subprocess.CompletedProcess[str]:
 
 
 @pytest.mark.parametrize(
-    ("environment", "port", "public", "ceiling"),
-    [("hml", "18765", "18766", None), ("prod", "28765", "28766", "restricted")],
+    ("environment", "port", "public", "ceiling", "browser"),
+    [
+        ("hml", "18765", "18766", None, None),
+        ("prod", "28765", "28766", "restricted", "restricted"),
+        # Neither ceiling follows the other: the browser opt-in is its own variable.
+        ("prod", "28765", "28766", "restricted", None),
+        ("hml", "18765", "18766", "restricted", ""),
+        ("hml", "18765", "18766", "internal", "restricted"),
+    ],
 )
-def test_deployment_model(tmp_path: Path, environment: str, port: str, public: str, ceiling: str | None) -> None:
+def test_deployment_model(
+    tmp_path: Path, environment: str, port: str, public: str, ceiling: str | None, browser: str | None
+) -> None:
     data = tmp_path / environment
     origin = f"https://{environment}.example.invalid"
     public_origin = f"https://{environment}-public.example.invalid"
@@ -50,6 +59,7 @@ def test_deployment_model(tmp_path: Path, environment: str, port: str, public: s
             "PUBLIC_PORT": public,
             "PUBLIC_ORIGIN": public_origin,
             **({} if ceiling is None else {"PUBLIC_CEILING": ceiling}),
+            **({} if browser is None else {"PUBLIC_BROWSER_CEILING": browser}),
             "DATA_DIR": str(data),
             "APP_SHA": sha,
             "CEREBRO_GIT_NAME": "Fixture",
@@ -91,6 +101,8 @@ def test_deployment_model(tmp_path: Path, environment: str, port: str, public: s
         public_origin,
         "--public-ceiling",
         ceiling or "internal",
+        "--public-browser-ceiling",
+        browser or "internal",
         "--web-dist",
         "/opt/cerebro/web",
     ]
@@ -115,6 +127,8 @@ COMMAND = [
     "https://public.example.invalid",
     "--public-ceiling",
     "restricted",
+    "--public-browser-ceiling",
+    "restricted",
     "--web-dist",
     "/opt/cerebro/web",
 ]
@@ -135,7 +149,9 @@ PUBLIC = {"target": 18766, "published": "18766", "host_ip": "127.0.0.1"}
         {"command": [*COMMAND[:10], "secret", *COMMAND[11:]]},
         {"command": [*COMMAND[:8], "http://public.example.invalid", *COMMAND[9:]]},
         {"command": [*COMMAND[:8], COMMAND[3], *COMMAND[9:]]},
-        {"command": [*COMMAND[:4], *COMMAND[11:]], "ports": [PRIVATE]},
+        {"command": [*COMMAND[:4], *COMMAND[13:]], "ports": [PRIVATE]},
+        {"command": [*COMMAND[:12], "public", *COMMAND[13:]]},
+        {"command": [*COMMAND[:11], *COMMAND[13:]]},
         {"network_mode": "host", "ports": []},
         {"network_mode": "host"},
         {"networks": {"another": None}},

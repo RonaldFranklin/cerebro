@@ -1,6 +1,7 @@
 # ADR-0005: Sensitivity levels and access ceiling by listener and token
 
-- **Status:** accepted, amended by [ADR-0028](0028-token-decides-public-access.md) (configurable public ceiling)
+- **Status:** accepted, amended by [ADR-0028](0028-token-decides-public-access.md) (configurable public ceiling) and
+  [ADR-0029](0029-owner-browser-full-access-on-public-listener.md) (opt-in `restricted` owner browser there)
 - **Date:** 2026-11-24
 
 ## Context
@@ -16,7 +17,8 @@ see restricted content, whatever token they hold.
   - **private** (exposed only via Tailscale): ceiling `restricted`;
   - **public** (reachable only by the `cloudflared` container, disabled initially): ceiling `internal`.
     *Amended by ADR-0028:* the public ceiling is configurable (default `internal`); the owner's deployment uses
-    `restricted`, so the token ceiling decides. The owner's browser there stays capped at `internal`.
+    `restricted`, so the token ceiling decides. The owner's browser there stays capped at `internal`
+    (amended by ADR-0029: unless the owner opts in to `restricted`).
 - Each agent token has its own ceiling.
 - `effective_ceiling = min(listener_ceiling, token_ceiling)`. The token can only lower the ceiling.
 - The listener is identified by the socket the request arrived on, **never** by headers such as

@@ -1,6 +1,7 @@
 # ADR-0028: Agents use the public entrance and their token sets the ceiling
 
-- **Status:** accepted
+- **Status:** accepted; the owner browser cap on the public listener is amended by
+  [ADR-0029](0029-owner-browser-full-access-on-public-listener.md)
 - **Date:** 2026-11-26
 - **Amends:** [ADR-0005](0005-sensitivity-and-access-ceiling.md) (fixed public ceiling) and
   [ADR-0010](0010-network-access.md) (Tailscale for agents, Cloudflare later with service tokens); also the fixed

@@ -31,6 +31,9 @@ These are documented decisions. See [accepted risks](docs/architecture.md#accept
 [ADR-0028](docs/adr/0028-token-decides-public-access.md).
 
 - A leaked bearer token works, within its ceiling and scopes, until it is revoked.
+- With `PUBLIC_BROWSER_CEILING=restricted` (off by default), the signed-in owner has full access on the public
+  listener. Cérebro does not verify the identity layer that this setting requires
+  ([ADR-0029](docs/adr/0029-owner-browser-full-access-on-public-listener.md)).
 - Token rows in the state database are protected only by file permissions.
 - Raising a note to `restricted` leaves earlier plaintext in Git history and backups.
 - The secret scanner is best-effort.

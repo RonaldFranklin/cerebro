@@ -43,9 +43,11 @@ def editor(tmp_path: Path, request: pytest.FixtureRequest) -> Iterator[tuple[Tes
     service.start()
     owner_credentials(sample.settings).provision(b"fixture")
     cases = service.use_cases
-    listener = getattr(request, "param", "private")
+    variant = getattr(request, "param", "private")
+    # No listener serves a browser below restricted; "lower" exercises the adapter's own refusal.
+    listener = "private" if variant == "lower" else variant
     origin = f"https://{listener}.example.invalid"
-    level = Sensitivity.RESTRICTED if listener == "private" else Sensitivity.INTERNAL
+    level = Sensitivity.INTERNAL if variant == "lower" else Sensitivity.RESTRICTED
     app = browser_api(service.browser_auth, BrowserBinding(listener, origin), AccessCeiling(level))
     install_browser_reads(
         app,
@@ -142,7 +144,18 @@ def test_edit_errors_name_fields_without_echoing_rejected_input(editor: tuple[Te
 
 
 @pytest.mark.parametrize("editor", ["public"], indirect=True)
-def test_public_listener_denies_owner_edits_before_parsing(editor: tuple[TestClient, Path]) -> None:
+def test_owner_edits_a_restricted_ceiling_session_on_the_public_listener(editor: tuple[TestClient, Path]) -> None:
+    client, repo = editor
+    inspected = payload(client)
+    edit = {**inspected, "note": {**inspected["note"], "body": "Edited through the public listener.\n"}}
+    response = client.put(PATH, json=edit)
+    assert response.status_code == 200, response.text
+    assert response.json()["commit"] == git(repo, "rev-parse", "HEAD")
+    assert git(repo, "log", "-1", "--format=%B").endswith("Written-by: owner")
+
+
+@pytest.mark.parametrize("editor", ["lower"], indirect=True)
+def test_lower_ceiling_session_cannot_edit_and_is_refused_before_parsing(editor: tuple[TestClient, Path]) -> None:
     client, repo = editor
     before = git(repo, "rev-parse", "HEAD")
     response = client.put(

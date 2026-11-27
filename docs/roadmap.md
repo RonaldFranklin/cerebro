@@ -95,8 +95,21 @@ one checkpoint open: the hml restore drill (above).
 
 **Pending:** restore of content and state tested on hml.
 
-## ⬜ Phase 8 — Later
+## 🟨 Phase 8 — Public owner UI and visual redesign
 
+Approved on 2026-11-27. [Plan](plans/phase-8.md).
+
+1. 🟨 Opt-in full owner access on the public listener (default `internal`)
+   ([ADR-0029](adr/0029-owner-browser-full-access-on-public-listener.md)): implemented and tested, awaiting owner review.
+2. ⬜ Dark theme, self-hosted fonts and the new layout.
+3. ⬜ Redesigned screens: graph, note, edit, Recent changes, health and sign in.
+4. ⬜ Live agent activity in the graph (needs an ADR).
+
+**Acceptance:** each step keeps backend and browser tests green; no new dependency without owner review.
+
+## ⬜ Phase 9 — Later
+
+- Verify the Cloudflare Access assertion in the application (needs an ADR; see [ADR-0029](adr/0029-owner-browser-full-access-on-public-listener.md)).
 - **Next:** OAuth on `/mcp` for cloud chat connectors (ChatGPT, claude.ai) that cannot send a static bearer header.
 - "Agent path" view in the graph (which notes an agent read in a session).
 - Semantic search (embeddings) as an additional `SearchIndex` adapter, if FTS proves insufficient.

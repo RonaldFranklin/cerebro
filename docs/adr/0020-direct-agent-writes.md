@@ -5,7 +5,8 @@
   tokens, proposal rows, state upgrades and Inbox-era attribution is superseded by
   [ADR-0023](0023-no-legacy-compatibility.md); its replay fingerprint is replaced by
   [ADR-0024](0024-create-replay-from-git.md). Server failures and invalid committed files are covered by
-  [ADR-0026](0026-invalid-committed-notes.md).
+  [ADR-0026](0026-invalid-committed-notes.md). Private-only change history is amended by
+  [ADR-0029](0029-owner-browser-full-access-on-public-listener.md).
 - **Date:** 2026-11-26
 
 ## Context
