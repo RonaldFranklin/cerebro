@@ -10,6 +10,10 @@ manager and never in a file inside a repository.
 
 The commands below are for Bash on Linux or WSL. Replace `<public-hostname>` with the environment's hostname.
 
+**Same machine as the server** (the [README quickstart](../README.md#quickstart-with-docker)): use
+`http://127.0.0.1:<private-port>/mcp` in place of `https://<public-hostname>/mcp` and skip the `https://` check in
+step 1. Plain HTTP is acceptable only on this loopback address; a token must never cross a network without TLS.
+
 ## 1. Check the URL and store the token
 
 ```bash

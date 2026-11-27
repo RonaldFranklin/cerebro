@@ -1,5 +1,7 @@
 # Deploy Cérebro with a private tailnet and a public agent entrance
 
+This is the full two-environment runbook: a test environment (hml) and a production one (prod), published through Tailscale and Cloudflare. To try Cérebro on one machine, use the [README quickstart](../README.md#quickstart-with-docker) instead.
+
 Run as the designated **non-root Linux operator** with access to local Docker, GitHub, Tailscale and the host's `cloudflared`. Use Bash in a private terminal. The owner supplies the placeholders and approves the host, tailnet access policy and backup location. Run hml first. Record release SHAs and image IDs locally. Keep passwords, tokens and key material out of transcripts, Git and Compose environment files.
 
 ## Installation variables
@@ -15,12 +17,12 @@ TAILNET_URL='https://<machine>.<tailnet>.ts.net'
 HML_PUBLIC_ORIGIN='https://<hml-public-hostname>'; PROD_PUBLIC_ORIGIN='https://<prod-public-hostname>'
 GITHUB_OWNER='<private-content-repository-owner>'
 APP_REPOSITORY='<app-repository-owner>/cerebro'
-PROJECT_ROOT=/srv/projetos/cerebro
-DATA_ROOT=/data/projetos/cerebro
-BACKUP_ROOT=/data/backups/cerebro
+PROJECT_ROOT=/opt/cerebro
+DATA_ROOT=/var/lib/cerebro
+BACKUP_ROOT=/var/backups/cerebro
 BACKUP_MOUNT=''  # set to the expected mountpoint when backups use a dedicated filesystem
-HML_PORT=18765; PROD_PORT=28765
-HML_PUBLIC_PORT=18766; PROD_PUBLIC_PORT=28766
+HML_PORT=8775; PROD_PORT=8765
+HML_PUBLIC_PORT=8776; PROD_PUBLIC_PORT=8766
 HML_HTTPS=8443; PROD_HTTPS=443
 REPOS="$PROJECT_ROOT/repos"
 APP_REPO="$REPOS/cerebro"
@@ -312,7 +314,7 @@ dc exec -T backend cerebro token list
 
 ## G. Accept hml before promoting to prod
 
-1. From WSL, follow the commands in [client setup](client-setup.md) with the hml public URL and use each configured client to call `cerebro_overview` and `cerebro_write_guide`. Check the correct environment and authenticated results. In hml ask Claude Code to create an internal P2 fixture in the `validation` area using the write guide. Ask Codex to read it by ID. Record the ID and confirm the Git attribution in Recent changes.
+1. From the workstation, follow the commands in [client setup](client-setup.md) with the hml public URL and use each configured client to call `cerebro_overview` and `cerebro_write_guide`. Check the correct environment and authenticated results. In hml ask Claude Code to create an internal P2 fixture in the `validation` area using the write guide. Ask Codex to read it by ID. Record the ID and confirm the Git attribution in Recent changes.
 2. Open the private HTTPS origin in the owner's browser, sign in, read the fixture, inspect Recent changes and health. Use separate browser profiles for hml and prod, which share a hostname. Verify the tailnet access policy with the owner. Repeat the public UI checks in E2.
 3. On the host run the following. After restart, repeat the authenticated MCP read and browser login/read. Check the same commit and data persisted.
 
@@ -327,7 +329,7 @@ test "$(gh api "repos/$GITHUB_OWNER/cerebro-content/git/ref/heads/$ENVIRONMENT" 
 find "$snapshot" -mindepth 1 -maxdepth 1 -printf '%f\n' | sort
 ```
 
-4. Expect exactly `content-revision`, `owner.verifier` and `state.sqlite`. Never copy quarantine or `index.sqlite` into backups. Install the bounded 18:10 backup and weekly Git maintenance jobs from the [backup procedure](../deploy/backup.md). Supply the checkout ending in `/content/repo`. Verify the backup job under its scheduled account. If it uses a dedicated mount, apply the mountpoint guard to every scheduled backup.
+4. Expect exactly `content-revision`, `owner.verifier` and `state.sqlite`. Never copy quarantine or `index.sqlite` into backups. Install the bounded daily backup and weekly Git maintenance jobs from the [backup procedure](../deploy/backup.md). Supply the checkout ending in `/content/repo`. Verify the backup job under its scheduled account. If it uses a dedicated mount, apply the mountpoint guard to every scheduled backup.
 
 **Hml restore drill.** Reserve a maintenance window and an unused temporary loopback port. Use the hml snapshot containing the fixture. Restore into a fresh private tree using the commands under “Verify a restore” in the backup procedure:
 
@@ -336,7 +338,7 @@ test "$ENVIRONMENT" = hml
 SNAPSHOT="$snapshot"
 drill_root=$(mktemp -d "$ENV_DIR/restore-XXXXXXXX")
 RESTORE_DIR="$drill_root/hml"
-DRILL_PORT=38765  # check ss and docker ps as in A
+DRILL_PORT=8795  # check ss and docker ps as in A
 test ! -e "$RESTORE_DIR"
 gh auth setup-git --hostname github.com
 ```
