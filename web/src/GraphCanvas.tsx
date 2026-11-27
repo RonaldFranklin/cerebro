@@ -79,9 +79,9 @@ export function GraphCanvas({data, colorBy, onSelect}: Props) {
             styles: {
               nodes: {
                 label: {attribute:"label"}, color:{attribute:"color"}, size:{attribute:"size"},
-                labelColor:"#ebece2", labelSize:13, labelPosition:"below", cursor:"pointer",
+                labelColor:"#e6edf5", labelSize:13, labelPosition:"below", cursor:"pointer",
               },
-              edges: { color:"#617d80", size:1.3 },
+              edges: { color:"#5a6b82", size:1.3 },
             },
           });
           renderer.current = sigma;

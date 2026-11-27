@@ -26,7 +26,7 @@ test("the private owner can trace the agent update from history to its note", as
   await lower.goto(demo.public_origin + "/changes");
   await lower.getByLabel("Password", {exact:true}).fill(demo.password);
   await lower.getByLabel("Password", {exact:true}).press("Enter");
-  await expect(lower.getByText("This view requires the private listener.")).toBeVisible();
+  await expect(lower.getByText("This view requires a restricted owner session.")).toBeVisible();
   await expect(lower.getByRole("navigation").getByRole("link", {name:"Recent changes"})).toHaveCount(0);
   for (const path of ["/api/changes",new URL(detail.url()).pathname]) {
     const status = await lower.evaluate(async path => (await fetch(path)).status, path);

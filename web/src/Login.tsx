@@ -2,7 +2,10 @@ import { useEffect, useRef, useState } from "react";
 import type { FormEvent } from "react";
 
 export function Brand() {
-  return <span className="brand"><span className="brand-mark" aria-hidden="true"><i /><i /><i /></span>Cérebro</span>;
+  return <span className="brand"><svg className="brand-mark" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true">
+    <path d="M12 3c5 0 9 3.4 9 8s-3.6 7-6.5 7c-1.5 0-1.7 3-4.5 3-4 0-7-4-7-9s4-9 9-9z" />
+    <g fill="currentColor" stroke="none"><circle cx="9" cy="9" r="1.7" /><circle cx="15" cy="9.5" r="1.7" /><circle cx="11" cy="14.5" r="1.7" /></g>
+  </svg><span className="brand-name">Cérebro</span></span>;
 }
 
 /** Decorative geometry only. No workspace data is drawn on the sign-in page. */
@@ -32,16 +35,16 @@ function Constellation() {
         [9,10],[9,13],[10,12],[10,13],[11,12],[11,14],[12,13],[12,14]];
       for (const [a, b] of edges) {
         ctx.beginPath(); ctx.moveTo(points[a][0], points[a][1]); ctx.lineTo(points[b][0], points[b][1]);
-        ctx.strokeStyle = a === 3 || b === 8 ? "#719d94" : "#355652"; ctx.lineWidth = 1; ctx.stroke();
+        ctx.strokeStyle = a === 3 || b === 8 ? "#2f7f87" : "#24404a"; ctx.lineWidth = 1; ctx.stroke();
       }
       points.forEach(([x, y], i) => {
         const main = i === 3 || i === 8 || i === 10;
         if (main) {
           ctx.beginPath(); ctx.arc(x, y, 12, 0, 2 * Math.PI);
-          ctx.strokeStyle = "#53776e"; ctx.stroke();
+          ctx.strokeStyle = "#2f6b73"; ctx.stroke();
         }
         ctx.beginPath(); ctx.arc(x, y, main ? 5 : 3.5, 0, 2 * Math.PI);
-        ctx.fillStyle = i === 10 || i === 13 ? "#b5a5ce" : main ? "#b0ddbd" : "#75988f";
+        ctx.fillStyle = i === 10 || i === 13 ? "#f5a524" : main ? "#5ce1e6" : "#4b9298";
         ctx.fill();
       });
     };

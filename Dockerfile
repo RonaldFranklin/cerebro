@@ -13,6 +13,8 @@ COPY web/package.json web/pnpm-lock.yaml web/pnpm-workspace.yaml ./
 RUN pnpm install --frozen-lockfile
 COPY web/tsconfig.json web/index.html ./
 COPY web/src ./src
+# Static files, including the font licenses that must travel with the built UI.
+COPY web/public ./public
 RUN pnpm run build
 
 FROM python:3.14.10-bookworm@sha256:3fe825da0a80fa8e2cd79baadeb76b03c0ddf3d6cdbc8346778a0208b9d6038c

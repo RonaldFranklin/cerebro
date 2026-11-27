@@ -13,7 +13,7 @@ test("inspect an agent’s committed note and explicitly save an owner edit unde
   const password = page.getByLabel("Password",{exact:true});
   await password.fill(demo.password);
   await password.press("Enter");
-  const query = page.getByRole("searchbox");
+  const query = page.getByRole("searchbox", {name:"Search notes"});
   await query.fill("SSH");
   await query.press("Enter");
   await page.getByRole("link",{name:"SSH access",exact:true}).click();
@@ -111,9 +111,9 @@ test("the lower-ceiling listener denies the owner editor and health views", asyn
   await page.goto(demo.public_origin + "/editor/server-ssh-access");
   await page.getByLabel("Password",{exact:true}).fill(demo.password);
   await page.getByLabel("Password",{exact:true}).press("Enter");
-  await expect(page.getByText("This view requires the private listener.")).toBeVisible();
+  await expect(page.getByText("This view requires a restricted owner session.")).toBeVisible();
   await page.goto(demo.public_origin + "/health");
-  await expect(page.getByText("This view requires the private listener.")).toBeVisible();
+  await expect(page.getByText("This view requires a restricted owner session.")).toBeVisible();
   expect(privateRequests).toEqual([]);
 });
 

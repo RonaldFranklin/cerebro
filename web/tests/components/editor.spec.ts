@@ -131,7 +131,7 @@ test("reopening the editor waits for this visit's read and retry", async ({page}
   await page.goto("/editor/example");
   const title = page.getByLabel("Title",{exact:true});
   await expect(title).toHaveValue(seed.title);
-  await page.getByRole("link",{name:"Search",exact:true}).click();
+  await page.getByRole("link",{name:"Notes",exact:true}).click();
   await expect(page).toHaveURL(/\/search$/);
   await page.goBack();
   await expect.poll(() => reads).toBe(2);
