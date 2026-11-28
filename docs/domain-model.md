@@ -212,7 +212,7 @@ effective_ceiling = min(listener_ceiling, token_ceiling)
 - **Fail closed:** `effective_ceiling(listener, token)` has no defaults; wrongly typed ceilings raise, and
   `is_visible` / `AccessCeiling.allows` / `AccessContext.can` deny any value of an unexpected type.
 - **Owner actions that need `restricted`:** editing a note, checking a draft, reading change history (all of it or one
-  note's), the health report and token activity require the owner **and** the ceiling `restricted`. The use cases refuse anything lower, whatever the
+  note's), the health report, token activity and live activity require the owner **and** the ceiling `restricted`. The use cases refuse anything lower, whatever the
   inbound adapter already checked ([ADR-0029](adr/0029-owner-browser-full-access-on-public-listener.md)). A
   lower-ceiling owner session only reads notes, filtered by its ceiling like any caller.
 - **Principals and scopes:** `AccessContext(principal, ceiling, scopes)` is built once per request, with

@@ -23,7 +23,7 @@ _NO_STORE = {"Cache-Control": "no-store"}
 _SESSION_PATHS = frozenset({"/api/login", "/api/logout", "/api/session"})
 # Exactly one note segment: a note whose id is "changes" stays an ordinary note read.
 _NOTE_HISTORY = re.compile(r"/api/notes/[^/]+/changes")
-_COOKIE_NAMES = {"private": "__Host-cerebro_private", "public": "__Host-cerebro_public"}
+COOKIE_NAMES = {"private": "__Host-cerebro_private", "public": "__Host-cerebro_public"}
 
 
 class BrowserBodyLimit:
@@ -54,7 +54,7 @@ def _header(request: Request, name: str) -> str | None:
     return values[0] if len(values) == 1 else None
 
 
-def _session_cookie(request: Request, name: str) -> str | None:
+def session_cookie(request: Request, name: str) -> str | None:
     session_id: str | None = None
     for header in request.headers.getlist("cookie"):
         for item in header.split(";"):
@@ -104,7 +104,7 @@ def _password(body: bytes) -> bytes:
 
 def browser_api(auth: BrowserAuth, binding: BrowserBinding, ceiling: AccessCeiling) -> FastAPI:
     app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None, redirect_slashes=False)
-    cookie_name = _COOKIE_NAMES[binding.listener]
+    cookie_name = COOKIE_NAMES[binding.listener]
 
     def session_data(session: SessionInfo) -> dict[str, str | int]:
         return {
@@ -124,7 +124,7 @@ def browser_api(auth: BrowserAuth, binding: BrowserBinding, ceiling: AccessCeili
             return _error(422, "Invalid request.")
         if path in _SESSION_PATHS and request.scope["query_string"]:
             return _error(422, "Invalid request.")
-        session_id = _session_cookie(request, cookie_name)
+        session_id = session_cookie(request, cookie_name)
         if request.method == "POST" and path == "/api/login":
             if _header(request, "origin") != binding.origin or _header(request, "x-cerebro-request") != "1":
                 return _error(403, "Access denied.")

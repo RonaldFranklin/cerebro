@@ -11,3 +11,14 @@
 }
 .sigma-surface { position: absolute; inset: 0; }
 .graph-canvas-state { position: absolute; inset: 0; display: grid; place-content: center; margin: 0; padding: 1.5rem; text-align: center; color: var(--muted); }
+.graph-pulses { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+.graph-pulses .synapse { stroke: #fff; stroke-width: 2; stroke-dasharray: 7 6; animation: synapse .7s linear infinite; }
+.graph-pulses circle { fill: none; stroke: #fff; stroke-width: 1.5; }
+.graph-pulses .wave { animation: wave 1.4s ease-out infinite; }
+@keyframes synapse { to { stroke-dashoffset: -26; } }
+@keyframes wave { from { r: 10px; opacity: 1; } to { r: 30px; opacity: 0; } }
+/* The highlight stays, without movement. */
+@media (prefers-reduced-motion: reduce) {
+  .graph-pulses .synapse, .graph-pulses .wave { animation: none; }
+  .graph-pulses .wave { display: none; }
+}

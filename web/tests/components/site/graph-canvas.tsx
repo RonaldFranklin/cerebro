@@ -9,6 +9,6 @@ const data: GraphData = {
 };
 function Fixture() {
   const [selected, setSelected] = useState("");
-  return <><GraphCanvas data={data} colorBy="area" colorOf={() => "#5ce1e6"} selected={selected} onSelect={setSelected}/><output>{selected}</output></>;
+  return <><GraphCanvas data={data} colorBy="area" colorOf={() => "#5ce1e6"} selected={selected} active={new Set()} onSelect={setSelected}/><output>{selected}</output></>;
 }
 createRoot(document.getElementById("root")!).render(<Fixture/>);

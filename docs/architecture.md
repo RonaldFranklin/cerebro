@@ -106,6 +106,7 @@ backend/
 | `WriteAttemptStore` | Atomically reserve a rolling-hour slot for an authenticated token; a refusal leaves state unchanged | SQLite; in-memory fake |
 | `ChangeHistory` | Return recent first-parent revisions, attribution and note versions for owner history | Git/filesystem; in-memory fake |
 | `Credentials`, `LoginAttempts`, `SessionStore` | Owner browser login: password verifier, shared attempt throttle, listener-bound sessions ([ADR-0019](adr/0019-owner-browser-api.md)) | crypto, SQLite, in-memory sessions; fakes |
+| `ActivityFeed` | The last 20 agent reads and writes and bounded subscriber queues ([ADR-0031](adr/0031-usage-counters-and-live-activity.md)) | in-memory feed |
 | `UsageCounters` | Count authenticated agent requests per token and hour, and the last use; best effort, never raises ([ADR-0031](adr/0031-usage-counters-and-live-activity.md)) | `usage.sqlite` (disposable); fake |
 | `BackupStatus` | What the host backup job reported last ([ADR-0030](adr/0030-backup-status-record.md)) | state-directory file; fake |
 | `Clock`, `IdGenerator` | `now()`; note ids, token ids and token secrets, for deterministic tests | system / fixed fakes |
@@ -317,6 +318,9 @@ an error naming its path and version, and is never deleted, upgraded or repaired
   panel, which opens its local graph (N hops).
 - **Reader:** notes rendered as real HTML with `lang` set so browser translation works. Code blocks, inline
   code, paths, commands, note ids and links carry `translate="no"`.
+- **Live activity:** on the graph, a `restricted` owner session follows `GET /api/activity` (server-sent events, held in
+  memory only): agent reads and writes pulse on their notes and appear in a feed, without motion under
+  `prefers-reduced-motion` ([ADR-0031](adr/0031-usage-counters-and-live-activity.md)).
 - **Note history:** the note screen lists one note's changes to a restricted owner session, under the same rules.
 - **Recent changes:** a restricted owner session sees who changed each note, when, and a bounded
   diff. The use cases require a `restricted` owner, and a change is listed only if the current note and both sides of

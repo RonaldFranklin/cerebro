@@ -119,6 +119,14 @@ class BrowserAuth:
             remaining = ABSOLUTE_LIFETIME - (row.last_used - row.created)
             return SessionInfo(row.csrf_token, int(remaining.total_seconds()))
 
+    def check(self, binding: BrowserBinding, session_id: str) -> SessionInfo:
+        """Authenticate without renewing the idle lifetime, for work the owner is not doing: a live stream must not
+        keep its session alive (ADR-0031)."""
+        with self._sessions.locked() as rows:
+            row = self._authenticated(rows, binding, session_id, None, renew=False)
+            remaining = ABSOLUTE_LIFETIME - (self._clock.now() - row.created)
+            return SessionInfo(row.csrf_token, int(remaining.total_seconds()))
+
     def logout(self, binding: BrowserBinding, session_id: str, csrf: str) -> None:
         if not csrf:
             raise AuthenticationFailed()
@@ -127,7 +135,13 @@ class BrowserAuth:
             del rows[_digest(session_id)]
 
     def _authenticated(
-        self, rows: dict[bytes, StoredSession], binding: BrowserBinding, session_id: str, csrf: str | None
+        self,
+        rows: dict[bytes, StoredSession],
+        binding: BrowserBinding,
+        session_id: str,
+        csrf: str | None,
+        *,
+        renew: bool = True,
     ) -> StoredSession:
         key = _digest(session_id)
         row = rows.get(key)
@@ -141,5 +155,6 @@ class BrowserAuth:
             len(csrf) > 128 or not csrf.isascii() or not hmac.compare_digest(row.csrf_token, csrf)
         ):
             raise CsrfRejected()
-        row.last_used = now
+        if renew:
+            row.last_used = now
         return row

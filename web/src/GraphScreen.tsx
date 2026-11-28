@@ -4,6 +4,8 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import type { ApiClient } from "./api";
 import { GraphCanvas } from "./GraphCanvas";
 import { colorFor } from "./graphAppearance";
+import { LiveActivity } from "./LiveActivity";
+import { ACTIVE_FOR, useLiveActivity, useNow } from "./liveActivity";
 import { NotePanel } from "./NotePanel";
 import { notePath } from "./Reader";
 import { useVisibleGraph, type GraphData } from "./visibleGraph";
@@ -65,7 +67,13 @@ function Connections({graph}: {graph: GraphData}) {
   </details>;
 }
 
-export default function GraphScreen({api}: {api: ApiClient}) {
+export default function GraphScreen({api, live}: {api: ApiClient; live: boolean}) {
+  const activity = useLiveActivity(live);
+  const now = useNow(live ? 1000 : null);
+  // Notes an agent touched moments ago. The text key keeps the set's identity while its members stay.
+  const activeKey = [...new Set(activity.events.filter(event => now - new Date(event.at).getTime() < ACTIVE_FOR)
+    .map(event => event.note_id))].sort().join(" ");
+  const active = useMemo(() => new Set(activeKey ? activeKey.split(" ") : []), [activeKey]);
   const client = useQueryClient();
   const [workspace, setWorkspace] = useState(() => client.getQueryData<Workspace>(graphState) ?? initial);
   const titleRef = useRef<HTMLHeadingElement>(null);
@@ -161,7 +169,7 @@ export default function GraphScreen({api}: {api: ApiClient}) {
       <div className="graph-layout"><section className="graph-map" aria-labelledby="map-title">
         <div className="graph-map-heading"><h2 id="map-title">{local ? center?.title ?? "Neighborhood" : "All notes"}</h2>
           <span role="status" className="item-count">{graph.nodes.length} notes · {graph.edges.length} links</span></div>
-        {graph.nodes.length ? <GraphCanvas data={graph} colorBy={view.colorBy} colorOf={colorOf} selected={selected} onSelect={select}/>
+        {graph.nodes.length ? <GraphCanvas data={graph} colorBy={view.colorBy} colorOf={colorOf} selected={selected} active={active} onSelect={select}/>
           : <p className="graph-empty">No matching notes.</p>}
         {legend.length > 0 && <div className="graph-legend" role="group" aria-label="Graph legend">
           <span>Color by {view.colorBy}</span>{legend.map(value => <span key={value}><Dot color={colorOf(value)}/><span translate="no">{value}</span></span>)}
@@ -169,8 +177,11 @@ export default function GraphScreen({api}: {api: ApiClient}) {
           <span className="graph-size-key">Larger nodes have higher priority.</span>
         </div>}
       </section>
-      <NotePanel api={api} note={chosen} color={chosen && colorOf(chosen[view.colorBy])} history={view.history}
-        visibleIds={visibleIds} reveal={reveal} onRevealed={revealed} onExplore={local?.center === chosen?.id ? undefined : explore}/>
+      <div className="graph-side">
+        <NotePanel api={api} note={chosen} color={chosen && colorOf(chosen[view.colorBy])} history={view.history}
+          visibleIds={visibleIds} reveal={reveal} onRevealed={revealed} onExplore={local?.center === chosen?.id ? undefined : explore}/>
+        {live && <LiveActivity events={activity.events} state={activity.state} retry={activity.retry}/>}
+      </div>
       <section className="graph-list" aria-labelledby="graph-notes"><h2 id="graph-notes">Notes</h2>
         {graph.edges.length > 0 && <Connections graph={graph}/>}
         <ul>{graph.nodes.map(node => <li key={node.id}>

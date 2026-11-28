@@ -149,3 +149,20 @@ def test_insertion_occurs_inside_the_verifier_generation_guard() -> None:
     credentials.provision(b"fixture")
     auth = BrowserAuth(credentials, FakeLoginAttempts(), FakeSessions(), FixedClock(), GuardedIds())
     assert auth.login(PRIVATE, b"fixture")
+
+
+def test_a_check_authenticates_without_renewing_the_idle_lifetime(setup: Setup) -> None:
+    auth, clock, credentials, _ = setup
+    session = auth.login(PRIVATE, b"fixture")
+    for _ in range(2):
+        clock.advance(timedelta(minutes=14))
+        assert auth.check(PRIVATE, session.session_id).csrf_token == session.csrf_token
+    clock.advance(timedelta(minutes=2))
+    with pytest.raises(AuthenticationFailed):
+        auth.check(PRIVATE, session.session_id)
+    other = auth.login(PRIVATE, b"fixture")
+    with pytest.raises(AuthenticationFailed):
+        auth.check(BrowserBinding("public", PRIVATE.origin), other.session_id)
+    credentials.provision(b"changed")
+    with pytest.raises(AuthenticationFailed):
+        auth.check(PRIVATE, other.session_id)

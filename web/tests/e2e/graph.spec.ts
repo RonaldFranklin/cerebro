@@ -22,6 +22,7 @@ test("the production worker lays out a selectable WebGL graph under the served C
   const workerUrl = new URL((await worker).url());
   expect(workerUrl.origin).toBe(demo.private_origin);
   expect(workerUrl.pathname).toMatch(/^\/assets\/.+\.js$/);
+  await expect(page.getByRole("region", {name:"Live activity"}).getByText("streaming", {exact:true})).toBeVisible();
   const surface = page.locator("[data-renderer='ready'] .sigma-surface");
   await expect(surface).toBeVisible();
   expect(await surface.locator("canvas").evaluateAll(items => items.some(canvas =>

@@ -93,7 +93,7 @@ function App() {
             path === "/health" ? <Suspense fallback={<p role="status">Loading health report…</p>}><HealthScreen api={state.api}/></Suspense> :
             path.startsWith("/editor/") ? <Suspense fallback={<p role="status">Loading editor…</p>}><EditorScreen
               key={path} api={state.api} id={path.slice("/editor/".length)} history={url.searchParams.get("history") === "true"}/></Suspense> :
-            path === "/graph" ? <Suspense fallback={<p role="status">Loading graph…</p>}><GraphScreen api={state.api}/></Suspense> :
+            path === "/graph" ? <Suspense fallback={<p role="status">Loading graph…</p>}><GraphScreen api={state.api} live={state.session.ceiling === "restricted"}/></Suspense> :
             path === "/search" ? <SearchScreen key={searchRequest} api={state.api}/> :
             path.startsWith("/notes/") ? <ReaderScreen api={state.api} id={path.slice("/notes/".length)}
               history={url.searchParams.get("history") === "true"} section={url.searchParams.get("section")}

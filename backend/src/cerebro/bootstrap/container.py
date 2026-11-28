@@ -45,7 +45,9 @@ from cerebro.adapters.outbound.sqlite.login_attempts import SqliteLoginAttempts
 from cerebro.adapters.outbound.sqlite.usage import SqliteUsageCounters
 from cerebro.adapters.outbound.sqlite.write_attempts import SqliteWriteAttemptStore
 from cerebro.adapters.outbound.system import SystemIdGenerator, UtcClock
+from cerebro.adapters.outbound.system.activity import MemoryActivityFeed
 from cerebro.adapters.outbound.system.sessions import MemorySessions
+from cerebro.application.activity import ActivitySubscription, FollowActivityRequest, VisibleActivityRequest
 from cerebro.application.agent_write import AgentWriteRequest, AgentWriteResult
 from cerebro.application.browser import BrowserAuth
 from cerebro.application.dto import (
@@ -92,6 +94,7 @@ from cerebro.application.use_case import AnonymousUseCase, ContextUseCase
 from cerebro.application.use_cases import (
     AuthenticateToken,
     CheckOwnerEdit,
+    FollowActivity,
     GetGraph,
     GetNeighbors,
     GetOverview,
@@ -102,10 +105,12 @@ from cerebro.application.use_cases import (
     OwnerEditNote,
     ReadNote,
     RebuildIndex,
+    RecordActivity,
     RecordTokenUse,
     RevokeAgentToken,
     SearchNotes,
     TokenActivity,
+    VisibleActivity,
 )
 from cerebro.application.use_cases.agent_write import AgentWrite
 from cerebro.application.use_cases.history import OwnerHistory
@@ -204,6 +209,9 @@ class UseCases:
     list_agent_tokens: ContextUseCase[ListAgentTokensRequest, tuple[AgentTokenSummary, ...]]
     revoke_agent_token: ContextUseCase[RevokeAgentTokenRequest, RevokedToken]
     authenticate_token: AnonymousUseCase[AuthenticateTokenRequest, AccessContext]
+    record_activity: RecordActivity
+    follow_activity: ContextUseCase[FollowActivityRequest, ActivitySubscription]
+    visible_activity: ContextUseCase[VisibleActivityRequest, bool]
     record_token_use: RecordTokenUse
     token_activity: ContextUseCase[TokenActivityRequest, tuple[TokenActivityRow, ...]]
 
@@ -244,6 +252,8 @@ class Container:
         self.tokens: TokenStore = SqliteTokenStore(state_dir / STATE_FILE)
         # Disposable counters: opening them never fails the service (ADR-0031).
         self.usage: UsageCounters = SqliteUsageCounters(state_dir / "usage.sqlite")
+
+        self.activity = MemoryActivityFeed()
 
         self._rebuild = RebuildIndex(self.notes, self.search, self.graph)
 
@@ -295,6 +305,9 @@ class Container:
             list_agent_tokens=ListAgentTokens(self.tokens),
             revoke_agent_token=RevokeAgentToken(self.tokens, clock),
             authenticate_token=AuthenticateToken(self.tokens, clock),
+            record_activity=RecordActivity(self.activity, clock),
+            follow_activity=FollowActivity(self.activity),
+            visible_activity=VisibleActivity(notes),
             record_token_use=RecordTokenUse(self.usage, clock),
             token_activity=TokenActivity(self.tokens, self.usage, clock),
         )

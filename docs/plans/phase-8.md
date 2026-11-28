@@ -82,4 +82,4 @@ owner on 2026-11-27.
 | 3c | #112, #113 | Recent changes and Health with existing data: merged on 2026-11-27 |
 | 3d | #109, #115, #116, #117, #119, #124 | Data design approved. Parts A, G, F, B and C: merged on 2026-11-27, C after owner review |
 | 3e | #121 | Edit screen with live validation (part D): merged on 2026-11-27 |
-| 4 | | Live synapses: not started |
+| 4 | #125 | Live synapses: merged on 2026-11-27 after owner review. Not yet checked through a deployed proxy |

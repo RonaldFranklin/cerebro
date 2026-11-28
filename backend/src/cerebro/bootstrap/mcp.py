@@ -13,6 +13,7 @@ from urllib.parse import urlsplit
 
 import uvicorn
 
+from cerebro.adapters.inbound.browser_activity import activity_stream
 from cerebro.adapters.inbound.browser_api import browser_api
 from cerebro.adapters.inbound.browser_assets import browser_assets
 from cerebro.adapters.inbound.browser_edit import install_browser_edit
@@ -28,6 +29,7 @@ from cerebro.adapters.inbound.read_views import ListenerCeilings
 from cerebro.application.browser import BrowserBinding
 from cerebro.bootstrap.container import build_container
 from cerebro.bootstrap.diagnostics import owner_message
+from cerebro.bootstrap.observe import ObservedRead, ObservedWrite, bind_on_startup
 from cerebro.bootstrap.settings import load_settings
 from cerebro.domain.access import AccessCeiling, effective_ceiling
 from cerebro.domain.enums import Sensitivity
@@ -183,9 +185,9 @@ def serve() -> int:
             tools = MCPTools(
                 get_overview=cases.get_overview,
                 search_notes=cases.search_notes,
-                read_note=cases.read_note,
+                read_note=ObservedRead(cases.read_note, cases.record_activity),
                 get_neighbors=cases.get_neighbors,
-                agent_write=cases.agent_write,
+                agent_write=ObservedWrite(cases.agent_write, cases.record_activity),
                 get_vocabulary=cases.get_vocabulary,
             )
             auth = container.browser_auth
@@ -212,6 +214,11 @@ def serve() -> int:
                 ),
             )
             browsers = {}
+            servers: list[uvicorn.Server] = []
+
+            def stopping() -> bool:
+                return any(server.should_exit for server in servers)
+
             for port in listeners:
                 private = port == options.private_port
                 binding = BrowserBinding(
@@ -221,23 +228,35 @@ def serve() -> int:
                 install_browser_history(api, cases.history)
                 install_browser_reads(api, reads)
                 install_browser_edit(api, cases.owner_edit_note, cases.check_owner_edit)
-                browsers[port] = BrowserListener(binding, api)
+                live = activity_stream(
+                    api,
+                    auth,
+                    binding,
+                    browser_ceilings[port],
+                    cases.follow_activity,
+                    cases.visible_activity,
+                    stopping,
+                )
+                browsers[port] = BrowserListener(binding, live)
             app = browser_http(
                 http_app(tools, cases.authenticate_token, listeners, cases.record_token_use.execute),
                 browsers,
                 browser_assets(options.web_dist),
             )
             config = uvicorn.Config(
-                app,
+                bind_on_startup(app, container.activity),
                 proxy_headers=False,
                 access_log=False,
                 log_config=None,
                 ws="none",
                 http="h11",
                 lifespan="on",
+                # Live streams end on the shutdown signal; this bounds whatever else is still open.
+                timeout_graceful_shutdown=5,
                 limit_concurrency=MAX_CONCURRENCY,
             )
             server = uvicorn.Server(config)
+            servers.append(server)
             server.run(sockets=sockets)
             return 0 if server.started else 1
     except Exception as error:
