@@ -30,8 +30,8 @@ Do not contradict an ADR; propose a new ADR that supersedes it instead.
 ## 3. Current status
 
 Phases 0-7 are delivered. Phase 6 (deploy) is done and the server deployment is in production, except for one open
-checkpoint: the restore drill on hml. Phase 8 (public owner UI and visual redesign) is in progress, following
-[its plan](docs/plans/phase-8.md).
+checkpoint: the restore drill on hml. Phase 8 (public owner UI and visual redesign) has every step of
+[its plan](docs/plans/phase-8.md) merged; its deployment is pending.
 See [the roadmap](docs/roadmap.md) for pending checkpoints. Update this section and the roadmap whenever a phase starts or finishes.
 
 ## 4. Non-negotiable rules
