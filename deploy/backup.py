@@ -113,6 +113,8 @@ def backup(content: Path, state: Path, destination: Path, repository: str, branc
             ":(glob)**/owner.verifier",
             ":(glob)**/index.sqlite",
             ":(glob)**/index.sqlite-*",
+            ":(glob)**/usage.sqlite",
+            ":(glob)**/usage.sqlite-*",
             ":(glob)**/quarantine-*/**",
             cwd=transport,
         ):

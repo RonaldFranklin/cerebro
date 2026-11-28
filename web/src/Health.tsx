@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import type { ApiClient } from "./api";
 import { notePath } from "./Reader";
+import { TokenTable, type Token } from "./TokenTable";
 import { useVisibleGraph } from "./visibleGraph";
 import "./health.css";
 
@@ -15,6 +16,7 @@ interface HealthReport {
   checked_at: string;
   content: {revision: string | null; state: "clean" | "attention"};
   listeners: {name: "private" | "public"; mcp_ceiling: string; browser_ceiling: string}[];
+  tokens: Token[];
   last_backup: {state: "recorded" | "never" | "unreadable"; completed_at: string | null; content_revision: string | null};
 }
 
@@ -127,6 +129,7 @@ export function HealthScreen({api}: {api:ApiClient}) {
     </section>
     {!data.search_index_checked && data.notes_checked > 0 && !data.issues.some(issue => issue.code === "note_file_blocking") && <p className="health-note">The repository exceeds the search comparison limit.</p>}
     <Entrances listeners={data.listeners}/>
+    <TokenTable tokens={data.tokens} checkedAt={data.checked_at}/>
     <section className="health-findings"><header><div><h2>Findings</h2><p>{errors} {errors === 1 ? "error" : "errors"} · {warnings} {warnings === 1 ? "warning" : "warnings"}</p></div>
       <label>Severity <select value={severity} onChange={event=>setSeverity(event.target.value)}>
         <option value="all">All severities</option><option value="error">Errors</option><option value="warning">Warnings</option>

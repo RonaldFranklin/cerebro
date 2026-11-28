@@ -2,16 +2,15 @@
 
 from dataclasses import replace
 
-from cerebro.application.access import require_owner, visible_note
+from cerebro.application.access import require_restricted_owner, visible_note
 from cerebro.application.dto import CheckOwnerEditResult, OwnerEditNoteRequest
-from cerebro.application.errors import PermissionDenied
 from cerebro.application.note_validation import validate_candidate, write_snapshot
 from cerebro.application.ports.notes import NoteRepository
 from cerebro.application.ports.system import Clock
 from cerebro.domain.access import AccessContext
 from cerebro.domain.budgets import body_limits, word_count
 from cerebro.domain.content_hash import content_hash
-from cerebro.domain.enums import Priority, Sensitivity
+from cerebro.domain.enums import Priority
 from cerebro.domain.links import loose_link_targets, wikilink_lines
 from cerebro.domain.note import Note, NoteId
 from cerebro.domain.report import OWNER_EDIT_POLICY
@@ -33,9 +32,7 @@ class CheckOwnerEdit:
         self._vocabulary = vocabulary
 
     def execute(self, request: OwnerEditNoteRequest, ctx: AccessContext) -> CheckOwnerEditResult:
-        require_owner(ctx, "check an edit")
-        if ctx.ceiling.level is not Sensitivity.RESTRICTED:
-            raise PermissionDenied("check an edit below the restricted ceiling")
+        require_restricted_owner(ctx, "check an edit")
         base = visible_note(self._notes, request.note.id, ctx, include_history=True)
         candidate = replace(request.note, created=base.created, updated=self._clock.now().date())
         scan = write_snapshot(self._notes)

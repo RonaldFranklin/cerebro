@@ -12,10 +12,17 @@ from cerebro.adapters.inbound.browser_api import browser_api
 from cerebro.adapters.inbound.browser_reads import BrowserReads, install_browser_reads
 from cerebro.adapters.inbound.read_views import health_view, read_view, search_view
 from cerebro.application.browser import BrowserBinding
-from cerebro.application.dto import GetOverviewRequest, HealthReportRequest, ReadNoteRequest, SearchNotesRequest
+from cerebro.application.dto import (
+    GetOverviewRequest,
+    HealthReportRequest,
+    IssueAgentTokenRequest,
+    ReadNoteRequest,
+    RevokeAgentTokenRequest,
+    SearchNotesRequest,
+)
 from cerebro.bootstrap.browser import owner_credentials
 from cerebro.bootstrap.container import Container, build_container
-from cerebro.domain.access import AccessCeiling, AccessContext
+from cerebro.domain.access import AccessCeiling, AccessContext, Scope
 from cerebro.domain.enums import Sensitivity
 from tests.integration.content_kit import (
     BROKEN_ID,
@@ -52,6 +59,7 @@ def service(tmp_path_factory: pytest.TempPathFactory) -> Iterator[Service]:
         get_neighbors=cases.get_neighbors,
         health_report=cases.health_report,
         listeners=(),
+        token_activity=cases.token_activity,
     )
     with ExitStack() as stack:
         clients = []
@@ -183,7 +191,20 @@ def test_health_requires_restricted_listener(service: Service) -> None:
     report = service.container.use_cases.health_report.execute(HealthReportRequest(), ctx)
     body = service.private.get("/api/health").json()
     assert {key: body[key] for key in health_view(report)} == health_view(report)
-    assert body.keys() - health_view(report).keys() == {"checked_at", "content", "listeners", "last_backup"}
+    assert body.keys() - health_view(report).keys() == {"checked_at", "content", "listeners", "last_backup", "tokens"}
+    assert body["tokens"] == []
+    issued = service.container.use_cases.issue_agent_token.execute(
+        IssueAgentTokenRequest(
+            agent="listed", scopes=frozenset({Scope.READ}), ceiling=AccessCeiling(Sensitivity.INTERNAL)
+        ),
+        ctx,
+    )
+    response = service.private.get("/api/health")
+    (row,) = response.json()["tokens"]
+    assert row.keys() == {"client", "ceiling", "scopes", "state", "usage_known", "last_used", "activity"}
+    assert issued.token_id not in response.text
+    assert issued.secret not in response.text
+    service.container.use_cases.revoke_agent_token.execute(RevokeAgentTokenRequest(token_id=issued.token_id), ctx)
     assert body["last_backup"] == {"state": "never", "completed_at": None, "content_revision": None}
     assert datetime.fromisoformat(body["checked_at"]).utcoffset() == timedelta(0)
     assert body["content"] == {"revision": report.revision, "state": "clean"}

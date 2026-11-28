@@ -42,6 +42,7 @@ from cerebro.adapters.outbound.sqlite import (
     SqliteTokenStore,
 )
 from cerebro.adapters.outbound.sqlite.login_attempts import SqliteLoginAttempts
+from cerebro.adapters.outbound.sqlite.usage import SqliteUsageCounters
 from cerebro.adapters.outbound.sqlite.write_attempts import SqliteWriteAttemptStore
 from cerebro.adapters.outbound.system import SystemIdGenerator, UtcClock
 from cerebro.adapters.outbound.system.activity import MemoryActivityFeed
@@ -74,6 +75,8 @@ from cerebro.application.dto import (
     RevokedToken,
     SearchNotesRequest,
     SearchResults,
+    TokenActivityRequest,
+    TokenActivityRow,
 )
 from cerebro.application.index_state import index_is_stale
 from cerebro.application.ports import (
@@ -86,6 +89,7 @@ from cerebro.application.ports import (
     TokenStore,
     VersionControl,
 )
+from cerebro.application.ports.usage import UsageCounters
 from cerebro.application.use_case import AnonymousUseCase, ContextUseCase
 from cerebro.application.use_cases import (
     AuthenticateToken,
@@ -102,8 +106,10 @@ from cerebro.application.use_cases import (
     ReadNote,
     RebuildIndex,
     RecordActivity,
+    RecordTokenUse,
     RevokeAgentToken,
     SearchNotes,
+    TokenActivity,
     VisibleActivity,
 )
 from cerebro.application.use_cases.agent_write import AgentWrite
@@ -206,6 +212,8 @@ class UseCases:
     record_activity: RecordActivity
     follow_activity: ContextUseCase[FollowActivityRequest, ActivitySubscription]
     visible_activity: ContextUseCase[VisibleActivityRequest, bool]
+    record_token_use: RecordTokenUse
+    token_activity: ContextUseCase[TokenActivityRequest, tuple[TokenActivityRow, ...]]
 
 
 class Container:
@@ -242,6 +250,8 @@ class Container:
         self.search: SearchIndex = SqliteSearchIndex(index_dir / INDEX_FILE)
         self.graph: GraphIndex = SqliteGraphIndex(index_dir / INDEX_FILE)
         self.tokens: TokenStore = SqliteTokenStore(state_dir / STATE_FILE)
+        # Disposable counters: opening them never fails the service (ADR-0031).
+        self.usage: UsageCounters = SqliteUsageCounters(state_dir / "usage.sqlite")
 
         self.activity = MemoryActivityFeed()
 
@@ -298,6 +308,8 @@ class Container:
             record_activity=RecordActivity(self.activity, clock),
             follow_activity=FollowActivity(self.activity),
             visible_activity=VisibleActivity(notes),
+            record_token_use=RecordTokenUse(self.usage, clock),
+            token_activity=TokenActivity(self.tokens, self.usage, clock),
         )
 
     @cached_property

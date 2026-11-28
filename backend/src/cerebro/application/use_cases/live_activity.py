@@ -2,7 +2,7 @@
 
 import contextlib
 
-from cerebro.application.access import require_owner, stored_note
+from cerebro.application.access import require_restricted_owner, stored_note
 from cerebro.application.activity import (
     ActivityEvent,
     ActivitySubscription,
@@ -10,18 +10,11 @@ from cerebro.application.activity import (
     RecordActivityRequest,
     VisibleActivityRequest,
 )
-from cerebro.application.errors import NoteReadError, PermissionDenied
+from cerebro.application.errors import NoteReadError
 from cerebro.application.ports.activity import ActivityFeed
 from cerebro.application.ports.notes import NoteRepository
 from cerebro.application.ports.system import Clock
 from cerebro.domain.access import AccessContext, Agent
-from cerebro.domain.enums import Sensitivity
-
-
-def _require_restricted_owner(ctx: AccessContext, action: str) -> None:
-    require_owner(ctx, action)
-    if ctx.ceiling.level is not Sensitivity.RESTRICTED:
-        raise PermissionDenied(f"{action} below the restricted ceiling")
 
 
 class RecordActivity:
@@ -53,7 +46,7 @@ class FollowActivity:
         self._feed = feed
 
     def execute(self, request: FollowActivityRequest, ctx: AccessContext) -> ActivitySubscription:
-        _require_restricted_owner(ctx, "follow agent activity")
+        require_restricted_owner(ctx, "follow agent activity")
         return self._feed.subscribe(ctx.ceiling, request.wake)
 
 
@@ -64,7 +57,7 @@ class VisibleActivity:
         self._notes = notes
 
     def execute(self, request: VisibleActivityRequest, ctx: AccessContext) -> bool:
-        _require_restricted_owner(ctx, "follow agent activity")
+        require_restricted_owner(ctx, "follow agent activity")
         try:
             note = stored_note(self._notes, request.event.note_id, ctx)
         except NoteReadError:

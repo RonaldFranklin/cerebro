@@ -107,6 +107,7 @@ backend/
 | `ChangeHistory` | Return recent first-parent revisions, attribution and note versions for owner history | Git/filesystem; in-memory fake |
 | `Credentials`, `LoginAttempts`, `SessionStore` | Owner browser login: password verifier, shared attempt throttle, listener-bound sessions ([ADR-0019](adr/0019-owner-browser-api.md)) | crypto, SQLite, in-memory sessions; fakes |
 | `ActivityFeed` | The last 20 agent reads and writes and bounded subscriber queues ([ADR-0031](adr/0031-usage-counters-and-live-activity.md)) | in-memory feed |
+| `UsageCounters` | Count authenticated agent requests per token and hour, and the last use; best effort, never raises ([ADR-0031](adr/0031-usage-counters-and-live-activity.md)) | `usage.sqlite` (disposable); fake |
 | `BackupStatus` | What the host backup job reported last ([ADR-0030](adr/0030-backup-status-record.md)) | state-directory file; fake |
 | `Clock`, `IdGenerator` | `now()`; note ids, token ids and token secrets, for deterministic tests | system / fixed fakes |
 
@@ -232,6 +233,7 @@ owner browser, agents ─ Cloudflare Tunnel ────▶│ cloudflared ─�
 | Search/graph index | `index_dir/index.sqlite` (defaults to the state directory) | no | no — rebuildable |
 | Tokens and login and write limits | state dir, `state.sqlite` | no | yes (file backup) |
 | Owner password verifier | `state_dir/owner.verifier` | no | back up separately from SQLite with private permissions |
+| Token usage counters | `state_dir/usage.sqlite`: token id, hour, count and last use | no | no — disposable |
 | Last backup record | `state_dir/last-backup.json`, written by `deploy/backup.py` | no | no |
 | Fernet key | secrets dir | no | owner keeps an offline copy of the key |
 
@@ -321,8 +323,8 @@ an error naming its path and version, and is never deleted, upgraded or repaired
   `prefers-reduced-motion` ([ADR-0031](adr/0031-usage-counters-and-live-activity.md)).
 - **Note history:** the note screen lists one note's changes to a restricted owner session, under the same rules.
 - **Recent changes:** a restricted owner session sees who changed each note, when, and a bounded
-  diff. History reads require visibility of the current note and both sides of an edit. Links in historical
-  content receive the same visibility protection as links in the reader.
+  diff. The use cases require a `restricted` owner, and a change is listed only if the current note and both sides of
+  the edit can be read. Links in historical content receive the same visibility protection as links in the reader.
 - **Editor (owner):** CodeMirror 6 with `[[link]]` autocomplete; saves go through `OwnerEditNote`. After each pause in
   typing the draft is checked by `CheckOwnerEdit` (the same rules, nothing written; restricted owner only), and the
   screen blocks saving while a check fails.

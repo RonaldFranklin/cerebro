@@ -203,6 +203,7 @@ def serve() -> int:
                 get_neighbors=cases.get_neighbors,
                 get_graph=cases.get_graph,
                 health_report=cases.health_report,
+                token_activity=cases.token_activity,
                 listeners=tuple(
                     ListenerCeilings(
                         name="private" if port == options.private_port else "public",
@@ -238,7 +239,9 @@ def serve() -> int:
                 )
                 browsers[port] = BrowserListener(binding, live)
             app = browser_http(
-                http_app(tools, cases.authenticate_token, listeners), browsers, browser_assets(options.web_dist)
+                http_app(tools, cases.authenticate_token, listeners, cases.record_token_use.execute),
+                browsers,
+                browser_assets(options.web_dist),
             )
             config = uvicorn.Config(
                 bind_on_startup(app, container.activity),

@@ -211,6 +211,10 @@ effective_ceiling = min(listener_ceiling, token_ceiling)
   by default. A note above the ceiling stays "not found", whatever its status.
 - **Fail closed:** `effective_ceiling(listener, token)` has no defaults; wrongly typed ceilings raise, and
   `is_visible` / `AccessCeiling.allows` / `AccessContext.can` deny any value of an unexpected type.
+- **Owner actions that need `restricted`:** editing a note, checking a draft, reading change history (all of it or one
+  note's), the health report, token activity and live activity require the owner **and** the ceiling `restricted`. The use cases refuse anything lower, whatever the
+  inbound adapter already checked ([ADR-0029](adr/0029-owner-browser-full-access-on-public-listener.md)). A
+  lower-ceiling owner session only reads notes, filtered by its ceiling like any caller.
 - **Principals and scopes:** `AccessContext(principal, ceiling, scopes)` is built once per request, with
   `ceiling` already the effective ceiling. `principal` is `Agent(name)` or `Owner`. Scopes are `read`,
   `write` and `core`. `core` extends `write` to core and P0 notes and is refused on a credential without
@@ -367,9 +371,9 @@ A committed change is durable even if a derived index needs rebuilding.
 The owner's Recent changes view reads git history. It shows the authenticated writer, time, note
 and bounded diff. A change whose new version is `superseded`, and whose previous version was not, is reported as
 `superseded`. One note's history is the same view limited to that note: same window,
-authorization and redaction. Exposing a change requires visibility of the current note and all note versions represented
-in the diff, including the parent version for updates. Historical data receives the same link redaction as
-current content. Only commits with a valid `Written-by` trailer are listed: an agent name, or `owner` for an
+authorization and redaction. History is for a `restricted` owner only. Exposing a change also requires that the
+current note and all note versions represented in the diff, including the parent version for updates, can be read.
+Historical data receives the same link redaction as current content. Only commits with a valid `Written-by` trailer are listed: an agent name, or `owner` for an
 owner edit, which always updates an existing note ([ADR-0023](adr/0023-no-legacy-compatibility.md)). Any other
 commit is not attributed.
 
@@ -377,8 +381,9 @@ commit is not attributed.
 
 - One token per agent (e.g. `claude-code@workstation`, `codex@workstation`).
 - Attributes: id, agent name, newly issued scopes (`read`, `write`, `core`; at least one, and `core` only with `write`), ceiling, created, optional expiry,
-  optional revocation time, token hash. (`last_used` is operational data kept by the token store, not part of the
-  domain entity.)
+  optional revocation time, token hash. (Last use and hourly request counts are disposable operational data kept apart
+  from the token store, not part of the domain entity: [ADR-0031](adr/0031-usage-counters-and-live-activity.md). Only a
+  `restricted` owner reads them.)
 - A token is valid when it is not revoked and `now < expires_at`; `now` is always passed explicitly, never read
   from the system clock. A token created more than five minutes ahead of the verifier clock also fails
   authentication. An invalid token never yields an `AccessContext`.
